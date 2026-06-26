@@ -9,6 +9,7 @@
 #
 # Behavior when X mode is on:
 #   HTTP 204 / empty / any non-question response -> print nothing, exit 0 (no wake)
+#   auth/config errors                           -> print one rate-limited diagnostic
 #   a question JSON                              -> stash the full object to
 #       state/x-inbox/<request_id>.json and print one compact line
 #       "x-mention <request_id>" (which becomes the watcher's check: wake payload)
@@ -28,9 +29,24 @@ fmx_load_config
 # Hard no-op when X mode is off: this is what keeps the check shim inert.
 [ -n "$FMX_TOKEN" ] || exit 0
 
-# Without curl/jq we cannot poll or parse; stay silent (no spurious wake).
-command -v curl >/dev/null 2>&1 || { echo "fm-x-poll: curl not found" >&2; exit 0; }
-command -v jq   >/dev/null 2>&1 || { echo "fm-x-poll: jq not found"   >&2; exit 0; }
+ERROR_FILE="$STATE/x-poll.error"
+
+emit_error_once() {
+  local msg=$1
+  mkdir -p "$STATE" 2>/dev/null || true
+  if [ -f "$ERROR_FILE" ] && [ "$(cat "$ERROR_FILE" 2>/dev/null)" = "$msg" ]; then
+    return 0
+  fi
+  printf '%s\n' "$msg" > "$ERROR_FILE" 2>/dev/null || true
+  printf 'x-mode-error %s\n' "$msg"
+}
+
+clear_error() {
+  rm -f "$ERROR_FILE" 2>/dev/null || true
+}
+
+command -v curl >/dev/null 2>&1 || { emit_error_once "missing curl"; exit 0; }
+command -v jq   >/dev/null 2>&1 || { emit_error_once "missing jq"; exit 0; }
 
 BODY_FILE=$(mktemp "${TMPDIR:-/tmp}/fm-x-poll.XXXXXX") || exit 0
 trap 'rm -f "$BODY_FILE"' EXIT
@@ -44,7 +60,12 @@ code=$(curl -m 5 -s -o "$BODY_FILE" -w '%{http_code}' \
   "$FMX_RELAY/connector/poll" 2>/dev/null) || exit 0
 
 # 204 (nothing pending) is the common path; only 200 can carry a question.
-[ "$code" = "200" ] || exit 0
+case "$code" in
+  200) clear_error ;;
+  204) clear_error; exit 0 ;;
+  400|401|403|404) emit_error_once "relay returned HTTP $code"; exit 0 ;;
+  *) exit 0 ;;
+esac
 [ -s "$BODY_FILE" ] || exit 0
 
 REQ=$(jq -r '.request_id // empty' "$BODY_FILE" 2>/dev/null) || exit 0

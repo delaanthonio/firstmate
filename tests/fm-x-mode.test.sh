@@ -93,6 +93,32 @@ test_poll_204_is_silent() {
   pass "fm-x-poll stays silent on HTTP 204 (the common case)"
 }
 
+test_poll_auth_error_reports_once() {
+  local home fakebin out rc
+  home="$TMP_ROOT/poll-auth"; mkdir -p "$home"
+  fakebin=$(make_fake_curl "$home")
+  printf 'FMX_PAIRING_TOKEN=tok-auth\n' > "$home/.env"
+  out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$home" FMX_RELAY_URL="https://relay.test" \
+    FAKE_POLL_CODE=401 \
+    "$ROOT/bin/fm-x-poll.sh"); rc=$?
+  expect_code 0 "$rc" "poll auth error exit"
+  [ "$out" = "x-mode-error relay returned HTTP 401" ] \
+    || fail "poll auth error must emit one visible diagnostic (got: $out)"
+  assert_present "$home/state/x-poll.error" "poll auth error must write a dedupe marker"
+  out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$home" FMX_RELAY_URL="https://relay.test" \
+    FAKE_POLL_CODE=401 \
+    "$ROOT/bin/fm-x-poll.sh"); rc=$?
+  expect_code 0 "$rc" "poll repeated auth error exit"
+  [ -z "$out" ] || fail "repeated poll auth error must be quiet after the first diagnostic (got: $out)"
+  out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$home" FMX_RELAY_URL="https://relay.test" \
+    FAKE_POLL_CODE=204 \
+    "$ROOT/bin/fm-x-poll.sh"); rc=$?
+  expect_code 0 "$rc" "poll recovered auth error exit"
+  [ -z "$out" ] || fail "poll recovery 204 must stay silent (got: $out)"
+  assert_absent "$home/state/x-poll.error" "poll 204 must clear the auth diagnostic marker"
+  pass "fm-x-poll surfaces auth/config errors once and clears on recovery"
+}
+
 test_poll_question_stashes_and_marks() {
   local home fakebin out rc body
   home="$TMP_ROOT/poll-q"; mkdir -p "$home"
@@ -200,6 +226,42 @@ test_bootstrap_activates_on_env_token() {
   pass "bootstrap activates X mode from an .env token, idempotently"
 }
 
+test_bootstrap_reports_missing_x_dependency() {
+  local home fakebin out tool tool_path
+  home="$TMP_ROOT/boot-missing-x"; mkdir -p "$home"
+  fakebin=$(fm_fakebin "$home")
+  fm_fake_exit0 "$fakebin" tmux node no-mistakes gh-axi chrome-devtools-axi lavish-axi curl
+  for tool in dirname grep tail; do
+    tool_path=$(command -v "$tool") || fail "test host must provide $tool"
+    ln -s "$tool_path" "$fakebin/$tool"
+  done
+  cat > "$fakebin/gh" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = auth ] && [ "${2:-}" = status ]; then
+  exit 0
+fi
+exit 0
+SH
+  chmod +x "$fakebin/gh"
+  cat > "$fakebin/treehouse" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = get ] && [ "${2:-}" = --help ]; then
+  printf '%s\n' 'Usage: treehouse get [--lease] [--lease-holder <holder>]'
+  exit 0
+fi
+exit 0
+SH
+  chmod +x "$fakebin/treehouse"
+  printf 'FMX_PAIRING_TOKEN=tok-missing\n' > "$home/.env"
+  out=$(PATH="$fakebin" FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
+    "$BASH" "$ROOT/bin/fm-bootstrap.sh" 2>/dev/null)
+  assert_contains "$out" "MISSING: jq" "bootstrap must report missing jq when X mode is opted in"
+  assert_not_contains "$out" "FMX: X mode on" "bootstrap must not announce X mode when a dependency is missing"
+  assert_absent "$home/state/x-watch.check.sh" "missing jq must not arm the check shim"
+  assert_absent "$home/config/x-mode.env" "missing jq must not write the cadence config"
+  pass "bootstrap reports missing X-mode dependencies before arming"
+}
+
 test_bootstrap_inert_without_token() {
   local home out
   # No .env at all.
@@ -292,6 +354,7 @@ test_bootstrap_opt_out_cleanup() {
 
 test_poll_no_token_is_hard_noop
 test_poll_204_is_silent
+test_poll_auth_error_reports_once
 test_poll_question_stashes_and_marks
 test_poll_empty_text_is_silent
 test_poll_rejects_unsafe_request_id
@@ -300,5 +363,6 @@ test_reply_text_file_and_stdin
 test_reply_non_2xx_fails
 test_reply_usage_error
 test_bootstrap_activates_on_env_token
+test_bootstrap_reports_missing_x_dependency
 test_bootstrap_inert_without_token
 test_bootstrap_opt_out_cleanup

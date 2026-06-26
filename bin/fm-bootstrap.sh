@@ -121,7 +121,7 @@ secondmate_sync() {
 
 install_cmd() {
   case "$1" in
-    tmux|node|gh) echo "brew install $1  # or the platform's package manager" ;;
+    tmux|node|gh|curl|jq) echo "brew install $1  # or the platform's package manager" ;;
     treehouse) echo "curl -fsSL https://kunchenguid.github.io/treehouse/install.sh | sh" ;;
     no-mistakes) echo "curl -fsSL https://raw.githubusercontent.com/kunchenguid/no-mistakes/main/docs/install.sh | sh" ;;
     gh-axi|chrome-devtools-axi|lavish-axi) echo "npm install -g $1 && $1 setup hooks" ;;
@@ -158,7 +158,7 @@ write_if_changed() {
 # applying a cadence transition to a running watcher is the caller's job via
 # 'bin/fm-watch-arm.sh --restart' (see AGENTS.md "X mode").
 x_mode_setup() {
-  local env_file token shim cadence shim_body cadence_body
+  local env_file token shim cadence shim_body cadence_body tool missing
   env_file="$FM_HOME/.env"
   shim="$STATE/x-watch.check.sh"
   cadence="$CONFIG/x-mode.env"
@@ -172,6 +172,21 @@ x_mode_setup() {
     if [ -e "$shim" ] || [ -e "$cadence" ]; then
       rm -f "$shim" "$cadence"
       echo "FMX: X mode off - removed relay poll shim and 30s cadence; restart the watcher (bin/fm-watch-arm.sh --restart) to drop back to the default cadence"
+    fi
+    return 0
+  fi
+
+  missing=0
+  for tool in curl jq; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+      echo "MISSING: $tool (install: $(install_cmd "$tool"))"
+      missing=1
+    fi
+  done
+  if [ "$missing" -ne 0 ]; then
+    if [ -e "$shim" ] || [ -e "$cadence" ]; then
+      rm -f "$shim" "$cadence"
+      echo "FMX: X mode off - missing relay poll dependencies; install them and rerun bootstrap"
     fi
     return 0
   fi
