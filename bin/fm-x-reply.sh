@@ -77,13 +77,18 @@ PAYLOAD=$(jq -nc --arg rid "$REQ" --arg text "$TEXT" '{request_id:$rid, text:$te
 
 # Preview / dry-run: surface what we WOULD post and stop, without auth or network.
 if [ -n "$FMX_DRY" ]; then
-  recorded=""
-  if mkdir -p "$STATE/x-outbox" 2>/dev/null; then
-    printf '%s\n' "$PAYLOAD" > "$STATE/x-outbox/$REQ.json" 2>/dev/null \
-      && recorded=" (recorded: state/x-outbox/$REQ.json)"
-  fi
+  outbox_dir="$STATE/x-outbox"
+  outbox_file="$outbox_dir/$REQ.json"
+  mkdir -p "$outbox_dir" 2>/dev/null || {
+    echo "fm-x-reply: cannot create dry-run outbox: $outbox_dir" >&2
+    exit 1
+  }
+  printf '%s\n' "$PAYLOAD" > "$outbox_file" 2>/dev/null || {
+    echo "fm-x-reply: cannot write dry-run outbox: $outbox_file" >&2
+    exit 1
+  }
   printf 'fm-x-reply: DRY RUN - would POST to %s/connector/answer%s: %s\n' \
-    "$FMX_RELAY" "$recorded" "$TEXT" >&2
+    "$FMX_RELAY" " (recorded: state/x-outbox/$REQ.json)" "$TEXT" >&2
   printf '%s\n' "$REQ"
   exit 0
 fi

@@ -419,6 +419,19 @@ test_reply_dry_run_from_env_file() {
   pass "fm-x-reply honors FMX_DRY_RUN from .env"
 }
 
+test_reply_dry_run_fails_when_outbox_unwritable() {
+  local home err out rc
+  home="$TMP_ROOT/reply-dry-unwritable"; mkdir -p "$home/state"
+  err="$home/err.txt"
+  printf '%s\n' 'not a directory' > "$home/state/x-outbox"
+  out=$(PATH="$BASE_PATH" FM_HOME="$home" FMX_DRY_RUN=1 \
+    "$ROOT/bin/fm-x-reply.sh" "req-4" "preview text" 2>"$err"); rc=$?
+  [ "$rc" -ne 0 ] || fail "dry-run must fail when it cannot record the preview"
+  [ -z "$out" ] || fail "dry-run record failure must not echo the request_id (got: $out)"
+  assert_grep "cannot create dry-run outbox" "$err" "dry-run must explain the outbox failure"
+  pass "fm-x-reply dry-run fails when it cannot record the preview"
+}
+
 test_poll_no_token_is_hard_noop
 test_poll_204_is_silent
 test_poll_auth_error_reports_once
@@ -432,6 +445,7 @@ test_reply_usage_error
 test_reply_dry_run_records_not_posts
 test_reply_dry_run_needs_no_token
 test_reply_dry_run_from_env_file
+test_reply_dry_run_fails_when_outbox_unwritable
 test_bootstrap_activates_on_env_token
 test_bootstrap_reports_missing_x_dependency
 test_bootstrap_inert_without_token
