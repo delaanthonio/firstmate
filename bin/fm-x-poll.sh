@@ -86,13 +86,18 @@ case "$REQ" in
 esac
 
 INBOX="$STATE/x-inbox"
-mkdir -p "$INBOX" || exit 0
+mkdir -p "$INBOX" 2>/dev/null || { emit_error_once "cannot create inbox"; exit 0; }
 # Stash the full question object atomically so a concurrent reader never sees a
 # half-written file.
 if jq '.' "$BODY_FILE" > "$INBOX/$REQ.json.tmp" 2>/dev/null; then
-  mv -f "$INBOX/$REQ.json.tmp" "$INBOX/$REQ.json"
+  if ! mv -f "$INBOX/$REQ.json.tmp" "$INBOX/$REQ.json" 2>/dev/null; then
+    rm -f "$INBOX/$REQ.json.tmp"
+    emit_error_once "cannot write inbox"
+    exit 0
+  fi
 else
   rm -f "$INBOX/$REQ.json.tmp"
+  emit_error_once "cannot write inbox"
   exit 0
 fi
 

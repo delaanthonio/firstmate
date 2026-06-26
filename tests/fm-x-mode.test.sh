@@ -147,6 +147,28 @@ test_poll_question_stashes_and_marks() {
   pass "fm-x-poll stashes the question and prints the compact marker"
 }
 
+test_poll_inbox_commit_failure_reports_error() {
+  local home fakebin out rc body
+  home="$TMP_ROOT/poll-mv-fail"; mkdir -p "$home"
+  fakebin=$(make_fake_curl "$home")
+  cat > "$fakebin/mv" <<'SH'
+#!/usr/bin/env bash
+exit 1
+SH
+  chmod +x "$fakebin/mv"
+  printf 'FMX_PAIRING_TOKEN=tok-q\n' > "$home/.env"
+  body='{"request_id":"req-rename","tweet_id":"555","author_id":"42","text":"what are you building?"}'
+  out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$home" FMX_RELAY_URL="https://relay.test" \
+    FAKE_POLL_CODE=200 FAKE_POLL_BODY="$body" \
+    "$ROOT/bin/fm-x-poll.sh"); rc=$?
+  expect_code 0 "$rc" "poll inbox commit failure exit"
+  [ "$out" = "x-mode-error cannot write inbox" ] \
+    || fail "poll inbox commit failure must emit an error, not a wake marker (got: $out)"
+  assert_absent "$home/state/x-inbox/req-rename.json" "poll must not report a committed inbox file that was not created"
+  assert_absent "$home/state/x-inbox/req-rename.json.tmp" "poll must clean up the failed inbox temp file"
+  pass "fm-x-poll reports inbox commit failures without emitting a mention wake"
+}
+
 test_poll_rejects_unsafe_request_id() {
   local home fakebin out rc
   home="$TMP_ROOT/poll-evil"; mkdir -p "$home"
@@ -277,6 +299,20 @@ SH
   assert_absent "$home/state/x-watch.check.sh" "missing jq must not arm the check shim"
   assert_absent "$home/config/x-mode.env" "missing jq must not write the cadence config"
   pass "bootstrap reports missing X-mode dependencies before arming"
+}
+
+test_bootstrap_does_not_announce_when_arm_fails() {
+  local home out
+  home="$TMP_ROOT/boot-arm-fail"; mkdir -p "$home"
+  printf 'FMX_PAIRING_TOKEN=tok-boot\n' > "$home/.env"
+  printf '%s\n' 'not a directory' > "$home/config"
+  out=$(FM_HOME="$home" FM_CONFIG_OVERRIDE="$home/config" "$ROOT/bin/fm-bootstrap.sh" 2>/dev/null)
+  assert_contains "$out" "FMX: X mode off - failed to arm relay poll shim or 30s cadence" \
+    "bootstrap must report a failed X-mode activation"
+  assert_not_contains "$out" "FMX: X mode on" \
+    "bootstrap must not announce X mode when the shim or cadence was not armed"
+  assert_absent "$home/state/x-watch.check.sh" "failed X-mode activation must not leave an armed shim"
+  pass "bootstrap does not report X mode on when activation artifacts cannot be written"
 }
 
 test_bootstrap_inert_without_token() {
@@ -436,6 +472,7 @@ test_poll_no_token_is_hard_noop
 test_poll_204_is_silent
 test_poll_auth_error_reports_once
 test_poll_question_stashes_and_marks
+test_poll_inbox_commit_failure_reports_error
 test_poll_empty_text_is_silent
 test_poll_rejects_unsafe_request_id
 test_reply_success_posts_request_bound_only
@@ -448,5 +485,6 @@ test_reply_dry_run_from_env_file
 test_reply_dry_run_fails_when_outbox_unwritable
 test_bootstrap_activates_on_env_token
 test_bootstrap_reports_missing_x_dependency
+test_bootstrap_does_not_announce_when_arm_fails
 test_bootstrap_inert_without_token
 test_bootstrap_opt_out_cleanup
