@@ -604,3 +604,42 @@ These skills are not captain-invocable; they are conditional operating reference
 - `harness-adapters` - load before spawning or recovering a crewmate or secondmate, handling a trust dialog, sending a harness-specific skill invocation, interrupting or exiting an agent, resuming an exited agent, or verifying a new harness adapter.
 - `stuck-crewmate-recovery` - load after a stale wake, looping pane, repeated confusion, an answered-by-brief question, an unresponsive crewmate, or a failed steer.
 - `secondmate-provisioning` - load before creating, seeding, validating, recovering, handing backlog to, or retiring a secondmate home, and before editing `data/secondmates.md`.
+- `fmx-respond` - load on an `x-mention <request_id>` `check:` wake to compose and post a public-safe X reply (section 14); relevant only when X mode is on.
+
+## 14. X mode
+
+X mode lets a firstmate instance answer public mentions of the shared `@myfirstmate` bot on X, in firstmate's own voice, from its live fleet state.
+It ships inside this repo for every user but is **inert until opted in**, so a user who never enables it sees zero behavior change.
+
+**Activation is `.env` presence, not a command.**
+Put one value, `FMX_PAIRING_TOKEN`, into a `.env` file at this home's root (`.env` is gitignored).
+That token is the whole consent and the whole config; the relay derives the tenant from it.
+`FMX_RELAY_URL` is optional and defaults to `https://myfirstmate.io`; only a developer pointing at a local relay sets it.
+
+**Mechanism (purely additive; the watcher backbone is untouched).**
+On the next bootstrap, an `.env` with a non-empty `FMX_PAIRING_TOKEN` makes bootstrap drop two gitignored, idempotent artifacts: `state/x-watch.check.sh`, a check shim that execs `bin/fm-x-poll.sh`, and `config/x-mode.env`, which exports `FM_CHECK_INTERVAL=30`.
+The shim rides the existing `state/*.check.sh` mechanism (section 8): each check cycle `bin/fm-x-poll.sh` does one short, bounded poll of the relay; HTTP 204 is silent, a pending mention with a non-empty question is stashed to `state/x-inbox/<request_id>.json` and prints `x-mention <request_id>`, which the watcher surfaces as a `check:` wake.
+On opt-out (the token is removed or emptied), the next bootstrap deletes both artifacts so the instance reverts to the default 300s, no-poll behavior.
+This change is purely additive: **no** edit is made to `bin/fm-watch.sh`, `bin/fm-watch-arm.sh`, `bin/fm-wake-lib.sh`, or the afk daemon (`bin/fm-supervise-daemon.sh` and the `afk` skill); it only adds new `bin/` scripts, a skill, and the generated local artifacts.
+
+**Cadence.**
+An X instance polls every 30s instead of the default 300s.
+To get that, arm the watcher with the X cadence sourced, exactly as section 8 describes but prefixed:
+
+```sh
+[ -f config/x-mode.env ] && . config/x-mode.env
+bin/fm-watch-arm.sh        # as the harness's tracked background task
+```
+
+The sourced file exports `FM_CHECK_INTERVAL=30` into the arm, which the watcher it forks inherits, so only an X instance speeds up; a non-X instance has no such file and keeps the 300s default.
+Because `bin/fm-watch.sh` reads `FM_CHECK_INTERVAL` only at process start and the arm no-ops on an already-healthy watcher, a cadence **transition** (opt-in while a watcher is already running, or opt-out) is applied by restarting the home-scoped watcher with the new environment: `[ -f config/x-mode.env ] && . config/x-mode.env; bin/fm-watch-arm.sh --restart` (omit the source on opt-out so the 300s default returns), run as the harness's tracked background task.
+Bootstrap deliberately does not restart the watcher itself - it must never block, and `fm-watch-arm.sh --restart` is home-scoped (never a broad `pkill`).
+X mode is also a reason to keep the watcher armed even with no fleet work, so an X-only user is still served.
+Cadence under away-mode (the supervise daemon owns the watcher then) is a separate follow-up and out of scope here; while afk is active the daemon's default cadence applies.
+
+**Answering.**
+On an `x-mention <request_id>` `check:` wake, load the `fmx-respond` skill.
+Because the watcher coalesces same-key `check:` wakes, one `x-mention` wake can stand in for several pending mentions, so the skill treats `state/x-inbox/` as the source of truth and drains **every** `state/x-inbox/*.json` it finds, not just the `request_id` named in the wake.
+For each, it composes a short reply from live fleet state (`data/backlog.md` In flight, current `state/*.status`, active projects) translated into outcomes, posts it with `bin/fm-x-reply.sh`, and removes that inbox file on success.
+The reply is **public on a shared bot**, so the skill enforces a strict version of section 9: no task ids, internal vocabulary, captain-private material, or secrets - outcomes only.
+Because public mention text can influence the composed reply, the skill never inlines it into a shell command; it passes the reply via `bin/fm-x-reply.sh <request_id> --text-file <path>` (or stdin), not as an interpolated argument.

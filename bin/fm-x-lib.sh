@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Shared config resolution for the X-mode connector client (fm-x-poll.sh and
+# fm-x-reply.sh). X mode is opt-in: a user drops a non-empty FMX_PAIRING_TOKEN
+# into the firstmate home's .env. Until then the client is a hard no-op.
+#
+# This file is sourced, never executed. It defines:
+#   fmx_env_get <key> <file>   - read one KEY=VALUE from a .env-style file
+#   fmx_load_config            - resolve FMX_TOKEN and FMX_RELAY (env wins over .env)
+# Callers must have FM_HOME set before calling fmx_load_config.
+
+# Read the value of KEY from a .env-style file: last assignment wins; tolerates a
+# leading "export ", surrounding whitespace, and one layer of matching single or
+# double quotes. Prints nothing (and succeeds) when the file or key is absent, so
+# callers can treat empty output as "unset".
+fmx_env_get() {
+  local key=$1 file=$2 line val
+  [ -f "$file" ] || return 0
+  line=$(grep -E "^[[:space:]]*(export[[:space:]]+)?${key}=" "$file" 2>/dev/null | tail -n1) || return 0
+  [ -n "$line" ] || return 0
+  val=${line#*=}
+  val=${val#"${val%%[![:space:]]*}"}   # strip leading whitespace
+  val=${val%"${val##*[![:space:]]}"}   # strip trailing whitespace (incl. CR)
+  case "$val" in
+    \"*\") val=${val#\"}; val=${val%\"} ;;
+    \'*\') val=${val#\'}; val=${val%\'} ;;
+  esac
+  printf '%s' "$val"
+}
+
+# Resolve the two X-mode settings into FMX_TOKEN and FMX_RELAY. An explicit
+# environment variable always wins over the .env file; the relay URL defaults to
+# the production host so a normal user configures only the token. FMX_RELAY has
+# any trailing slash trimmed so callers can append "/connector/..." cleanly.
+fmx_load_config() {
+  local env_file="${FMX_ENV_FILE:-$FM_HOME/.env}"
+  FMX_TOKEN="${FMX_PAIRING_TOKEN:-}"
+  [ -n "$FMX_TOKEN" ] || FMX_TOKEN=$(fmx_env_get FMX_PAIRING_TOKEN "$env_file")
+  FMX_RELAY="${FMX_RELAY_URL:-}"
+  [ -n "$FMX_RELAY" ] || FMX_RELAY=$(fmx_env_get FMX_RELAY_URL "$env_file")
+  [ -n "$FMX_RELAY" ] || FMX_RELAY="https://myfirstmate.io"
+  FMX_RELAY=${FMX_RELAY%/}
+}
