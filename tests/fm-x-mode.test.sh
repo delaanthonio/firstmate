@@ -283,6 +283,19 @@ test_reply_usage_error() {
   pass "fm-x-reply rejects missing arguments with a usage error"
 }
 
+test_reply_whitespace_text_rejected() {
+  local home out rc err
+  home="$TMP_ROOT/reply-whitespace"; mkdir -p "$home"
+  err="$home/err.txt"
+  out=$(PATH="$BASE_PATH" FM_HOME="$home" FMX_DRY_RUN=1 \
+    "$ROOT/bin/fm-x-reply.sh" "req-space" "   " 2>"$err"); rc=$?
+  expect_code 2 "$rc" "reply whitespace text exit"
+  [ -z "$out" ] || fail "whitespace-only reply must not echo the request_id (got: $out)"
+  assert_grep "empty reply text" "$err" "reply must reject whitespace-only text"
+  assert_absent "$home/state/x-outbox/req-space.json" "whitespace-only dry-run must not record an outbox preview"
+  pass "fm-x-reply rejects whitespace-only reply text"
+}
+
 test_bootstrap_activates_on_env_token() {
   local home out sum1 sum2 n
   home="$TMP_ROOT/boot-on"; mkdir -p "$home"
@@ -397,6 +410,12 @@ test_poll_empty_text_is_silent() {
   expect_code 0 "$rc" "poll missing-text exit"
   [ -z "$out" ] || fail "poll must not emit a marker when .text is absent (got: $out)"
   assert_absent "$home/state/x-inbox/req-10.json" "poll must not stash when .text is absent"
+  out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$home" FMX_RELAY_URL="https://relay.test" \
+    FAKE_POLL_CODE=200 FAKE_POLL_BODY='{"request_id":"req-11","text":" \n\t "}' \
+    "$ROOT/bin/fm-x-poll.sh"); rc=$?
+  expect_code 0 "$rc" "poll whitespace-text exit"
+  [ -z "$out" ] || fail "poll must not emit a marker for a whitespace-only question (got: $out)"
+  assert_absent "$home/state/x-inbox/req-11.json" "poll must not stash a whitespace-only question"
   pass "fm-x-poll requires a non-empty question before waking"
 }
 
@@ -605,6 +624,18 @@ test_reply_thread_dry_run() {
   pass "fm-x-reply auto-splits a long reply into a numbered thread (texts[])"
 }
 
+test_reply_max_chars_floor_clamps_to_minimum() {
+  local home out long
+  home="$TMP_ROOT/reply-max-floor"; mkdir -p "$home"
+  long="alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november"
+  out=$(FM_HOME="$home" FMX_DRY_RUN=1 FMX_X_REPLY_MAX_CHARS=49 \
+    "$ROOT/bin/fm-x-reply.sh" req-floor "$long" 2>/dev/null)
+  [ "$out" = "req-floor" ] || fail "reply max floor dry-run must echo the request_id (got: $out)"
+  jq -e '.texts and (.texts|length>1)' "$home/state/x-outbox/req-floor.json" >/dev/null || fail "a below-floor max must clamp to 50 and still split"
+  [ "$(jq '.texts|map(length)|max' "$home/state/x-outbox/req-floor.json")" -le 50 ] || fail "clamped thread tweets must be within the 50 character floor"
+  pass "fm-x-reply clamps a below-floor max to 50 characters"
+}
+
 test_reply_thread_live_posts_texts() {
   local home fakebin log out data
   home="$TMP_ROOT/reply-thread-live"; mkdir -p "$home"
@@ -637,6 +668,7 @@ test_reply_success_posts_request_bound_only
 test_reply_text_file_and_stdin
 test_reply_non_2xx_fails
 test_reply_usage_error
+test_reply_whitespace_text_rejected
 test_reply_dry_run_records_not_posts
 test_reply_dry_run_needs_no_token
 test_reply_dry_run_from_env_file
@@ -645,6 +677,7 @@ test_reply_dry_run_fails_when_outbox_unwritable
 test_split_thread_lib
 test_reply_single_no_texts
 test_reply_thread_dry_run
+test_reply_max_chars_floor_clamps_to_minimum
 test_reply_thread_live_posts_texts
 test_bootstrap_activates_on_env_token
 test_bootstrap_reports_missing_x_dependency

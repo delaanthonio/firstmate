@@ -68,7 +68,7 @@ fmx_load_config() {
   local maxraw threadraw
   if [ -n "${FMX_X_REPLY_MAX_CHARS+x}" ]; then maxraw=${FMX_X_REPLY_MAX_CHARS-}; else maxraw=$(fmx_env_get FMX_X_REPLY_MAX_CHARS "$env_file"); fi
   case "$maxraw" in ''|*[!0-9]*) maxraw=280 ;; esac
-  [ "$maxraw" -ge 50 ] 2>/dev/null || maxraw=280
+  [ "$maxraw" -ge 50 ] 2>/dev/null || maxraw=50
   # shellcheck disable=SC2034 # FMX_MAX is read by callers (fm-x-reply.sh) after sourcing.
   FMX_MAX=$maxraw
   if [ -n "${FMX_X_THREAD_MAX+x}" ]; then threadraw=${FMX_X_THREAD_MAX-}; else threadraw=$(fmx_env_get FMX_X_THREAD_MAX "$env_file"); fi

@@ -86,6 +86,7 @@ CHUNKS=$(printf '%s' "$TEXT" | fmx_split_thread "$FMX_MAX" "$FMX_THREAD_MAX") ||
 }
 N=$(printf '%s' "$CHUNKS" | jq 'length' 2>/dev/null) || N=
 case "$N" in ''|*[!0-9]*) echo "fm-x-reply: failed to split reply into a thread" >&2; exit 1 ;; esac
+[ "$N" -gt 0 ] || { echo "fm-x-reply: empty reply text" >&2; exit 2; }
 
 # Build the body with jq so the text is correctly JSON-escaped. This is exactly
 # what would be POSTed (and, in dry-run, exactly what we record/preview). A

@@ -76,7 +76,7 @@ REQ=$(jq -r '.request_id // empty' "$BODY_FILE" 2>/dev/null) || exit 0
 # A pending mention is only actionable with an actual question: require a
 # non-empty .text. An empty/absent/null question must not stash an inbox file or
 # wake fmx-respond (a public reply flow) for nothing - stay inert (exit 0).
-TEXT=$(jq -r '.text // empty' "$BODY_FILE" 2>/dev/null) || exit 0
+TEXT=$(jq -r '(.text // "") | gsub("[[:space:]]+"; " ") | gsub("^ +| +$"; "")' "$BODY_FILE" 2>/dev/null) || exit 0
 [ -n "$TEXT" ] || { clear_error; exit 0; }
 
 # Defend the inbox filename: request_id is relay-issued (e.g. "req-7"), but never
