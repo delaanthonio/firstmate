@@ -8,17 +8,18 @@
 # no-op keeps the watcher behaving exactly as today until a user opts in.
 #
 # Behavior when X mode is on:
-#   HTTP 204 / empty / any non-question response -> print nothing, exit 0 (no wake)
+#   HTTP 204 / empty / missing text              -> print nothing, exit 0 (no wake)
 #   auth/config errors                           -> print one rate-limited diagnostic
-#   a question JSON                              -> stash the full object to
+#   a mention JSON with non-empty text           -> stash the full object to
 #       state/x-inbox/<request_id>.json and print one compact line
 #       "x-mention <request_id>" (which becomes the watcher's check: wake payload)
 # The full object is stashed verbatim, so any conversation context the relay
 # includes (in_reply_to: {author_handle, text}, null for a fresh mention) is
 # preserved for fmx-respond to answer follow-ups with continuity.
 #
-# Config (home .env or env): FMX_PAIRING_TOKEN (required), FMX_RELAY_URL
-# (default https://myfirstmate.io). Auth: Authorization: Bearer <token>.
+# Config (home .env, FMX_ENV_FILE, or env): FMX_PAIRING_TOKEN (required),
+# FMX_RELAY_URL (default https://myfirstmate.io). Auth: Authorization: Bearer
+# <token>.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -64,7 +65,7 @@ code=$(curl -m 5 -s -o "$BODY_FILE" -w '%{http_code}' \
   -H 'Accept: application/json' \
   "$FMX_RELAY/connector/poll" 2>/dev/null) || exit 0
 
-# 204 (nothing pending) is the common path; only 200 can carry a question.
+# 204 (nothing pending) is the common path; only 200 can carry a mention.
 case "$code" in
   200) ;;
   204) clear_error; exit 0 ;;
@@ -76,9 +77,11 @@ esac
 REQ=$(jq -r '.request_id // empty' "$BODY_FILE" 2>/dev/null) || exit 0
 [ -n "$REQ" ] || { clear_error; exit 0; }
 
-# A pending mention is only actionable with an actual question: require a
-# non-empty .text. An empty/absent/null question must not stash an inbox file or
-# wake fmx-respond (a public reply flow) for nothing - stay inert (exit 0).
+# A pending mention only reaches the agent when it has non-empty text.
+# Semantic worthiness is decided by fmx-respond, so acknowledgments can still be
+# stashed here and deliberately skipped there.
+# Empty/absent/null text must not stash an inbox file or wake a public reply flow
+# for nothing - stay inert (exit 0).
 TEXT=$(jq -r '(.text // "") | gsub("[[:space:]]+"; " ") | gsub("^ +| +$"; "")' "$BODY_FILE" 2>/dev/null) || exit 0
 [ -n "$TEXT" ] || { clear_error; exit 0; }
 
@@ -90,7 +93,7 @@ esac
 
 INBOX="$STATE/x-inbox"
 mkdir -p "$INBOX" 2>/dev/null || { emit_error_once "cannot create inbox"; exit 0; }
-# Stash the full question object atomically so a concurrent reader never sees a
+# Stash the full mention object atomically so a concurrent reader never sees a
 # half-written file.
 if jq '.' "$BODY_FILE" > "$INBOX/$REQ.json.tmp" 2>/dev/null; then
   if ! mv -f "$INBOX/$REQ.json.tmp" "$INBOX/$REQ.json" 2>/dev/null; then

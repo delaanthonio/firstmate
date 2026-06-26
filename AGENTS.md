@@ -625,7 +625,7 @@ That token is the whole consent and the only required config; the relay derives 
 
 **Mechanism (purely additive; the watcher backbone is untouched).**
 On the next bootstrap, an `.env` with a non-empty `FMX_PAIRING_TOKEN` makes bootstrap drop two gitignored, idempotent artifacts: `state/x-watch.check.sh`, a check shim that execs `bin/fm-x-poll.sh`, and `config/x-mode.env`, which exports `FM_CHECK_INTERVAL=30`.
-The shim rides the existing `state/*.check.sh` mechanism (section 8): each check cycle `bin/fm-x-poll.sh` does one short, bounded poll of the relay; HTTP 204 is silent, a pending mention with a non-empty question is stashed to `state/x-inbox/<request_id>.json` and prints `x-mention <request_id>`, which the watcher surfaces as a `check:` wake.
+The shim rides the existing `state/*.check.sh` mechanism (section 8): each check cycle `bin/fm-x-poll.sh` does one short, bounded poll of the relay; HTTP 204 is silent, a pending mention with non-empty text is stashed to `state/x-inbox/<request_id>.json` and prints `x-mention <request_id>`, which the watcher surfaces as a `check:` wake.
 Missing local poll dependencies and relay auth/config responses print one rate-limited `x-mode-error ...` diagnostic, which the watcher surfaces as a `check:` wake for captain-visible repair.
 On opt-out (the token is removed or emptied), the next bootstrap deletes both artifacts so the instance reverts to the default 300s, no-poll behavior.
 This change is purely additive: **no** edit is made to `bin/fm-watch.sh`, `bin/fm-watch-arm.sh`, `bin/fm-wake-lib.sh`, or the afk daemon (`bin/fm-supervise-daemon.sh` and the `afk` skill); it only adds new `bin/` scripts, a skill, and the generated local artifacts.
@@ -649,7 +649,8 @@ Cadence under away-mode (the supervise daemon owns the watcher then) is a separa
 On an `x-mention <request_id>` `check:` wake, load the `fmx-respond` skill.
 On an `x-mode-error ...` `check:` wake, report it as an X-mode configuration blocker and do not load `fmx-respond`.
 Because the watcher coalesces same-key `check:` wakes, one `x-mention` wake can stand in for several pending mentions, so the skill treats `state/x-inbox/` as the source of truth and drains **every** `state/x-inbox/*.json` it finds, not just the `request_id` named in the wake.
-For each, it composes a short reply from live fleet state (`data/backlog.md` In flight, current `state/*.status`, active projects) translated into outcomes, submits it through `bin/fm-x-reply.sh`, and removes that inbox file on success.
+For each substantive mention, it composes a short reply from live fleet state (`data/backlog.md` In flight, current `state/*.status`, active projects) translated into outcomes, submits it through `bin/fm-x-reply.sh`, and removes that inbox file on success.
+A pure acknowledgment with nothing to answer is also removed, but no reply is posted.
 The reply is **public on a shared bot**, so the skill enforces a strict version of section 9: no task ids, internal vocabulary, captain-private material, or secrets - outcomes only.
 Because public mention text can influence the composed reply, the skill never inlines it into a shell command; it passes the reply via `bin/fm-x-reply.sh <request_id> --text-file <path>` (or stdin), not as an interpolated argument.
 

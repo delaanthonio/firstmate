@@ -59,6 +59,7 @@ It is off unless the firstmate home's gitignored `.env` contains a non-empty `FM
 That token is the only required user-set value; the relay derives the tenant from it.
 `FMX_RELAY_URL` is optional and defaults to `https://myfirstmate.io`, mainly for developers pointing at a local relay.
 For direct client invocations, environment values override `.env`; bootstrap activation still keys off `.env` presence so watcher artifacts are explicit local opt-in state.
+`FMX_ENV_FILE` can point direct poll/reply client invocations at another `.env`-style file, but it does not change bootstrap activation.
 
 Bootstrap turns the token into local generated state.
 It writes `state/x-watch.check.sh`, a check shim that runs `bin/fm-x-poll.sh`, and `config/x-mode.env`, which exports `FM_CHECK_INTERVAL=30` for watcher arms in that home.
@@ -68,6 +69,8 @@ Steady-state off is silent and writes nothing.
 `bin/fm-x-poll.sh` calls `GET /connector/poll` with `Authorization: Bearer <FMX_PAIRING_TOKEN>`.
 HTTP 204 is silent.
 A pending mention with non-empty `text` is stored at `state/x-inbox/<request_id>.json` and wakes firstmate with `x-mention <request_id>`.
+The full relay object is preserved, including `in_reply_to: {author_handle, text}` for follow-up replies or `null` for fresh mentions.
+The `fmx-respond` skill decides whether the stashed mention warrants a public reply; pure acknowledgments or mentions with nothing to answer are cleared without posting.
 Relay auth or config problems are reported once as `x-mode-error ...` until recovery.
 Live replies are posted by `bin/fm-x-reply.sh`, which sends `POST /connector/answer` with `{request_id,text}` for one-tweet replies.
 If the reply exceeds `FMX_X_REPLY_MAX_CHARS`, the client splits it into a numbered, text-only thread on word boundaries and sends `{request_id,text,texts}`, where `texts` is the ordered chunk list and `text` remains the first chunk for older relays.
@@ -96,6 +99,7 @@ FM_CHECK_INTERVAL=300   # seconds between slow checks (merge polls or the X-mode
 FM_CHECK_TIMEOUT=30     # seconds allowed per slow check script
 FMX_PAIRING_TOKEN=      # X mode pairing token; put it in .env to opt in and activate bootstrap wiring
 FMX_RELAY_URL=https://myfirstmate.io   # optional X relay override, mainly for local relay development
+FMX_ENV_FILE=           # optional alternate .env file for direct X client invocations; bootstrap still checks $FM_HOME/.env
 FMX_DRY_RUN=            # truthy previews X replies to state/x-outbox/ without posting or requiring a token
 FMX_X_REPLY_MAX_CHARS=280   # X reply per-tweet split budget; values below 50 clamp to 50
 FMX_X_THREAD_MAX=25     # maximum tweets in one auto-split X reply thread

@@ -23,9 +23,9 @@
 # replies, and `text` is the first chunk so a relay that only reads `text` still
 # posts the opener. At most FMX_X_THREAD_MAX tweets (default 25) are produced.
 #
-# Live post config (home .env or env): FMX_PAIRING_TOKEN (required),
-# FMX_RELAY_URL (default https://myfirstmate.io). Auth: Authorization: Bearer
-# <token>.
+# Live post config (home .env, FMX_ENV_FILE, or env): FMX_PAIRING_TOKEN
+# (required), FMX_RELAY_URL (default https://myfirstmate.io). Auth:
+# Authorization: Bearer <token>.
 #
 # Preview / dry-run: with FMX_DRY_RUN set (truthy), the reply is NOT posted.
 # Instead the full would-be POST body ({request_id, text}, or {request_id, text,

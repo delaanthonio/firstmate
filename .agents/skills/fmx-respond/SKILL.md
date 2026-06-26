@@ -1,6 +1,6 @@
 ---
 name: fmx-respond
-description: Agent-only playbook for answering an X mention in X mode. Use on an "x-mention <request_id>" check: wake - read the stashed question (with any in_reply_to conversation context), judge whether it warrants a reply, compose a short public-safe answer from live fleet state in firstmate's own voice, post or preview it with bin/fm-x-reply.sh, and clear the inbox file. Loaded only when X mode is enabled.
+description: Agent-only playbook for handling an X mention in X mode. Use on an "x-mention <request_id>" check: wake - read the stashed mention (with any in_reply_to conversation context), judge whether it warrants a reply, compose a short public-safe answer from live fleet state in firstmate's own voice, post or preview it with bin/fm-x-reply.sh when warranted, and clear the inbox file. Loaded only when X mode is enabled.
 user-invocable: false
 ---
 
@@ -8,7 +8,7 @@ user-invocable: false
 
 X mode lets a firstmate instance answer public mentions of the shared `@myfirstmate` bot on X.
 A mention arrives through the watcher as a `check:` wake whose payload is `x-mention <request_id>`.
-The full question is stashed locally; this skill turns it into one public reply.
+The full mention is stashed locally; this skill either turns it into one public reply or deliberately skips it when there is nothing to answer.
 
 This runs only when X mode is on (the user dropped `FMX_PAIRING_TOKEN` into `.env`; see AGENTS.md "X mode").
 If you ever see an `x-mention` wake without X mode configured, do nothing.
@@ -51,7 +51,9 @@ Conciseness is still your job - lean on the auto-split only when the answer trul
 
 ## Procedure
 
-This is a drain over the inbox, not a single reply. The watcher coalesces same-key `check:` wakes, so one `x-mention` wake can stand in for several pending mentions. Treat `state/x-inbox/` as the source of truth and answer **every** file you find there, not just the `request_id` named in the wake.
+This is a drain over the inbox, not a single reply.
+The watcher coalesces same-key `check:` wakes, so one `x-mention` wake can stand in for several pending mentions.
+Treat `state/x-inbox/` as the source of truth and process **every** file you find there, not just the `request_id` named in the wake.
 
 1. **Gather live fleet state once.** Compose answers from what this instance genuinely knows right now:
    - `data/backlog.md` "## In flight" - the work currently moving.
@@ -92,13 +94,13 @@ It records the full would-be reply payload to `state/x-outbox/<request_id>.json`
 Truthy means anything except unset, empty, `0`, `false`, `no`, or `off`; an explicit environment value wins over `.env`.
 Dry-run needs `jq` to build the JSON payload, but it needs neither `FMX_PAIRING_TOKEN` nor the relay because it runs before token and network checks.
 Your procedure does not change: compose as usual and call `bin/fm-x-reply.sh ... --text-file <path>`.
-Because the call still succeeds, the loop completes normally (clear the inbox file as in step 2d); the only difference is nothing reaches X.
+Because the call still succeeds, the loop completes normally (clear the inbox file as in step 2e); the only difference is nothing reaches X.
 This is the mode for end-to-end testing the poll -> compose -> would-post loop without a public tweet.
 Inspect `state/x-outbox/` to see exactly what would have been posted.
 
 ## Notes
 
-- One mention = one reply, but a single wake may cover several pending mentions - drain them all.
+- One answered mention = one reply; a skipped mention posts nothing, but a single wake may cover several pending mentions - drain them all.
 - Conversations: `in_reply_to` carries the parent tweet for continuity; a pure acknowledgment with nothing to answer is skipped, not replied to. The relay already guards against self-replies and caps replies per conversation, so you only judge "is there something to answer here?".
 - Never inline mention-influenced reply text into a shell command; always go through `--text-file` or stdin.
 - The reply length authority is the relay (it trims), but a tight reply is on you.

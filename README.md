@@ -112,6 +112,7 @@ It routes each request to a crewmate in its own tmux window and git worktree, su
 Persistent secondmate homes are linked firstmate worktrees; startup syncs live ones and secondmate launch syncs the target home to the primary default-branch commit without fetching from origin when it is safe.
 A presence-gated sub-supervisor (`/afk`) can self-handle routine events and batch only what matters while you step away.
 An opt-in X mode can also use the watcher check path to answer public `@myfirstmate` mentions from the current fleet state, with `FMX_DRY_RUN` available to test the poll -> compose -> would-post loop without publishing.
+It preserves parent-tweet context for follow-ups and skips pure acknowledgments without posting.
 Long replies stay text-only: the reply client splits them into bounded numbered threads when needed.
 When firstmate works on itself, spawn-time isolation checks and a primary-checkout tangle alarm keep the operating checkout on its default branch and stop a crewmate that did not land in a separate worktree.
 
