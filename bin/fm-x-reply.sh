@@ -28,10 +28,11 @@
 # <token>.
 #
 # Preview / dry-run: with FMX_DRY_RUN set (truthy), the reply is NOT posted.
-# Instead the would-be POST body {request_id, text} is recorded to
-# state/x-outbox/<request_id>.json and a one-line "DRY RUN" summary is printed to
-# stderr; stdout still echoes the request_id and the exit is 0, so the loop runs
-# end to end without a public tweet. Dry-run needs neither a token nor the relay.
+# Instead the full would-be POST body ({request_id, text}, or {request_id, text,
+# texts} for a thread) is recorded to state/x-outbox/<request_id>.json and a
+# "DRY RUN" summary is printed to stderr; stdout still echoes the request_id and
+# the exit is 0, so the loop runs end to end without a public tweet. Dry-run
+# needs neither a token nor the relay.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

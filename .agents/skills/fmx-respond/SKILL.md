@@ -81,7 +81,7 @@ This is a drain over the inbox, not a single reply. The watcher coalesces same-k
 ## Dry-run / preview mode
 
 When `FMX_DRY_RUN` is set (truthy, in the environment or `.env`), `bin/fm-x-reply.sh` does **not** post.
-It records the would-be reply `{request_id, text}` to `state/x-outbox/<request_id>.json`, prints a one-line `DRY RUN` summary to stderr, and still echoes the `request_id` and exits 0.
+It records the full would-be reply payload to `state/x-outbox/<request_id>.json` (`{request_id, text}` for one tweet, or `{request_id, text, texts}` for a thread), prints a `DRY RUN` summary to stderr, and still echoes the `request_id` and exits 0.
 Truthy means anything except unset, empty, `0`, `false`, `no`, or `off`; an explicit environment value wins over `.env`.
 Dry-run needs `jq` to build the JSON payload, but it needs neither `FMX_PAIRING_TOKEN` nor the relay because it runs before token and network checks.
 Your procedure does not change: compose as usual and call `bin/fm-x-reply.sh ... --text-file <path>`.

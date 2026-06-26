@@ -31,10 +31,11 @@ fmx_env_get() {
   printf '%s' "$val"
 }
 
-# Resolve the X-mode settings into FMX_TOKEN, FMX_RELAY, and FMX_DRY. An explicit
-# environment variable always wins over the .env file; the relay URL defaults to
-# the production host so a normal user configures only the token. FMX_RELAY has
-# any trailing slash trimmed so callers can append "/connector/..." cleanly.
+# Resolve the X-mode settings into FMX_TOKEN, FMX_RELAY, FMX_DRY, FMX_MAX, and
+# FMX_THREAD_MAX. An explicit environment variable always wins over the .env
+# file; the relay URL defaults to the production host so a normal user configures
+# only the token. FMX_RELAY has any trailing slash trimmed so callers can append
+# "/connector/..." cleanly.
 # FMX_DRY is set to "1" when FMX_DRY_RUN is a truthy value (anything other than
 # unset/empty/0/false/no/off), and "" otherwise: preview mode, where the client
 # composes a reply but records it instead of posting (see fm-x-reply.sh).

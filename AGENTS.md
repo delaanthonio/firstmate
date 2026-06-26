@@ -620,7 +620,7 @@ It ships inside this repo for every user but is **inert until opted in**, so a u
 
 **Activation is `.env` presence, not a command.**
 Put one value, `FMX_PAIRING_TOKEN`, into a `.env` file at this home's root (`.env` is gitignored).
-That token is the whole consent and the whole config; the relay derives the tenant from it.
+That token is the whole consent and the only required config; the relay derives the tenant from it.
 `FMX_RELAY_URL` is optional and defaults to `https://myfirstmate.io`; only a developer pointing at a local relay sets it.
 
 **Mechanism (purely additive; the watcher backbone is untouched).**
@@ -656,11 +656,12 @@ Because public mention text can influence the composed reply, the skill never in
 **Length and threads.**
 The skill answers concisely by default - one tweet, two at most - and never hand-numbers a thread.
 `bin/fm-x-reply.sh` handles length: a reply that fits one tweet is posted as-is; a genuinely long reply is auto-split, premium-independently, into a numbered `(k/n)` thread on word boundaries, each tweet within `FMX_X_REPLY_MAX_CHARS` (default 280) and capped at `FMX_X_THREAD_MAX` tweets (default 25).
+Those reply limits are optional environment or `.env` values, with explicit environment values winning over `.env`.
 A single tweet sends `{request_id, text}`; a thread additionally sends `texts` - the ordered chunks - which the relay posts as chained replies (`text` stays the first chunk so a relay that only reads `text` still posts the opener).
 This is text-only - never an image of prose.
 
 **Preview / dry-run.**
-Setting `FMX_DRY_RUN` (truthy, in the environment or `.env`) makes `bin/fm-x-reply.sh` compose and surface a reply without posting it: it records the would-be POST body `{request_id, text}` to `state/x-outbox/<request_id>.json`, prints a one-line `DRY RUN` summary to stderr, and still echoes the `request_id` and exits 0.
+Setting `FMX_DRY_RUN` (truthy, in the environment or `.env`) makes `bin/fm-x-reply.sh` compose and surface a reply without posting it: it records the full would-be POST body to `state/x-outbox/<request_id>.json` (`{request_id, text}` for one tweet, or `{request_id, text, texts}` for a thread), prints a `DRY RUN` summary to stderr, and still echoes the `request_id` and exits 0.
 Truthy means anything except unset, empty, `0`, `false`, `no`, or `off`; an explicit environment value wins over `.env`.
 This dry-run reply path runs before token and network checks, so previewing a composed answer needs `jq` but does not need `FMX_PAIRING_TOKEN`, `curl`, or a live relay.
 Polling and composing are unchanged, so the full poll -> wake -> compose -> would-post loop runs end to end without a public tweet - the mode for safe end-to-end testing.
