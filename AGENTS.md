@@ -397,6 +397,11 @@ The same poll also arms a one-per-PR review-comment auto-sweep: once the PR is g
 Tell the captain: the PR's full URL (always the complete `https://...` link, never a bare `#number` - the captain's terminal makes a full URL clickable), a one-paragraph summary, and, for `no-mistakes`, the risk level it emitted.
 (The check contract, for any custom `state/<id>.check.sh` you write yourself: print one line only when firstmate should wake, print nothing otherwise, and finish before `FM_CHECK_TIMEOUT`.)
 
+**Readable PR description.** For `no-mistakes` PRs, after arming the poll run `bin/fm-pr-format.sh <PR url>` once to rewrite no-mistakes' dense auto-generated body (intent summary plus machine notes) into a clean, scannable description.
+This is a metadata readability pass, not a code change, so firstmate runs it directly rather than dispatching a crewmate.
+It is idempotent and safe: a hidden marker means exactly one reformat per PR, and it preserves every fact, link, checklist item, and risk note - if the rewrite comes back empty, fails, or looks like content loss, it leaves the body untouched.
+It never touches code and never merges.
+
 **Review-comment auto-sweep.** When the merge poll wakes you with `auto-sweep: <id> <url>`, relay the PR to the captain first (if you have not already), then run `bin/fm-auto-sweep.sh <id> <PR url>`.
 That dispatches one focused single-PR sweep crewmate that clears the CodeRabbit/reviewer threads - applying safe fixes, replying, and resolving threads, escalating any product/design/destructive call as `needs-decision` - and pushes its fixes to the PR branch.
 The sweep only resolves threads; it never merges and never opens a new PR, so the never-merge-without-the-captain rule is untouched.

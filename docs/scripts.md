@@ -31,6 +31,7 @@ Each file also starts with a short header comment.
 | `fm-peek.sh`             | Print a bounded tail of a crewmate pane                                                                             |
 | `fm-pr-check.sh`         | Record `pr=` and a verified `pr_head=` when available for a PR-ready task, then arm the watcher's merge + review-comment-auto-sweep poll |
 | `fm-auto-sweep.sh`       | Detect (`--check`) and dispatch one focused review-comment sweep per PR once it is green and CodeRabbit has reviewed; only resolves threads, never merges |
+| `fm-pr-format.sh`        | Rewrite a PR's auto-generated body into a clean, scannable description via an agent; idempotent (one per PR) and content-loss-guarded, never merges |
 | `fm-promote.sh`          | Promote a scout task in place so it becomes a protected ship task                                                   |
 | `fm-teardown.sh`         | Return a clean, landed ship worktree or retire/release a secondmate home; requires scout reports, checks child work, and prints the backlog reminder |
 | `fm-harness.sh`          | Detect the running harness; resolve the effective crewmate harness                                                  |
