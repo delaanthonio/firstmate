@@ -3,6 +3,9 @@
 # state/<id>.meta when available, then arms the watcher's merge poll by writing
 # state/<id>.check.sh, which prints one line iff the PR is merged (the watcher's
 # check contract: output = wake firstmate, silence = keep sleeping).
+# The same check also arms the review-comment auto-sweep: it asks
+# fm-auto-sweep.sh whether the PR is green and CodeRabbit has reviewed, and if so
+# prints "auto-sweep: <id> <url>" once (see AGENTS.md task lifecycle).
 # Usage: fm-pr-check.sh <task-id> <pr-url>
 set -eu
 
@@ -40,5 +43,6 @@ fi
 cat > "$STATE/$ID.check.sh" <<EOF
 state=\$(gh pr view "$URL" --json state -q .state 2>/dev/null)
 [ "\$state" = "MERGED" ] && echo "merged"
+"$FM_ROOT/bin/fm-auto-sweep.sh" --check '$ID' '$URL' 2>/dev/null || true
 EOF
-echo "armed: state/$ID.check.sh polls $URL"
+echo "armed: state/$ID.check.sh polls $URL (merge + review-comment auto-sweep)"

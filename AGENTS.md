@@ -83,7 +83,8 @@ state/               volatile runtime signals; gitignored
   <id>.status        appended by crewmates: "<state>: <note>" lines
   <id>.turn-ended    touched by turn-end hooks
   <id>.meta          written by fm-spawn: window=, worktree=, project=, harness=, kind=, mode=, yolo=; kind=secondmate also records home= and projects= (fm-pr-check appends pr= and verified pr_head= when available)
-  <id>.check.sh      optional slow poll you write per task (e.g. merged-PR check)
+  <id>.check.sh      per-task slow poll (fm-pr-check writes the merge + review-comment-auto-sweep poll; you may also write your own)
+  <id>.auto-swept    one-per-PR sentinel written by fm-auto-sweep; present = the review-comment sweep already dispatched (section 7)
   .wake-queue        durable queued wakes: epoch<TAB>seq<TAB>kind<TAB>key<TAB>payload
   .afk               durable away-mode flag; present = sub-supervisor may inject escalations (set by /afk, cleared on user return)
   .watch.lock .wake-queue.lock watcher singleton and queue serialization locks
@@ -392,8 +393,15 @@ Judge a validating crewmate by the run's step status, never by whether its shell
 
 For PR-based ship tasks, the ready signal depends on mode: `no-mistakes` reports `done: PR <url> checks green` after CI is green, while `direct-PR` reports `done: PR <url>` after opening the PR.
 Run `bin/fm-pr-check.sh <id> <PR url>` - it records `pr=` and a verified `pr_head=` when available in the task's meta and arms the watcher's merge poll.
+The same poll also arms a one-per-PR review-comment auto-sweep: once the PR is green and CodeRabbit has reviewed, the watcher wakes with `auto-sweep: <id> <url>`.
 Tell the captain: the PR's full URL (always the complete `https://...` link, never a bare `#number` - the captain's terminal makes a full URL clickable), a one-paragraph summary, and, for `no-mistakes`, the risk level it emitted.
 (The check contract, for any custom `state/<id>.check.sh` you write yourself: print one line only when firstmate should wake, print nothing otherwise, and finish before `FM_CHECK_TIMEOUT`.)
+
+**Review-comment auto-sweep.** When the merge poll wakes you with `auto-sweep: <id> <url>`, relay the PR to the captain first (if you have not already), then run `bin/fm-auto-sweep.sh <id> <PR url>`.
+That dispatches one focused single-PR sweep crewmate that clears the CodeRabbit/reviewer threads - applying safe fixes, replying, and resolving threads, escalating any product/design/destructive call as `needs-decision` - and pushes its fixes to the PR branch.
+The sweep only resolves threads; it never merges and never opens a new PR, so the never-merge-without-the-captain rule is untouched.
+It is idempotent and bounded: exactly one sweep per PR (a `state/<id>.auto-swept` sentinel guards re-dispatch), and the detector stays silent until the PR is green and CodeRabbit has actually posted, so a not-yet-reviewed PR simply waits and retries on the next poll - no separate timer is needed.
+The sweep crewmate is an ordinary direct report: supervise it through the normal lifecycle and tear it down once its fixes have landed on the PR branch.
 
 If the captain says "merge it", run `gh-axi pr merge` yourself; that instruction is the explicit approval. If `yolo=on`, merge a green/approved PR yourself and post the required FYI.
 
@@ -479,7 +487,7 @@ On wake, in order of cheapness:
 2. `signal:` read the listed status files first; a wake lists every signal that landed within the coalescing grace window (e.g. a status write plus the same turn's turn-end marker), and each is ~30 tokens and usually sufficient.
 3. `stale:` the crewmate stopped without reporting; peek the pane (`bin/fm-peek.sh <window>`) to diagnose.
    If the pane is waiting, looping, confused, or unresponsive, load `stuck-crewmate-recovery`.
-4. `check:` a per-task poll fired (usually a merge); act on it.
+4. `check:` a per-task poll fired; act on its output. `merged` means the PR landed (proceed to teardown); `auto-sweep: <id> <url>` means the PR is green and CodeRabbit has reviewed, so relay the PR if you have not and run `bin/fm-auto-sweep.sh <id> <url>` to dispatch the one-per-PR review-comment sweep (PR ready section).
 5. `heartbeat:` review the whole fleet: skim each window's status file, peek panes that look off, check PR-ready tasks for merge, reconcile data/backlog.md, then re-arm the watcher.
    A heartbeat with no captain-relevant change is internal; do not report that the fleet is unchanged.
 
