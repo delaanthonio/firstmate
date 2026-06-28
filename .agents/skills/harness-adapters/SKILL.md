@@ -1,6 +1,6 @@
 ---
 name: harness-adapters
-description: Agent-only reference for firstmate harness operations. Use before spawning or recovering a crewmate or secondmate, handling a trust dialog, sending a harness-specific skill invocation, interrupting or exiting an agent, resuming an exited agent, or verifying a new harness adapter. Contains verified facts for claude, codex, opencode, and pi.
+description: Agent-only reference for firstmate harness operations. Use before spawning or recovering a crewmate or secondmate, handling a trust dialog, sending a harness-specific skill invocation, interrupting or exiting an agent, resuming an exited agent, or verifying a new harness adapter. Contains verified facts for claude, codex, opencode, pi, and droid.
 user-invocable: false
 ---
 
@@ -27,6 +27,7 @@ If the captain asks for a new harness, propose verifying it first: spawn a trivi
 On `unknown`, ask the captain instead of guessing.
 A captain override always beats detection.
 When verifying a new adapter, record its env marker and command name in `bin/fm-harness.sh`.
+Not every harness exports an env marker: claude (`CLAUDECODE=1`) and pi (`PI_CODING_AGENT=true`) do, but codex, opencode, and droid export none to tool subprocesses and are detected purely by the `droid`/`codex`/`opencode` command name in the process ancestry.
 
 For stuck recovery, the target window's harness is recorded as `harness=` in `state/<id>.meta`.
 Use that value for interrupt, exit, resume, and skill-invocation facts.
@@ -40,6 +41,7 @@ Natural language is acceptable if uncertain.
 - codex: `$<skill>`, for example `$no-mistakes`; `/<skill>` is claude-only and codex rejects it as "Unrecognized command".
 - opencode: no separate verified skill invocation beyond normal slash-command behavior; use natural language if the exact skill command is uncertain.
 - pi: no separate verified skill invocation beyond normal command behavior; use natural language if the exact skill command is uncertain.
+- droid: `/<skill>`, for example `/no-mistakes`; droid imports `~/.claude/skills`, so the same user-level skills claude sees are available and `/no-mistakes` is present (verified in its slash palette), meaning a droid crewmate can drive the no-mistakes pipeline itself.
 
 ## claude (VERIFIED)
 
@@ -110,3 +112,33 @@ The decision persists per path in `~/.pi/agent/trust.json`, so later spawns in t
 `fm-spawn` keeps the turn-end extension in `state/`, outside the worktree, because project-local extension files make the trust gate strictly worse and pollute the project.
 The extension must listen for pi's `turn_end` event, not `agent_end`, so the watcher wakes after each completed turn instead of only when the whole agent run exits.
 Pi sets `PI_CODING_AGENT=true` for its children; this is its harness-detection env marker.
+
+## droid (VERIFIED 2026-06-27, droid 0.159.1)
+
+| Fact | Value |
+|---|---|
+| Busy-pane signature | `Press ESC to stop` (constant tail of its working footer, e.g. `⠋ Streaming...  (Press ESC to stop)`, `Invoking tools...`, `Executing...`; the verb varies, the parenthetical is constant) |
+| Exit command | `/quit` ("Exit from the Droid CLI"; returns to the shell and prints a `droid --resume <id>` hint) |
+| Interrupt | single Escape (the footer literally reads "Press ESC to stop"; shows `Interrupted` / `Request cancelled by user`) |
+| Skill invocation | `/<skill>` (e.g. `/no-mistakes`); droid imports `~/.claude/skills`, so user-level skills are available and droid can drive no-mistakes itself |
+
+Factory's droid CLI. Launch is `droid --auto high "$(cat <brief>)"`; `--auto high` is the autonomy level (footer `Auto (High) · allow all commands`), the analog of claude's `--dangerously-skip-permissions`, and it runs every tool with no per-action permission prompt.
+Keep the brief as one positional argument; a single quoted prompt is processed as one message (no multi-arg splitting).
+The interactive TUI stays alive after a turn, idling in the composer, so firstmate steers it with `fm-send` exactly like the other harnesses.
+Mid-turn, Enter steers the running turn and Ctrl+Enter queues; the composer's `Enter to steer · Ctrl+Enter to queue` placeholder is dim/ghost text, and `fm-tmux-lib.sh`'s composer reader correctly reads a busy or idle droid pane as empty, so no `FM_COMPOSER_IDLE_RE` override is needed.
+
+No trust or permission dialog appears on first run in a fresh worktree when droid is already authenticated; authentication and trust persist globally under `~/.factory/`, not per-directory, so later worktrees never re-prompt.
+On an unauthenticated machine a login prompt can appear instead, so still peek the pane after spawn like any other harness.
+
+droid auto-updates in the background, like opencode: a launch can upgrade the binary mid-stream (observed 0.156.2 → 0.159.1) and the running TUI keeps working on the version it started.
+Treat the recorded version as a floor, and re-verify if a launch reports a much newer one.
+The default model is `claude-opus-4-8`; a machine may pin a different model (e.g. a local `gpt-5.5` via a custom provider) through `~/.factory/settings.json`, which is captain environment, not an adapter fact.
+
+Resume after exit with `droid --resume <session-id>` (or bare `droid -r` for the last session); the id is printed on `/quit`.
+
+droid exports no dedicated harness-identification env var to tool subprocesses (no `DROID_*`/`FACTORY_*` marker survives into a shell it spawns; `DROID_PROJECT_DIR`/`FACTORY_PROJECT_DIR` exist only inside hook execution).
+So, like codex and opencode, it is detected by the `droid` command name in the process ancestry, not an env marker.
+
+Turn-end hook: droid implements the full claude-style hook system, including a `Stop` hook that fires when it finishes responding (and not on a user interrupt) - the per-turn turn-end signal the watcher needs.
+`fm-spawn` installs it by writing a settings file to `state/<id>.droid-settings.json`, OUTSIDE the worktree like pi's extension, and launching with `droid --settings <that-file>`, which merges the hook on top of the user's global `~/.factory` settings for that process only.
+The file carries `{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"touch <turn-ended-file>"}]}]}}`; verified to fire on every turn (exit 0) and cleaned up by `fm-teardown`.

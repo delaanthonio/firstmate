@@ -5,7 +5,7 @@
 #        fm-spawn.sh <task-id> [<firstmate-home>] [harness|launch-command] --secondmate
 #   With no harness arg, the harness comes from fm-harness.sh crew (config/crew-harness,
 #   falling back to firstmate's own harness). A bare adapter name (claude|codex|
-#   opencode|pi) overrides it for this spawn. A non-flag string containing whitespace
+#   opencode|pi|droid) overrides it for this spawn. A non-flag string containing whitespace
 #   is treated as a RAW launch command - the escape hatch for verifying new adapters.
 #   --scout records kind=scout in the task's meta (report deliverable, scratch worktree;
 #   see AGENTS.md task lifecycle); --secondmate records kind=secondmate and launches in a
@@ -26,6 +26,9 @@
 #                  turn-end signal rides the launch command, e.g. codex -c notify=[...])
 #     __PIEXT__    absolute path to state/<task-id>.pi-ext.ts (pi turn-end extension,
 #                  written by this script; outside the worktree to avoid pi's trust gate)
+#     __DROIDSETTINGS__  absolute path to state/<task-id>.droid-settings.json (droid
+#                  runtime settings carrying the Stop turn-end hook, written by this
+#                  script; passed via droid's --settings so it lives outside the worktree)
 # Per-harness turn-end hooks are installed automatically; some live outside the worktree.
 # On success prints: spawned <id> harness=<name> kind=<ship|scout|secondmate> mode=<mode> yolo=<on|off> window=<session:window> worktree=<path>
 # mode/yolo are resolved per-project from data/projects.md for ship/scout tasks;
@@ -88,7 +91,7 @@ FIRSTMATE_HOME=
 
 if [ "$KIND" = secondmate ]; then
   case "${POS[1]:-}" in
-    ''|claude|codex|opencode|pi)
+    ''|claude|codex|opencode|pi|droid)
       ARG3=${POS[1]:-}
       ;;
     *' '*)
@@ -138,6 +141,18 @@ launch_template() {
         printf '%s' 'pi "$(cat __BRIEF__)"'
       else
         printf '%s' 'pi -e __PIEXT__ "$(cat __BRIEF__)"'
+      fi
+      ;;
+    # droid: --auto high is the autonomy level (footer "Auto (High) - allow all
+    # commands"), the analog of claude's --dangerously-skip-permissions. The brief
+    # stays one positional arg. Turn-end rides --settings (a process-only settings
+    # merge) carrying a claude-style Stop hook; the file is written OUTSIDE the
+    # worktree, like pi's extension, so it never dirties the worktree or trips a gate.
+    droid)
+      if [ "$kind" = secondmate ]; then
+        printf '%s' 'droid --auto high "$(cat __BRIEF__)"'
+      else
+        printf '%s' 'droid --settings __DROIDSETTINGS__ --auto high "$(cat __BRIEF__)"'
       fi
       ;;
     *) return 1 ;;
@@ -443,6 +458,18 @@ export default function (pi: any) {
 }
 EOF
       ;;
+    droid*)
+      # droid: turn-end via a claude-style Stop hook carried in a process-only
+      # --settings file (see launch_template). Written to state/, OUTSIDE the
+      # worktree like pi's extension, so it never dirties the worktree or trips a
+      # gate. droid's Stop hook fires when it finishes responding (and NOT on a
+      # user interrupt), touching the turn-end file the watcher polls. The file
+      # merges on top of the user's global ~/.factory settings for this process
+      # only. Cleaned up by fm-teardown.
+      cat > "$STATE/$ID.droid-settings.json" <<EOF
+{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"touch '$TURNEND'"}]}]}}
+EOF
+      ;;
     codex*)
       # codex: turn-end rides the launch command via -c notify=[...] and __TURNEND__.
       ;;
@@ -483,9 +510,11 @@ mkdir -p "$STATE"
 sq_brief=$(shell_quote "$BRIEF")
 sq_turnend=$(shell_quote "$TURNEND")
 sq_piext=$(shell_quote "$STATE/$ID.pi-ext.ts")
+sq_droidsettings=$(shell_quote "$STATE/$ID.droid-settings.json")
 LAUNCH=${LAUNCH//__BRIEF__/$sq_brief}
 LAUNCH=${LAUNCH//__TURNEND__/$sq_turnend}
 LAUNCH=${LAUNCH//__PIEXT__/$sq_piext}
+LAUNCH=${LAUNCH//__DROIDSETTINGS__/$sq_droidsettings}
 if [ "$KIND" = secondmate ]; then
   sq_home=$(shell_quote "$PROJ_ABS")
   LAUNCH="FM_ROOT_OVERRIDE= FM_STATE_OVERRIDE= FM_DATA_OVERRIDE= FM_PROJECTS_OVERRIDE= FM_CONFIG_OVERRIDE= FM_HOME=$sq_home $LAUNCH"

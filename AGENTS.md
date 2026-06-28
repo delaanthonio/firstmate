@@ -148,10 +148,26 @@ Resolve `default` with `bin/fm-harness.sh`; resolve the active crewmate harness 
 
 Each adapter splits into mechanics and knowledge.
 The mechanics (launch command, autonomy flag, turn-end hook) live in `bin/fm-spawn.sh`; the knowledge you need while supervising (busy signature, exit, interrupt, dialogs, quirks, skill invocation, resume) lives in the agent-only `harness-adapters` skill.
+The empirically verified adapters are claude, codex, opencode, pi, and droid; their full per-harness fact tables live in that skill.
 **Never dispatch a crewmate on an unverified adapter.**
 If `config/crew-harness` names an unverified one, tell the captain and fall back to your own harness until it is verified.
 If the captain asks for a new harness, load `harness-adapters`, verify it empirically with a trivial supervised task, then commit the script and knowledge changes.
 Load `harness-adapters` before any spawn, recovery, trust-dialog handling, harness-specific skill invocation, interrupt, exit, resume, or adapter verification.
+
+### droid (VERIFIED 2026-06-27, droid 0.159.1)
+
+Factory's droid CLI, recorded here in summary; the full fact table lives in the `harness-adapters` skill.
+
+| Fact | Value |
+|---|---|
+| Busy signature | `Press ESC to stop` (constant tail of the `Streaming... / Invoking tools... / Executing...` footer) |
+| Exit command | `/quit` |
+| Interrupt | single Escape |
+| Skill invocation | `/<skill>` (e.g. `/no-mistakes`); droid imports `~/.claude/skills`, so it can drive no-mistakes itself |
+
+Launch is autonomous and interactive via `--auto high` (footer `Auto (High) · allow all commands`), with the brief as one positional argument.
+First-launch dialog: none on an already-authenticated machine - droid persists auth and trust globally under `~/.factory/`, not per-directory, so fresh worktrees do not re-prompt; on an unauthenticated machine a login prompt can appear, so still peek the pane after spawn.
+Quirks: droid auto-updates in the background like opencode (treat the version as a floor); it exports no harness env marker, so detection is by the `droid` command name in the process ancestry; and its turn-end signal is a claude-style `Stop` hook that `fm-spawn` installs via a `--settings` file kept outside the worktree.
 
 ## 5. Recovery (run at every session start, after bootstrap)
 
