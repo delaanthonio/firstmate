@@ -118,7 +118,7 @@ Full architecture - the supervision engine, worktree isolation, secondmates, pro
 ## Built-in skills
 
 Firstmate ships these user-invocable built-in skills.
-Claude uses the slash form shown here; codex uses the same names with `$`, such as `$afk`.
+Claude and droid use the slash form shown here; codex uses the same names with `$`, such as `$afk`.
 
 | Skill              | What it does                                                                                                                                  |
 | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |

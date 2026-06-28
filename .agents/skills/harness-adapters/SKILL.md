@@ -38,7 +38,7 @@ Send the validation skill using the target harness's skill invocation form.
 Natural language is acceptable if uncertain.
 
 - claude: `/<skill>`, for example `/no-mistakes`.
-- codex: `$<skill>`, for example `$no-mistakes`; `/<skill>` is claude-only and codex rejects it as "Unrecognized command".
+- codex: `$<skill>`, for example `$no-mistakes`; slash-form skills are not supported by codex, which rejects them as "Unrecognized command".
 - opencode: no separate verified skill invocation beyond normal slash-command behavior; use natural language if the exact skill command is uncertain.
 - pi: no separate verified skill invocation beyond normal command behavior; use natural language if the exact skill command is uncertain.
 - droid: `/<skill>`, for example `/no-mistakes`; droid imports `~/.claude/skills`, so the same user-level skills claude sees are available and `/no-mistakes` is present (verified in its slash palette), meaning a droid crewmate can drive the no-mistakes pipeline itself.
@@ -71,7 +71,7 @@ That styled capture is internal to the boolean detector only.
 | Busy-pane signature | `esc to interrupt` (shown as `• Working (Xs • esc to interrupt)`) |
 | Exit command | `/quit` (slash popup needs about 1 second between text and Enter; `fm-send` handles it) |
 | Interrupt | single Escape |
-| Skill invocation | `$<skill>` (e.g. `$no-mistakes`); `/<skill>` is claude-only and codex rejects it as "Unrecognized command" |
+| Skill invocation | `$<skill>` (e.g. `$no-mistakes`); slash-form skills are not supported by codex, which rejects them as "Unrecognized command" |
 
 Directory trust dialog on first run per repo root: "Do you trust the contents of this directory?"
 Accept with Enter.
