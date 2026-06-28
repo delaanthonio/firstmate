@@ -122,7 +122,8 @@ Pi sets `PI_CODING_AGENT=true` for its children; this is its harness-detection e
 | Interrupt | single Escape (the footer literally reads "Press ESC to stop"; shows `Interrupted` / `Request cancelled by user`) |
 | Skill invocation | `/<skill>` (e.g. `/no-mistakes`); droid imports `~/.claude/skills`, so user-level skills are available and droid can drive no-mistakes itself |
 
-Factory's droid CLI. Launch is `droid --auto high "$(cat <brief>)"`; `--auto high` is the autonomy level (footer `Auto (High) · allow all commands`), the analog of claude's `--dangerously-skip-permissions`, and it runs every tool with no per-action permission prompt.
+Factory's droid CLI. The base interactive launch is `droid --auto high "$(cat <brief>)"`; `--auto high` is the autonomy level (footer `Auto (High) · allow all commands`), the analog of claude's `--dangerously-skip-permissions`, and it runs every tool with no per-action permission prompt.
+For ship and scout tasks, `fm-spawn` adds `--settings <state/<id>.droid-settings.json>` to carry the turn-end hook; secondmate launches use the base form.
 Keep the brief as one positional argument; a single quoted prompt is processed as one message (no multi-arg splitting).
 The interactive TUI stays alive after a turn, idling in the composer, so firstmate steers it with `fm-send` exactly like the other harnesses.
 Mid-turn, Enter steers the running turn and Ctrl+Enter queues; the composer's `Enter to steer · Ctrl+Enter to queue` placeholder is dim/ghost text, and `fm-tmux-lib.sh`'s composer reader correctly reads a busy or idle droid pane as empty, so no `FM_COMPOSER_IDLE_RE` override is needed.
