@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 # Detect the agent harness this process tree runs on.
-# Usage: fm-harness.sh         print own harness: claude|codex|opencode|pi|unknown
+# Usage: fm-harness.sh         print own harness: claude|codex|opencode|pi|droid|unknown
 #        fm-harness.sh crew    print the effective crewmate harness
 #                              (config/crew-harness; "default" resolves to own)
 # Detection layers: verified environment markers first, then process ancestry.
 # Record each newly verified env marker here.
+# Not every harness exports a marker: claude sets CLAUDECODE=1 and pi sets
+# PI_CODING_AGENT=true, but codex, opencode, and droid export no dedicated
+# harness var to tool subprocesses (verified empirically: a droid tool
+# subprocess inherits no DROID_*/FACTORY_* marker - DROID_PROJECT_DIR exists
+# only inside hook execution). Those three are detected by process ancestry.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -24,6 +29,7 @@ detect_own() {
       *claude*) echo claude; return ;;
       *codex*) echo codex; return ;;
       *opencode*) echo opencode; return ;;
+      *droid*) echo droid; return ;;
       pi) echo pi; return ;;
       node*|python*)
         # Bare interpreter: match the harness name in its script path.
@@ -32,6 +38,7 @@ detect_own() {
           *claude*) echo claude; return ;;
           *codex*) echo codex; return ;;
           *opencode*) echo opencode; return ;;
+          *droid*) echo droid; return ;;
           *" pi "*|*/pi) echo pi; return ;;
         esac ;;
     esac
