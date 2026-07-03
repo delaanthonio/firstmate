@@ -94,6 +94,7 @@ state/               volatile runtime signals; gitignored
   <id>.status        appended by crewmates: "<state>: <note>" wake-event lines, not current-state truth
   <id>.turn-ended    touched by turn-end hooks
   <id>.grok-turnend-token   firstmate-owned grok hook registry token for the task; removed by teardown
+  <id>.pi-ext.ts / <id>.droid-settings.json  optional per-harness turn-end hook files written by fm-spawn
   <id>.meta          written by fm-spawn: window=, worktree=, project=, harness=, model=, effort=, kind=, mode=, yolo=, tasktmp=; kind=secondmate also records home= and projects=; a task on a non-default spawn-capable runtime backend also records backend= (absent means tmux, the verified reference backend; herdr records herdr_session=, herdr_workspace_id=, herdr_tab_id=, herdr_pane_id= (docs/herdr-backend.md), zellij records zellij_session=, zellij_tab_id=, zellij_pane_id= (docs/zellij-backend.md), orca records orca_worktree_id= plus terminal= while keeping window=fm-<id> as the firstmate alias (docs/orca-backend.md), and cmux records cmux_workspace_id= plus cmux_surface_id= (docs/cmux-backend.md); bin/fm-backend.sh, section 8) (fm-pr-check, including through fm-pr-merge, appends pr= and GitHub's pr_head= when available; fm-x-link appends x_request=, x_request_ts=, and x_followups= for an X-mention-originated task, section 14)
   <id>.check.sh      optional slow poll you write per task (e.g. merged-PR check)
   x-watch.check.sh   generated X-mode relay poll shim; present only when opted in (section 14)
