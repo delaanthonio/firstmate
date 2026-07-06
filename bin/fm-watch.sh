@@ -37,6 +37,8 @@ mkdir -p "$STATE"
 
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
+# shellcheck source=bin/fm-supervision-lib.sh
+. "$SCRIPT_DIR/fm-supervision-lib.sh"
 # Shared wake classifier (captain-relevant verbs + signal/stale/heartbeat
 # predicates), the SAME library the away-mode daemon uses, so the triage policy
 # has one definition.
@@ -298,18 +300,6 @@ scan_signals() {
   return 0
 }
 
-run_check() {
-  local c=$1
-  if command -v timeout >/dev/null 2>&1; then
-    timeout "$CHECK_TIMEOUT" bash "$c" 2>/dev/null || true
-  elif command -v gtimeout >/dev/null 2>&1; then
-    gtimeout "$CHECK_TIMEOUT" bash "$c" 2>/dev/null || true
-  else
-    # shellcheck disable=SC2016  # single quotes are deliberate: Perl expands its own variables.
-    perl -e 'my $t = shift; my $pid = fork; die "fork failed" unless defined $pid; if (!$pid) { setpgrp(0, 0); exec @ARGV } local $SIG{ALRM} = sub { kill "TERM", -$pid; select undef, undef, undef, 0.2; kill "KILL", -$pid; exit 124 }; alarm $t; waitpid $pid, 0; exit($? >> 8)' "$CHECK_TIMEOUT" bash "$c" 2>/dev/null || true
-  fi
-}
-
 # Surfaced-marker bookkeeping for the heartbeat backstop. The watcher records the
 # captain-relevant status line it SURFACED (woke firstmate for) in
 # .hb-surfaced-<task>, the watcher's analogue of the daemon's
@@ -383,18 +373,11 @@ while :; do
   # keeps producing signals - the slow poll (e.g. merge detection) would then
   # never run until the fleet went quiet. Checks are due only every
   # CHECK_INTERVAL, so most cycles skip this block and fall straight through.
-  if [ "$(age_of "$STATE/.last-check")" -ge "$CHECK_INTERVAL" ]; then
-    for c in "$STATE"/*.check.sh; do
-      [ -e "$c" ] || continue
-      out=$(run_check "$c")
-      if [ -n "$out" ]; then
-        reason="check: $c: $out"
-        fm_wake_append check "$c" "$reason" || exit 1
-        touch "$STATE/.last-check"
-        wake "$reason"
-      fi
-    done
-    touch "$STATE/.last-check"
+  if fm_supervision_run_due_checks "$STATE" "$CHECK_INTERVAL" "$CHECK_TIMEOUT" false; then
+    wake "$FM_SUP_CHECK_REASON"
+  else
+    check_rc=$?
+    [ "$check_rc" -eq 2 ] && exit 1
   fi
 
   # On the first changed signal, linger one grace period and re-scan before
