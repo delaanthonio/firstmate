@@ -14,7 +14,7 @@
 #
 # fm_backend_hometag() derives a short, stable tag: a readable prefix
 # ("firstmate" for the primary home, "2ndmate-<id>" for a secondmate home
-# carrying .fm-secondmate-home) plus a short hash of the resolved FM_HOME
+# carrying .fm-secondmate-home) plus a short hash of the resolved FM_ROOT
 # path, so distinct homes - including multiple homes sharing one checkout -
 # never collide even though they share one backend-global namespace.
 # Callers source this file AFTER resolving their own
@@ -29,7 +29,7 @@
 FM_BACKEND_HOMETAG_SECONDMATE_MARKER=".fm-secondmate-home"
 
 fm_backend_hometag() {
-  local marker="$FM_HOME/$FM_BACKEND_HOMETAG_SECONDMATE_MARKER" id prefix home hash
+  local marker="$FM_HOME/$FM_BACKEND_HOMETAG_SECONDMATE_MARKER" id prefix root hash
   if [ -f "$marker" ]; then
     id=$(tr -d '[:space:]' < "$marker" 2>/dev/null)
     if [ -n "$id" ]; then
@@ -40,13 +40,13 @@ fm_backend_hometag() {
   else
     prefix="firstmate"
   fi
-  home=$(cd "$FM_HOME" 2>/dev/null && pwd -P) || home=$FM_HOME
+  root=$(cd "$FM_ROOT" 2>/dev/null && pwd -P) || root=$FM_ROOT
   if command -v shasum >/dev/null 2>&1; then
-    hash=$(printf '%s' "$home" | shasum -a 256 | awk '{print substr($1,1,8)}')
+    hash=$(printf '%s' "$root" | shasum -a 256 | awk '{print substr($1,1,8)}')
   elif command -v sha256sum >/dev/null 2>&1; then
-    hash=$(printf '%s' "$home" | sha256sum | awk '{print substr($1,1,8)}')
+    hash=$(printf '%s' "$root" | sha256sum | awk '{print substr($1,1,8)}')
   else
-    hash=$(printf '%s' "$home" | cksum | awk '{printf "%08x", $1}')
+    hash=$(printf '%s' "$root" | cksum | awk '{printf "%08x", $1}')
   fi
   printf '%s-%s' "$prefix" "$hash"
 }
