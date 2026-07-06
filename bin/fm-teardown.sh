@@ -705,6 +705,8 @@ remove_secondmate_registry_entry() {
   mv "$tmp" "$SECONDMATE_REG"
 }
 
+[ -z "$TASK_TMP" ] || validate_task_tmp_for_removal "$TASK_TMP" "task temp root" >/dev/null || exit 1
+
 if [ "$KIND" = secondmate ]; then
   [ -n "$HOME_PATH" ] || HOME_PATH=$WT
   validate_firstmate_home_for_removal "$HOME_PATH" "secondmate home" "$ID" >/dev/null || exit 1

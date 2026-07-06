@@ -46,6 +46,12 @@ task_tmp_for_home() {
   printf '/tmp/fm-%s/%s' "$tag" "$id"
 }
 
+task_tmp_for_root_and_home() {
+  local root=$1 home=$2 id=$3 tag
+  tag=$(FM_HOME="$home" FM_ROOT="$root" bash -c '. "$1"; fm_backend_hometag' _ "$ROOT/bin/fm-backend-hometag-lib.sh")
+  printf '/tmp/fm-%s/%s' "$tag" "$id"
+}
+
 remember_task_tmp_parent() {
   TASK_TMP_PARENTS="$TASK_TMP_PARENTS ${1%/*}"
 }
@@ -152,6 +158,20 @@ test_tasktmp_path_is_home_scoped() {
   pass "task temp root is home-scoped"
 }
 
+test_tasktmp_path_uses_home_not_checkout() {
+  local id=same-id-z1
+  local checkout="$TMP_ROOT/shared-checkout"
+  local home_a="$TMP_ROOT/primary-home-a"
+  local home_b="$TMP_ROOT/primary-home-b"
+  mkdir -p "$checkout" "$home_a" "$home_b"
+  local tmp_a tmp_b
+  tmp_a=$(task_tmp_for_root_and_home "$checkout" "$home_a" "$id")
+  tmp_b=$(task_tmp_for_root_and_home "$checkout" "$home_b" "$id")
+  [ "$tmp_a" != "$tmp_b" ] \
+    || fail "same task id in different homes sharing a checkout produced the same task temp root"
+  pass "task temp root is scoped by FM_HOME, not checkout"
+}
+
 # --- fm-teardown side (real subprocess) ---
 
 test_teardown_removes_tasktmp_dir() {
@@ -239,9 +259,30 @@ test_teardown_refuses_unexpected_tasktmp_dir() {
   pass "fm-teardown refuses unexpected tasktmp paths"
 }
 
+test_teardown_validates_tasktmp_before_backend_cleanup() {
+  local id=td-unsafe-early-z6
+  local task_tmp="$TMP_ROOT/unsafe-fm-$id"
+  mkdir -p "$task_tmp/gotmp"
+  local fake out
+  fake=$(make_fake_root "$id" "$task_tmp")
+  out="$TMP_ROOT/$id.out"
+  if bash "$fake/bin/fm-teardown.sh" "$id" >"$out" 2>&1; then
+    fail "teardown succeeded with an unexpected tasktmp path"
+  fi
+  [ -f "$fake/state/$id.meta" ] \
+    || fail "teardown removed meta before refusing unsafe tasktmp"
+  [ -d "$task_tmp/gotmp" ] \
+    || fail "teardown removed an unexpected tasktmp path"
+  grep -F 'teardown complete' "$out" >/dev/null \
+    && fail "teardown completed after refusing unsafe tasktmp"
+  pass "fm-teardown validates tasktmp before destructive cleanup"
+}
+
 test_spawn_contract_and_mkdir_pattern
 test_tasktmp_path_is_home_scoped
+test_tasktmp_path_uses_home_not_checkout
 test_teardown_removes_tasktmp_dir
 test_teardown_skips_gracefully_without_tasktmp
 test_teardown_skips_gracefully_when_dir_missing
 test_teardown_refuses_unexpected_tasktmp_dir
+test_teardown_validates_tasktmp_before_backend_cleanup
