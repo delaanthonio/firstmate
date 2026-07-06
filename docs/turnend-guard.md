@@ -59,6 +59,57 @@ It first uses `fm_supervision_status` to count in-flight tasks, then requires `f
 That shared live-watcher check is the same one used by `bin/fm-watch-arm.sh`: the recorded `state/.watch.lock/pid` must name a live process, the lock's recorded home/path/pid-identity must match the current live pid, and `state/.last-watcher-beat` must still be within `FM_GUARD_GRACE`.
 This means a just-exited watcher with a fresh leftover beacon still blocks the Stop hook immediately, while a live but wedged watcher with an ancient beacon also blocks.
 
+## Standing check-script backstop (verified 2026-07-06)
+
+The watcher remains the default owner of standing check scripts (`state/*.check.sh`), but the Stop hook now runs the same due-check path before it evaluates watcher liveness.
+This closes the mid-turn gap where a merge/CI/no-mistakes poll becomes actionable while the primary agent is still thinking and the detached watcher has not yet had a chance to wake the session.
+
+The one-owner implementation lives in `bin/fm-supervision-lib.sh` as `fm_supervision_run_due_checks <state-dir> <interval-seconds> <timeout-seconds> [log-errors]`.
+Both `bin/fm-watch.sh` and `bin/fm-turnend-guard.sh` call that function; the watcher no longer carries its own private `run_check` copy.
+The shared runner:
+
+- skips instantly when no `state/*.check.sh` exists or `.last-check` is still inside `FM_CHECK_INTERVAL`;
+- acquires `state/.last-check.lock`, then rechecks the cadence under the lock, so the watcher and Stop hook cannot run the same due sweep concurrently or back-to-back;
+- runs each check under `FM_CHECK_TIMEOUT`, using the same `timeout` / `gtimeout` / Perl fallback pattern the watcher used before;
+- appends an actionable `check` wake to `state/.wake-queue` through `fm_wake_append` before stamping `.last-check`;
+- stamps `.last-check` after silent, erroring, or timed-out due sweeps so a failing check cannot wedge every turn end;
+- returns failure-open for check errors, timeouts, append errors, and concurrent lock ownership. The Stop hook logs check errors/timeouts to stderr when it sees them; the watcher preserves its old quiet behavior.
+
+If a due check prints stdout, the Stop hook enqueues the wake and blocks the Stop once with a bordered `●` banner:
+
+```
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  TURN WOULD END WITH A DUE CHECK WAKE
+●  /path/to/state/<id>.check.sh
+●  <check output>
+●  Drain queued wakes before ending the turn: bin/fm-wake-drain.sh
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+The same `stop_hook_active` retry guard still applies first: Claude Code's second Stop attempt in the same turn is always allowed, so an actionable check can force one continuation but cannot trap the primary in a loop.
+
+Verification from the implementation worktree:
+
+```
+$ tests/fm-standing-checks.test.sh
+ok - fm_supervision_run_due_checks: due actionable check appends wake and stamps schedule
+ok - fm_supervision_run_due_checks: not-due check does not double-run
+ok - fm_supervision_run_due_checks: missing and silent checks stay quiet
+ok - fm_supervision_run_due_checks: erroring check fails open
+ok - fm_supervision_run_due_checks: timeout fails open without wedging
+ok - fm_supervision_run_due_checks: held lock prevents concurrent check execution
+
+$ tests/fm-turnend-guard.test.sh
+...
+ok - fm-turnend-guard: due actionable check queues a wake and blocks only once
+ok - fm-turnend-guard: standing checks are scoped to the primary checkout only
+...
+ok - .claude/settings.json: Stop hook uses CLAUDE_PROJECT_DIR-anchored command
+
+$ shellcheck bin/*.sh bin/backends/*.sh tests/*.sh
+# no output
+```
+
 ## Scoping to the PRIMARY only
 
 `.claude/settings.json` is a TRACKED file at the repo root, so it is checked out into every worktree of this repo: the primary checkout, any crewmate/scout task worktree spawned to work on firstmate itself (the recursive "firstmate improving itself" case, which is how this very feature was built), and every secondmate home (whether acquired via a treehouse lease or a `git clone`, per `bin/fm-home-seed.sh`).

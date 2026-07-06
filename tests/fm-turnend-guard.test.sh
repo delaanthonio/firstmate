@@ -287,6 +287,44 @@ test_hook_loop_guard_allows_retry() {
   pass "fm-turnend-guard: stop_hook_active=true always allows the stop (never blocks twice in one turn)"
 }
 
+test_hook_blocks_once_for_due_actionable_check() {
+  local dir out status queue
+  dir=$(make_primary_dir "$TMP_ROOT/hook-check-wake")
+  cat > "$dir/state/merge.check.sh" <<'SH'
+#!/usr/bin/env bash
+printf 'merged PR 123\n'
+SH
+  chmod +x "$dir/state/merge.check.sh"
+  out=$(run_hook "$dir" false); status=$?
+  expect_code 2 "$status" "hook must block when a due check prints an actionable line"
+  assert_contains "$out" "TURN WOULD END WITH A DUE CHECK WAKE" "check block banner must name the due check wake"
+  assert_contains "$out" "merged PR 123" "check block banner must include the actionable check output"
+  queue=$(cat "$dir/state/.wake-queue")
+  assert_contains "$queue" "check" "hook must durably queue a check wake before blocking"
+  assert_contains "$queue" "merge.check.sh: merged PR 123" "queued check wake must include the actionable output"
+  out=$(run_hook "$dir" true); status=$?
+  expect_code 0 "$status" "stop_hook_active retry must allow stop after a check block"
+  [ -z "$out" ] || fail "hook produced output on check loop-guard retry: $out"
+  pass "fm-turnend-guard: due actionable check queues a wake and blocks only once"
+}
+
+test_hook_does_not_run_check_outside_primary_scope() {
+  local dir count out status
+  dir=$(make_secondmate_dir "$TMP_ROOT/hook-check-secondmate")
+  count="$dir/state/count"
+  cat > "$dir/state/merge.check.sh" <<SH
+#!/usr/bin/env bash
+printf '1\n' > "$count"
+printf 'merged\n'
+SH
+  chmod +x "$dir/state/merge.check.sh"
+  out=$(run_hook "$dir" false); status=$?
+  expect_code 0 "$status" "hook must skip checks outside the primary checkout"
+  [ -z "$out" ] || fail "hook produced output outside primary scope: $out"
+  assert_absent "$count" "hook should not execute checks in a secondmate home"
+  pass "fm-turnend-guard: standing checks are scoped to the primary checkout only"
+}
+
 test_hook_silent_in_secondmate_home() {
   local dir out status
   dir=$(make_secondmate_dir "$TMP_ROOT/hook-secondmate")
@@ -377,6 +415,8 @@ test_hook_blocks_from_fm_home_state
 test_hook_ignores_repo_state_when_fm_home_set
 test_hook_uses_state_override
 test_hook_loop_guard_allows_retry
+test_hook_blocks_once_for_due_actionable_check
+test_hook_does_not_run_check_outside_primary_scope
 test_hook_silent_in_secondmate_home
 test_hook_silent_in_crewmate_worktree
 test_hook_silent_without_jq

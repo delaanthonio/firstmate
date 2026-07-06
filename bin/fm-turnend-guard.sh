@@ -36,6 +36,8 @@ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 GRACE=${FM_GUARD_GRACE:-300}
+CHECK_INTERVAL=${FM_CHECK_INTERVAL:-300}
+CHECK_TIMEOUT=${FM_CHECK_TIMEOUT:-30}
 WATCH="$SCRIPT_DIR/fm-watch.sh"
 
 # shellcheck source=bin/fm-supervision-lib.sh
@@ -53,27 +55,30 @@ command -v jq >/dev/null 2>&1 || exit 0
 STOP_HOOK_ACTIVE=$(printf '%s' "$PAYLOAD" | jq -r '.stop_hook_active // false' 2>/dev/null) || exit 0
 [ "$STOP_HOOK_ACTIVE" = "true" ] && exit 0
 
-# --- scope precisely to the PRIMARY checkout --------------------------------
-# Excludes secondmate homes (the .fm-secondmate-home marker is written at seed
-# time regardless of whether the home was treehouse-leased or git-cloned; see
-# bin/fm-home-seed.sh) and ordinary crewmate/scout task worktrees of
-# firstmate-on-itself (bin/fm-spawn.sh only ever hands those out as genuine
-# linked `git worktree`s - it aborts the spawn otherwise - so a plain,
-# non-worktree checkout is never one of those). A linked worktree's git-dir
-# lives under the main repo's .git/worktrees/<name> and differs from the common
-# (shared) git-dir; only the main, non-worktree checkout has the two equal.
-[ -f "$FM_ROOT/.fm-secondmate-home" ] && exit 0
-GIT_DIR=$(git -C "$FM_ROOT" rev-parse --git-dir 2>/dev/null) || exit 0
-GIT_COMMON_DIR=$(git -C "$FM_ROOT" rev-parse --git-common-dir 2>/dev/null) || exit 0
-[ "$GIT_DIR" = "$GIT_COMMON_DIR" ] || exit 0
-[ -f "$FM_ROOT/AGENTS.md" ] || exit 0
-[ -d "$FM_ROOT/bin" ] || exit 0
-[ -d "$STATE" ] || exit 0
-
-# --- the actual predicate ----------------------------------------------------
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 
+# --- scope precisely to the PRIMARY checkout --------------------------------
+fm_supervision_is_primary_checkout "$FM_ROOT" "$STATE" || exit 0
+
+# --- standing check-script backstop -----------------------------------------
+if fm_supervision_run_due_checks "$STATE" "$CHECK_INTERVAL" "$CHECK_TIMEOUT" true; then
+  rule='━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+  {
+    printf '●%s\n' "$rule"
+    printf '●  TURN WOULD END WITH A DUE CHECK WAKE\n'
+    printf '●  %s\n' "$FM_SUP_CHECK_SCRIPT"
+    printf '●  %s\n' "$FM_SUP_CHECK_OUTPUT"
+    printf '●  Drain queued wakes before ending the turn: bin/fm-wake-drain.sh\n'
+    printf '●%s\n' "$rule"
+  } >&2
+  exit 2
+else
+  check_rc=$?
+  [ "$check_rc" -eq 2 ] && printf 'fm-turnend-guard: failed to queue due check wake; allowing stop fail-open\n' >&2
+fi
+
+# --- the actual predicate ----------------------------------------------------
 fm_supervision_status "$STATE" "$GRACE"
 [ "$FM_SUP_IN_FLIGHT" -gt 0 ] || exit 0
 fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME" && exit 0
