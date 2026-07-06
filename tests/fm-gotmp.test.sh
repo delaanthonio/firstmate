@@ -192,6 +192,24 @@ test_teardown_removes_tasktmp_dir() {
   pass "fm-teardown removes the dir pointed to by tasktmp= in meta"
 }
 
+test_teardown_uses_state_override_home_for_tasktmp() {
+  local id=td-state-home-z2
+  local fake home task_tmp
+  home="$TMP_ROOT/$id-home"
+  mkdir -p "$home/state" "$home/data" "$home/config"
+  task_tmp=$(task_tmp_for_home "$home" "$id")
+  fake=$(make_fake_root "$id" "$task_tmp")
+  mv "$fake/state/$id.meta" "$home/state/$id.meta"
+  remember_task_tmp_parent "$task_tmp"
+  mkdir -p "$task_tmp/gotmp"
+  FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" FM_CONFIG_OVERRIDE="$home/config" \
+    bash "$fake/bin/fm-teardown.sh" "$id" >/dev/null 2>&1 \
+    || fail "teardown did not validate tasktmp against the FM_STATE_OVERRIDE home"
+  [ ! -e "$task_tmp" ] \
+    || fail "teardown with FM_STATE_OVERRIDE did not remove the home-scoped tasktmp dir"
+  pass "fm-teardown validates tasktmp against FM_STATE_OVERRIDE's home when FM_HOME is unset"
+}
+
 test_teardown_skips_gracefully_without_tasktmp() {
   # Backward compat: a meta from a pre-fix task has no tasktmp= line. Teardown must
   # not error and must not remove anything.
@@ -282,6 +300,7 @@ test_spawn_contract_and_mkdir_pattern
 test_tasktmp_path_is_home_scoped
 test_tasktmp_path_uses_home_not_checkout
 test_teardown_removes_tasktmp_dir
+test_teardown_uses_state_override_home_for_tasktmp
 test_teardown_skips_gracefully_without_tasktmp
 test_teardown_skips_gracefully_when_dir_missing
 test_teardown_refuses_unexpected_tasktmp_dir

@@ -44,6 +44,7 @@
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FM_HOME_WAS_SET=${FM_HOME+x}
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
@@ -78,6 +79,10 @@ PR_URL=$(grep '^pr=' "$META" | tail -1 | cut -d= -f2- || true)
 TASK_TMP=$(grep '^tasktmp=' "$META" | cut -d= -f2- || true)
 ORCA_WORKTREE_ID=$(fm_meta_get "$META" orca_worktree_id)
 ORCA_PATH_MATCH_VERIFIED=0
+TASK_HOME=$FM_HOME
+if [ -z "$FM_HOME_WAS_SET" ] && [ -n "${FM_STATE_OVERRIDE:-}" ] && [ "$(basename "$STATE")" = state ]; then
+  TASK_HOME=$(cd "$(dirname "$STATE")" 2>/dev/null && pwd -P) || TASK_HOME=$(dirname "$STATE")
+fi
 
 KIND=$(grep '^kind=' "$META" | cut -d= -f2- || true)
 [ -n "$KIND" ] || KIND=ship
@@ -709,7 +714,7 @@ remove_secondmate_registry_entry() {
   mv "$tmp" "$SECONDMATE_REG"
 }
 
-[ -z "$TASK_TMP" ] || validate_task_tmp_for_removal "$TASK_TMP" "task temp root" >/dev/null || exit 1
+[ -z "$TASK_TMP" ] || validate_task_tmp_for_removal "$TASK_TMP" "task temp root" "$ID" "$TASK_HOME" >/dev/null || exit 1
 
 if [ "$KIND" = secondmate ]; then
   [ -n "$HOME_PATH" ] || HOME_PATH=$WT
@@ -853,7 +858,7 @@ fi
 remove_grok_turnend_auth "$STATE" "$ID"
 # Remove the per-task temp root recorded by spawn.
 # Read before the state-file rm below; empty (pre-fix tasks without tasktmp=) is a no-op.
-[ -n "$TASK_TMP" ] && safe_rm_rf_task_tmp "$TASK_TMP"
+[ -n "$TASK_TMP" ] && safe_rm_rf_task_tmp "$TASK_TMP" "$ID" "$TASK_HOME"
 rm -f "$STATE/$ID.status" "$STATE/$ID.turn-ended" "$STATE/$ID.check.sh" "$STATE/$ID.meta" "$STATE/$ID.pi-ext.ts" "$STATE/$ID.droid-settings.json" "$STATE/$ID.grok-turnend-token"
 if [ "$KIND" != scout ] && [ "$KIND" != secondmate ] && [ "$MODE" != local-only ]; then
   "$FM_ROOT/bin/fm-fleet-sync.sh" "$PROJ" || true
