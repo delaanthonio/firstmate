@@ -13,6 +13,12 @@ set -u
 TMP_ROOT=$(fm_test_tmproot fm-secondmate-safety)
 export FM_BACKEND=tmux
 
+task_tmp_for_home() {
+  local home=$1 id=$2 tag
+  tag=$(FM_HOME="$home" FM_ROOT="$home" bash -c '. "$1"; fm_backend_hometag' _ "$ROOT/bin/fm-backend-hometag-lib.sh")
+  printf '/tmp/fm-%s/%s' "$tag" "$id"
+}
+
 
 test_fm_home_parameterization() {
   local brief home_one home_two out
@@ -1104,7 +1110,7 @@ EOF
 }
 
 test_secondmate_force_teardown_discards_child_work() {
-  local home subhome childproj childwt fakebin log
+  local home subhome childproj childwt child_task_tmp fakebin log
   home="$TMP_ROOT/force-teardown-home"
   subhome="$TMP_ROOT/force-teardown-subhome"
   childproj="$subhome/projects/alpha"
@@ -1112,6 +1118,9 @@ test_secondmate_force_teardown_discards_child_work() {
   mkdir -p "$home/state" "$home/data" "$subhome/state"
   fm_git_worktree "$childproj" "$childwt" force-child
   printf 'domain\n' > "$subhome/.fm-secondmate-home"
+  child_task_tmp=$(task_tmp_for_home "$subhome" child)
+  mkdir -p "$child_task_tmp/gotmp"
+  printf 'leftover\n' > "$child_task_tmp/gotmp/build-artifact"
   cat > "$home/state/domain.meta" <<EOF
 window=firstmate:fm-domain
 worktree=$subhome
@@ -1132,6 +1141,7 @@ harness=echo
 kind=ship
 mode=no-mistakes
 yolo=off
+tasktmp=$child_task_tmp
 EOF
   fakebin=$(make_fake_tmux "$TMP_ROOT/force-teardown-fake")
   log="$TMP_ROOT/force-teardown-fake/tmux.log"
@@ -1144,6 +1154,8 @@ EOF
     || fail "force teardown failed to discard child work"
   [ ! -d "$subhome" ] || fail "force teardown did not remove the retired secondmate home"
   [ ! -d "$childwt" ] || fail "force teardown did not remove child worktree"
+  [ ! -e "$child_task_tmp" ] || fail "force teardown did not remove child task temp root"
+  rmdir "${child_task_tmp%/*}" 2>/dev/null || true
   [ ! -e "$home/state/domain.meta" ] || fail "teardown did not clear parent meta"
   grep -F -- '- domain ' "$home/data/secondmates.md" >/dev/null && fail "force teardown did not remove secondmate registry route"
   grep -F 'kill-window -t firstmate:fm-child' "$log" >/dev/null || fail "force teardown did not kill child window"
@@ -1413,6 +1425,54 @@ EOF
   grep -F 'kill-window' "$log" >/dev/null && fail "force teardown killed windows before subhome validation"
   grep -F 'not a seeded secondmate home' "$err" >/dev/null || fail "force teardown did not explain missing seed marker"
   pass "force teardown validates subhome before child cleanup"
+}
+
+test_secondmate_force_teardown_prevalidates_child_tasktmp() {
+  local home subhome childproj childwt child_task_tmp fakebin err log
+  home="$TMP_ROOT/prevalidate-child-tasktmp-home"
+  subhome="$TMP_ROOT/prevalidate-child-tasktmp-subhome"
+  childproj="$subhome/projects/alpha"
+  childwt="$TMP_ROOT/prevalidate-child-tasktmp-worktree"
+  child_task_tmp="$TMP_ROOT/unsafe-child-tasktmp"
+  err="$TMP_ROOT/prevalidate-child-tasktmp.err"
+  mkdir -p "$home/state" "$home/data" "$subhome/state" "$childproj" "$childwt" "$child_task_tmp/gotmp"
+  printf 'domain\n' > "$subhome/.fm-secondmate-home"
+  cat > "$home/state/domain.meta" <<EOF
+window=firstmate:fm-domain
+worktree=$subhome
+project=$subhome
+harness=echo
+kind=secondmate
+mode=secondmate
+yolo=off
+home=$subhome
+projects=alpha
+EOF
+  printf '%s\n' '- domain - design domain (home: '"$subhome"'; scope: design domain; projects: alpha; added 2026-06-22)' > "$home/data/secondmates.md"
+  cat > "$subhome/state/child.meta" <<EOF
+window=firstmate:fm-child
+worktree=$childwt
+project=$childproj
+harness=echo
+kind=ship
+mode=no-mistakes
+yolo=off
+tasktmp=$child_task_tmp
+EOF
+  fakebin=$(make_fake_tmux "$TMP_ROOT/prevalidate-child-tasktmp-fake")
+  log="$TMP_ROOT/prevalidate-child-tasktmp-fake/tmux.log"
+  if PATH="$fakebin:$PATH" FM_HOME="$home" FM_FAKE_TMUX_LOG="$log" FM_FAKE_TMUX_CAPTURE="$TMP_ROOT/prevalidate-child-tasktmp-fake/pane.txt" \
+    "$ROOT/bin/fm-teardown.sh" domain --force >/dev/null 2>"$err"; then
+    fail "force teardown accepted an unsafe child task temp root"
+  fi
+  [ -d "$childwt" ] || fail "force teardown removed child worktree before child tasktmp validation"
+  [ -d "$child_task_tmp/gotmp" ] || fail "force teardown removed unsafe child task temp root"
+  [ -d "$subhome" ] || fail "force teardown removed subhome after child tasktmp refusal"
+  [ -e "$home/state/domain.meta" ] || fail "force teardown cleared parent meta after child tasktmp refusal"
+  [ -e "$subhome/state/child.meta" ] || fail "force teardown cleared child meta after child tasktmp refusal"
+  grep -F 'kill-window' "$log" >/dev/null && fail "force teardown killed windows before child tasktmp validation"
+  grep -F 'not the expected firstmate task temp root' "$err" >/dev/null || fail "force teardown did not explain child tasktmp rejection"
+  pass "force teardown validates child task temp roots before cleanup"
 }
 
 test_secondmate_force_teardown_refuses_child_active_home_descendant() {
@@ -1768,6 +1828,7 @@ test_secondmate_force_teardown_refuses_operational_dir_symlink_outside_home
 test_secondmate_teardown_refuses_registered_nested_home
 test_secondmate_teardown_refuses_child_registry_nested_home
 test_secondmate_force_teardown_prevalidates_before_child_cleanup
+test_secondmate_force_teardown_prevalidates_child_tasktmp
 test_secondmate_force_teardown_refuses_child_active_home_descendant
 test_secondmate_force_teardown_refuses_child_repo_descendant
 test_secondmate_force_teardown_refuses_unregistered_child_worktree

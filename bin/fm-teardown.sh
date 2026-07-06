@@ -521,12 +521,12 @@ safe_rm_rf_child_worktree() {
 }
 
 validate_task_tmp_for_removal() {
-  local target=$1 label=${2:-task temp root} tmp_base tag expected_logical expected_abs abs_target
+  local target=$1 label=${2:-task temp root} task_id=${3:-$ID} task_home=${4:-$FM_HOME} tmp_base tag expected_logical expected_abs abs_target
   [ -n "$target" ] || return 0
   tmp_base=$(cd /tmp && pwd -P) || tmp_base=/tmp
-  tag=$(fm_backend_hometag)
-  expected_logical="/tmp/fm-$tag/$ID"
-  expected_abs="$tmp_base/fm-$tag/$ID"
+  tag=$(FM_HOME=$task_home FM_ROOT=$task_home fm_backend_hometag)
+  expected_logical="/tmp/fm-$tag/$task_id"
+  expected_abs="$tmp_base/fm-$tag/$task_id"
   case "$target" in
     "$expected_logical"|"$expected_abs") ;;
     *)
@@ -551,8 +551,8 @@ validate_task_tmp_for_removal() {
 }
 
 safe_rm_rf_task_tmp() {
-  local target=$1
-  validate_task_tmp_for_removal "$target" "task temp root" || return 1
+  local target=$1 task_id=${2:-$ID} task_home=${3:-$FM_HOME}
+  validate_task_tmp_for_removal "$target" "task temp root" "$task_id" "$task_home" || return 1
   [ -e "$target" ] || return 0
   rm -rf -- "$target"
 }
@@ -609,7 +609,7 @@ remove_firstmate_home() {
 }
 
 validate_firstmate_home_children_removal() {
-  local home=$1 sub_state child_meta child_id child_wt child_proj child_kind child_home child_backend child_orca_worktree_id
+  local home=$1 sub_state child_meta child_id child_wt child_proj child_kind child_home child_backend child_orca_worktree_id child_tmp
   sub_state="$home/state"
   [ -d "$sub_state" ] || return 0
   for child_meta in "$sub_state"/*.meta; do
@@ -619,6 +619,8 @@ validate_firstmate_home_children_removal() {
     child_kind=$(meta_value "$child_meta" kind)
     [ -n "$child_kind" ] || child_kind=ship
     child_backend=$(fm_backend_of_meta "$child_meta")
+    child_tmp=$(meta_value "$child_meta" tasktmp)
+    [ -z "$child_tmp" ] || validate_task_tmp_for_removal "$child_tmp" "child task temp root" "$child_id" "$home" >/dev/null || return 1
     if [ "$child_kind" = secondmate ]; then
       child_home=$(meta_value "$child_meta" home)
       [ -n "$child_home" ] || child_home=$child_wt
@@ -639,7 +641,7 @@ validate_firstmate_home_children_removal() {
 }
 
 cleanup_firstmate_home_children() {
-  local home=$1 sub_state child_meta child_id child_t child_wt child_proj child_kind child_home child_backend child_orca_worktree_id
+  local home=$1 sub_state child_meta child_id child_t child_wt child_proj child_kind child_home child_backend child_orca_worktree_id child_tmp
   sub_state="$home/state"
   [ -d "$sub_state" ] || return 0
   for child_meta in "$sub_state"/*.meta; do
@@ -650,6 +652,7 @@ cleanup_firstmate_home_children() {
     child_kind=$(meta_value "$child_meta" kind)
     [ -n "$child_kind" ] || child_kind=ship
     child_backend=$(fm_backend_of_meta "$child_meta")
+    child_tmp=$(meta_value "$child_meta" tasktmp)
     if [ "$child_backend" = orca ]; then
       child_t=$(meta_value "$child_meta" terminal)
     else
@@ -693,6 +696,7 @@ cleanup_firstmate_home_children() {
       fi
     fi
     remove_grok_turnend_auth "$sub_state" "$child_id"
+    [ -n "$child_tmp" ] && safe_rm_rf_task_tmp "$child_tmp" "$child_id" "$home"
     rm -f "$sub_state/$child_id.status" "$sub_state/$child_id.turn-ended" "$sub_state/$child_id.check.sh" "$sub_state/$child_id.meta" "$sub_state/$child_id.pi-ext.ts" "$sub_state/$child_id.droid-settings.json" "$sub_state/$child_id.grok-turnend-token"
   done
 }
