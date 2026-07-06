@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
 # Safe, home-scoped (re-)arm of the firstmate watcher, with honest verification.
 #
-# The watcher (bin/fm-watch.sh) is one-shot: it blocks until a wake is due, prints
-# one reason line, and exits. Reliability depends on re-arming through a mechanism
-# that SURVIVES the call and NOTIFIES on exit, so firstmate must run this script as
-# the harness's own tracked background task (e.g. run_in_background). Run it as
-# its own standalone background task, never bundled onto the tail of another
-# command. NEVER fire it and forget with a shell `&` inside another call: that
-# backgrounded child is reaped when the call returns, leaving NO watcher running
-# and a false "already running" off the dying process. That exact mistake
-# silently took supervision down for ~30 minutes.
+# The watcher (bin/fm-watch.sh) blocks until it has an actionable wake to
+# surface, then prints one reason line and exits. While state/.afk exists the
+# daemon owns triage and the watcher exits on every wake for the daemon to
+# classify. Reliability depends on arming through a mechanism that SURVIVES the
+# call and NOTIFIES on exit, so firstmate must run this script as the harness's
+# own tracked background task (e.g. run_in_background). Run it as its own
+# standalone background task, never bundled onto the tail of another command.
+# NEVER fire it and forget with a shell `&` inside another call: that backgrounded
+# child is reaped when the call returns, leaving NO watcher running and a false
+# "already running" off the dying process. That exact mistake silently took
+# supervision down for ~30 minutes.
 #
 # This script forks the watcher as a tracked child, then VERIFIES the outcome
 # before it settles in. It confirms a watcher process is genuinely alive AND the
@@ -45,18 +47,6 @@ GRACE=${FM_GUARD_GRACE:-300}
 # How long to wait for a freshly forked watcher to acquire the lock and beat.
 CONFIRM_TIMEOUT=${FM_ARM_CONFIRM_TIMEOUT:-10}
 
-watch_lock_matches_pid() {
-  local pid=$1 lock_home lock_path lock_identity current_identity
-  lock_home=$(cat "$WATCH_LOCK/fm-home" 2>/dev/null || true)
-  lock_path=$(cat "$WATCH_LOCK/watcher-path" 2>/dev/null || true)
-  lock_identity=$(cat "$WATCH_LOCK/pid-identity" 2>/dev/null || true)
-  [ "$lock_home" = "$FM_HOME" ] || return 1
-  [ "$lock_path" = "$WATCH" ] || return 1
-  [ -n "$lock_identity" ] || return 1
-  current_identity=$(fm_pid_identity "$pid") || return 1
-  [ "$current_identity" = "$lock_identity" ]
-}
-
 clear_stale_recorded_watcher_lock() {
   local lock_home lock_path lock_identity
   lock_home=$(cat "$WATCH_LOCK/fm-home" 2>/dev/null || true)
@@ -75,15 +65,9 @@ clear_stale_recorded_watcher_lock() {
 # this script can never report a watcher that is not really there.
 HEALTHY_PID=
 healthy_watcher() {
-  local pid age
   HEALTHY_PID=
-  pid=$(cat "$WATCH_LOCK/pid" 2>/dev/null || true)
-  fm_pid_alive "$pid" || return 1
-  watch_lock_matches_pid "$pid" || return 1
-  age=$(fm_path_age "$BEAT")
-  [ "$age" -lt "$GRACE" ] || return 1
-  HEALTHY_PID=$pid
-  return 0
+  fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME" || return 1
+  HEALTHY_PID=$FM_WATCHER_HEALTHY_PID
 }
 
 report_healthy() {
@@ -113,7 +97,7 @@ if [ "$mode" = restart ]; then
   # Home-scoped stop: only the watcher pid recorded in THIS home's lock.
   lock_pid=$(cat "$WATCH_LOCK/pid" 2>/dev/null || true)
   if fm_pid_alive "$lock_pid"; then
-    if watch_lock_matches_pid "$lock_pid"; then
+    if fm_watcher_lock_matches_pid "$STATE" "$WATCH" "$lock_pid" "$FM_HOME"; then
       kill -TERM "$lock_pid" 2>/dev/null || true
       # Wait for it to actually exit before relaunching, so the fresh watcher
       # either takes a released lock or reclaims a now-dead-pid stale lock instead
