@@ -35,6 +35,18 @@ fm_git_identity fmtest fmtest@example.invalid
 
 TMP_ROOT=$(fm_test_tmproot fm-backend-tests)
 
+task_tmp_for_root() {
+  local root=$1 id=$2 tag
+  tag=$(FM_HOME="$root" FM_ROOT="$root" bash -c '. "$1"; fm_backend_hometag' _ "$ROOT/bin/fm-backend-hometag-lib.sh")
+  printf '/tmp/fm-%s/%s' "$tag" "$id"
+}
+
+cleanup_task_tmp() {
+  local task_tmp=$1
+  rm -rf "$task_tmp"
+  rmdir "${task_tmp%/*}" 2>/dev/null || true
+}
+
 # fm_backend_detect's cmux fallback (bundle id + process ancestry,
 # docs/cmux-backend.md "Runtime auto-detection") consults uname, lsappinfo,
 # and ps. FAKE_NONDARWIN_BIN pins uname to Linux so the whole fallback is
@@ -750,7 +762,11 @@ test_spawn_conformance_old_vs_new() {
   assert_contains "$out_new" "spawned $id harness=claude kind=ship mode=no-mistakes yolo=off window=firstmate:fm-$id worktree=$wt" \
     "spawn output missing the expected summary line"
 
-  diff -u "$log_old" "$log_new" > "$TMP_ROOT/spawn-diff.txt" 2>&1 \
+  sed -E 's#export GOTMPDIR=/tmp/fm-[^[:space:][:cntrl:]]+/gotmp#export GOTMPDIR=<tasktmp>/gotmp#g' "$log_old" \
+    | sed '/export GOTMPDIR=<tasktmp>\/gotmp/d' > "$TMP_ROOT/spawn-old.normalized"
+  sed -E 's#export GOTMPDIR=/tmp/fm-[^[:space:][:cntrl:]]+/gotmp#export GOTMPDIR=<tasktmp>/gotmp#g' "$log_new" \
+    | sed '/export GOTMPDIR=<tasktmp>\/gotmp/d' > "$TMP_ROOT/spawn-new.normalized"
+  diff -u "$TMP_ROOT/spawn-old.normalized" "$TMP_ROOT/spawn-new.normalized" > "$TMP_ROOT/spawn-diff.txt" 2>&1 \
     || fail "fm-spawn.sh: tmux command log differs old vs new"$'\n'"$(cat "$TMP_ROOT/spawn-diff.txt")"
 
   # Sanity: the log actually captured the session/window lifecycle so an
@@ -760,7 +776,7 @@ test_spawn_conformance_old_vs_new() {
   assert_contains "$(cat "$log_new")" $'\x1f''-l'$'\x1f'"CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false claude --dangerously-skip-permissions \"\$(cat '$data/$id/brief.md')\"" \
     "spawn tmux log missing the literal launch-command send"
 
-  rm -rf "/tmp/fm-$id"
+  cleanup_task_tmp "$(task_tmp_for_root "$ROOT" "$id")"
   pass "fm-spawn.sh: tmux command log and printed summary line are byte-identical old vs new for a ship-task claude spawn"
 }
 
@@ -886,7 +902,7 @@ test_spawn_default_backend_writes_no_meta_field() {
   expect_code 0 $? "explicit --backend tmux should spawn successfully"$'\n'"$out"
   assert_no_grep 'backend=' "$state/$id.meta" \
     "an explicit --backend tmux (the default) must not write backend= to meta (P1 compatibility contract)"
-  rm -rf "/tmp/fm-$id"
+  cleanup_task_tmp "$(task_tmp_for_root "$ROOT" "$id")"
   pass "fm-spawn.sh: an explicit --backend tmux resolves silently and writes no backend= (missing means tmux)"
 }
 
@@ -910,7 +926,7 @@ test_spawn_explicit_backend_flag_beats_autodetect_herdr_env() {
   expect_code 0 $? "explicit --backend tmux should spawn successfully even with HERDR_ENV=1 set"$'\n'"$out"
   assert_no_grep 'backend=' "$state/$id.meta" \
     "an explicit --backend tmux must win over an ambient HERDR_ENV=1 auto-detect marker"
-  rm -rf "/tmp/fm-$id"
+  cleanup_task_tmp "$(task_tmp_for_root "$ROOT" "$id")"
   pass "fm-spawn.sh: explicit --backend tmux wins over an ambient HERDR_ENV=1 auto-detect marker"
 }
 
@@ -940,7 +956,7 @@ test_spawn_autodetect_nesting_resolves_tmux_silently() {
   case "$out" in
     *NOTICE*) fail "auto-detecting tmux (even nested inside herdr) must stay silent, no NOTICE expected"$'\n'"$out" ;;
   esac
-  rm -rf "/tmp/fm-$id"
+  cleanup_task_tmp "$(task_tmp_for_root "$ROOT" "$id")"
   pass "fm-spawn.sh: auto-detect resolves nested tmux-in-herdr to tmux and stays silent end to end"
 }
 

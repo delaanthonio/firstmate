@@ -55,6 +55,8 @@ SUB_HOME_MARKER=".fm-secondmate-home"
 . "$SCRIPT_DIR/fm-tasks-axi-lib.sh"
 # shellcheck source=bin/fm-backend.sh
 . "$SCRIPT_DIR/fm-backend.sh"
+# shellcheck source=bin/fm-backend-hometag-lib.sh
+. "$SCRIPT_DIR/fm-backend-hometag-lib.sh"
 "$FM_ROOT/bin/fm-guard.sh" || true
 ID=$1
 FORCE=${2:-}
@@ -71,8 +73,8 @@ if [ "$BACKEND" = orca ]; then
 fi
 HOME_PATH=$(grep '^home=' "$META" | cut -d= -f2- || true)
 PR_URL=$(grep '^pr=' "$META" | tail -1 | cut -d= -f2- || true)
-# tasktmp is recorded by fm-spawn for tasks that set up a per-task temp root
-# (/tmp/fm-<id>/); absent for tasks spawned before that change, so tolerate empty.
+# tasktmp is recorded by fm-spawn for tasks that set up a per-task temp root;
+# absent for tasks spawned before that change, so tolerate empty.
 TASK_TMP=$(grep '^tasktmp=' "$META" | cut -d= -f2- || true)
 ORCA_WORKTREE_ID=$(fm_meta_get "$META" orca_worktree_id)
 ORCA_PATH_MATCH_VERIFIED=0
@@ -518,6 +520,43 @@ safe_rm_rf_child_worktree() {
   rm -rf -- "$target"
 }
 
+validate_task_tmp_for_removal() {
+  local target=$1 label=${2:-task temp root} tmp_base tag expected_logical expected_abs abs_target
+  [ -n "$target" ] || return 0
+  tmp_base=$(cd /tmp && pwd -P) || tmp_base=/tmp
+  tag=$(fm_backend_hometag)
+  expected_logical="/tmp/fm-$tag/$ID"
+  expected_abs="$tmp_base/fm-$tag/$ID"
+  case "$target" in
+    "$expected_logical"|"$expected_abs") ;;
+    *)
+      if [ -e "$target" ]; then
+        abs_target=$(removal_target_abs_path "$target") || return 1
+        [ "$abs_target" = "$expected_abs" ] || {
+          echo "REFUSED: unsafe $label removal target $target is not the expected firstmate task temp root" >&2
+          return 1
+        }
+      else
+        echo "REFUSED: unsafe $label removal target $target is not the expected firstmate task temp root" >&2
+        return 1
+      fi
+      ;;
+  esac
+  [ -e "$target" ] || return 0
+  abs_target=$(validate_removal_target "$target" "$label") || return 1
+  if [ "$abs_target" != "$expected_abs" ]; then
+    echo "REFUSED: unsafe $label removal target $target is not the expected firstmate task temp root" >&2
+    return 1
+  fi
+}
+
+safe_rm_rf_task_tmp() {
+  local target=$1
+  validate_task_tmp_for_removal "$target" "task temp root" || return 1
+  [ -e "$target" ] || return 0
+  rm -rf -- "$target"
+}
+
 validate_firstmate_home_for_removal() {
   local home=$1 label=$2 expected_id=${3:-} abs_home_path marker_id conflict child_id child_home
   [ -n "$home" ] || return 0
@@ -806,9 +845,9 @@ if [ "$KIND" = secondmate ]; then
   remove_secondmate_registry_entry "$ID"
 fi
 remove_grok_turnend_auth "$STATE" "$ID"
-# Remove the per-task temp root (/tmp/fm-<id>/, incl. its gotmp/) recorded by spawn.
+# Remove the per-task temp root recorded by spawn.
 # Read before the state-file rm below; empty (pre-fix tasks without tasktmp=) is a no-op.
-[ -n "$TASK_TMP" ] && rm -rf "$TASK_TMP"
+[ -n "$TASK_TMP" ] && safe_rm_rf_task_tmp "$TASK_TMP"
 rm -f "$STATE/$ID.status" "$STATE/$ID.turn-ended" "$STATE/$ID.check.sh" "$STATE/$ID.meta" "$STATE/$ID.pi-ext.ts" "$STATE/$ID.droid-settings.json" "$STATE/$ID.grok-turnend-token"
 if [ "$KIND" != scout ] && [ "$KIND" != secondmate ] && [ "$MODE" != local-only ]; then
   "$FM_ROOT/bin/fm-fleet-sync.sh" "$PROJ" || true

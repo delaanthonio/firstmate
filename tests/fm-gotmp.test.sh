@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Behavior tests for per-task GOTMPDIR support (fm-gotmp).
 #
-# fm-spawn gives each task a temp root /tmp/fm-<id>/ with Go's build temp nested at
-# gotmp/, exports GOTMPDIR into the crewmate pane, and records tasktmp= in the task's
-# meta. fm-teardown reads tasktmp= and removes the whole root on cleanup.
+# fm-spawn gives each task a home-scoped temp root with Go's build temp nested at
+# gotmp/, exports GOTMPDIR into the crewmate pane, and records tasktmp= in the
+# task's meta. fm-teardown reads tasktmp= and removes the whole root on cleanup.
 #
 # These tests exercise behavior directly: fm-teardown is run as a subprocess against a
 # fake FM_ROOT (built so the real script resolves into it), with stub helper scripts.
@@ -25,8 +25,13 @@ pass() {
 }
 
 TMP_ROOT=
+TASK_TMP_PARENTS=
 
 cleanup() {
+  local parent
+  for parent in $TASK_TMP_PARENTS; do
+    rmdir "$parent" 2>/dev/null || true
+  done
   if [ -n "${TMP_ROOT:-}" ]; then
     rm -rf "$TMP_ROOT"
   fi
@@ -34,6 +39,16 @@ cleanup() {
 trap cleanup EXIT
 
 TMP_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/fm-gotmp-tests.XXXXXX")
+
+task_tmp_for_home() {
+  local home=$1 id=$2 tag
+  tag=$(FM_HOME="$home" FM_ROOT="$home" bash -c '. "$1"; fm_backend_hometag' _ "$ROOT/bin/fm-backend-hometag-lib.sh")
+  printf '/tmp/fm-%s/%s' "$tag" "$id"
+}
+
+remember_task_tmp_parent() {
+  TASK_TMP_PARENTS="$TASK_TMP_PARENTS ${1%/*}"
+}
 
 # Build a fake FM_ROOT so the real fm-teardown.sh (symlinked in) resolves FM_ROOT to
 # it via its BASH_SOURCE computation. Stub the helper scripts fm-teardown calls so no
@@ -50,6 +65,7 @@ make_fake_root() {
   # tmux adapter; both are unchanged by this suite's fixture, just newly
   # required siblings since the P1 backend extraction).
   ln -s "$ROOT/bin/fm-backend.sh" "$fake/bin/fm-backend.sh"
+  ln -s "$ROOT/bin/fm-backend-hometag-lib.sh" "$fake/bin/fm-backend-hometag-lib.sh"
   ln -s "$ROOT/bin/backends/tmux.sh" "$fake/bin/backends/tmux.sh"
   ln -s "$ROOT/bin/fm-tmux-lib.sh" "$fake/bin/fm-tmux-lib.sh"
   # fm-guard.sh: stub (teardown calls it with `|| true`).
@@ -69,6 +85,9 @@ SH
   cat > "$fake/bin/fm-tasks-axi-lib.sh" <<'SH'
 fm_tasks_axi_compatible() { return 1; }
 SH
+  if [ "$tasktmp" = __AUTO__ ]; then
+    tasktmp=$(task_tmp_for_home "$fake" "$id")
+  fi
   # Meta with a nonexistent worktree so the dirty/treehouse blocks skip.
   cat > "$fake/state/$id.meta" <<META
 window=fakeses:fm-$id
@@ -91,6 +110,9 @@ test_spawn_contract_and_mkdir_pattern() {
   # shellcheck disable=SC2016  # single quotes are deliberate: these are literal source strings
   grep -F 'mkdir -p "$TASK_TMP/gotmp"' "$SPAWN" >/dev/null \
     || fail "fm-spawn missing: mkdir of gotmp under TASK_TMP"
+  # shellcheck disable=SC2016  # single quotes are deliberate: literal source string
+  grep -F 'TASK_TMP="/tmp/fm-$(fm_backend_hometag)/$ID"' "$SPAWN" >/dev/null \
+    || fail "fm-spawn missing: home-scoped task temp root"
   # shellcheck disable=SC2016  # single quotes are deliberate: literal source string
   grep -F 'echo "tasktmp=$TASK_TMP"' "$SPAWN" >/dev/null \
     || fail "fm-spawn missing: tasktmp= line in meta write"
@@ -117,15 +139,29 @@ test_spawn_contract_and_mkdir_pattern() {
   pass "fm-spawn creates gotmp dir and records tasktmp in meta"
 }
 
+test_tasktmp_path_is_home_scoped() {
+  local id=same-id-z1
+  local home_a="$TMP_ROOT/home-a"
+  local home_b="$TMP_ROOT/home-b"
+  mkdir -p "$home_a" "$home_b"
+  local tmp_a tmp_b
+  tmp_a=$(task_tmp_for_home "$home_a" "$id")
+  tmp_b=$(task_tmp_for_home "$home_b" "$id")
+  [ "$tmp_a" != "$tmp_b" ] \
+    || fail "same task id in different homes produced the same task temp root"
+  pass "task temp root is home-scoped"
+}
+
 # --- fm-teardown side (real subprocess) ---
 
 test_teardown_removes_tasktmp_dir() {
   local id=td-rm-z2
-  local task_tmp="$TMP_ROOT/fm-$id"
+  local fake task_tmp
+  fake=$(make_fake_root "$id" __AUTO__)
+  task_tmp=$(grep '^tasktmp=' "$fake/state/$id.meta" | cut -d= -f2-)
+  remember_task_tmp_parent "$task_tmp"
   mkdir -p "$task_tmp/gotmp"
   printf 'leftover\n' > "$task_tmp/gotmp/build-artifact"
-  local fake
-  fake=$(make_fake_root "$id" "$task_tmp")
   # Sanity: dir + contents exist before teardown.
   [ -d "$task_tmp/gotmp" ] || fail "precondition: gotmp missing before teardown"
   # Run the REAL teardown against the fake root.
@@ -144,6 +180,7 @@ test_teardown_skips_gracefully_without_tasktmp() {
   mkdir -p "$fake/bin/backends" "$fake/state"
   ln -s "$TEARDOWN" "$fake/bin/fm-teardown.sh"
   ln -s "$ROOT/bin/fm-backend.sh" "$fake/bin/fm-backend.sh"
+  ln -s "$ROOT/bin/fm-backend-hometag-lib.sh" "$fake/bin/fm-backend-hometag-lib.sh"
   ln -s "$ROOT/bin/backends/tmux.sh" "$fake/bin/backends/tmux.sh"
   ln -s "$ROOT/bin/fm-tmux-lib.sh" "$fake/bin/fm-tmux-lib.sh"
   cat > "$fake/bin/fm-guard.sh" <<'SH'
@@ -177,18 +214,34 @@ META
 test_teardown_skips_gracefully_when_dir_missing() {
   # tasktmp= points to a path that does not exist. Teardown must not error.
   local id=td-missing-z4
-  local task_tmp="$TMP_ROOT/never-created-fm-$id"
-  # Intentionally do NOT create $task_tmp.
+  local fake task_tmp
+  fake=$(make_fake_root "$id" __AUTO__)
+  task_tmp=$(grep '^tasktmp=' "$fake/state/$id.meta" | cut -d= -f2-)
+  remember_task_tmp_parent "$task_tmp"
   [ ! -e "$task_tmp" ] || fail "precondition: task_tmp should not exist yet"
-  local fake
-  fake=$(make_fake_root "$id" "$task_tmp")
   bash "$fake/bin/fm-teardown.sh" "$id" >/dev/null 2>&1 \
     || fail "teardown exited non-zero when tasktmp dir was missing"
   [ ! -e "$task_tmp" ] || fail "teardown created/left the tasktmp dir unexpectedly"
   pass "fm-teardown skips gracefully when tasktmp= points to a nonexistent dir"
 }
 
+test_teardown_refuses_unexpected_tasktmp_dir() {
+  local id=td-unsafe-z5
+  local task_tmp="$TMP_ROOT/unsafe-fm-$id"
+  mkdir -p "$task_tmp/gotmp"
+  local fake
+  fake=$(make_fake_root "$id" "$task_tmp")
+  if bash "$fake/bin/fm-teardown.sh" "$id" >/dev/null 2>&1; then
+    fail "teardown succeeded with an unexpected tasktmp path"
+  fi
+  [ -d "$task_tmp/gotmp" ] \
+    || fail "teardown removed an unexpected tasktmp path"
+  pass "fm-teardown refuses unexpected tasktmp paths"
+}
+
 test_spawn_contract_and_mkdir_pattern
+test_tasktmp_path_is_home_scoped
 test_teardown_removes_tasktmp_dir
 test_teardown_skips_gracefully_without_tasktmp
 test_teardown_skips_gracefully_when_dir_missing
+test_teardown_refuses_unexpected_tasktmp_dir
