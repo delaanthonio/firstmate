@@ -304,6 +304,13 @@ EOF
     DOD=$(cat <<EOF
 # Definition of done
 The task is complete only when committed on your branch.
+
+Before /no-mistakes, run a CodeRabbit pre-pass on your own changes so the gate sees already-cleaner code:
+- Run \`coderabbit review\` (plain text) or \`coderabbit review --agent\` (structured findings) on your changes.
+- Fix the real findings with follow-up commits; for false positives, note why you are dismissing them rather than changing code.
+- If \`coderabbit doctor\` reports CodeRabbit is not authenticated, do NOT silently skip the pre-pass: it is a captain setup step like \`gh auth login\` (the captain runs \`coderabbit auth login\`). Surface it - append \`needs-decision: CodeRabbit CLI not authenticated - captain runs coderabbit auth login, then I continue\` - and stop.
+- This pre-pass does NOT replace the no-mistakes review gate below; it precedes it, then you proceed to /no-mistakes.
+
 When you believe it is complete, append \`done: {summary}\` to the status file and stop.
 Firstmate will then instruct you to run /no-mistakes to validate and ship a PR.
 
