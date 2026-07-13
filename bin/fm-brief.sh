@@ -34,6 +34,9 @@
 #   local-only   implement on branch, stop and report "ready in branch" (no push/PR);
 #                firstmate reviews, captain approves, firstmate merges to local main
 # Ship briefs begin with a worktree-isolation assertion before the branch step.
+# They also include a concise code-quality pass in the definition of done.
+# no-mistakes briefs add only a first-run `--intent` hint beyond version-matched
+# no-mistakes guidance and firstmate-specific wrapper rules.
 # Scout tasks ignore mode - their deliverable is a report, not a merge.
 # Every scaffold's status protocol distinguishes the configured
 # declared-external-wait verb (FM_CLASSIFY_PAUSED_VERB, default "paused") from
