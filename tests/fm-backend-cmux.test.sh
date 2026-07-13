@@ -83,6 +83,20 @@ cmux_panes_response() {  # <dir> <n> <surface_id>
   printf '{"panes":[{"selected_surface_id":"%s","surface_ids":["%s"]}]}' "$3" "$3" > "$1/responses/$2.out"
 }
 
+cmux_windows_response() {  # <dir> <n> <window_id1> <count1> [<window_id2> <count2> ...]
+  local dir=$1 n=$2 json first=1
+  shift 2
+  json='['
+  while [ $# -ge 2 ]; do
+    [ "$first" -eq 1 ] || json="$json,"
+    json="$json{\"id\":\"$1\",\"workspace_count\":$2}"
+    first=0
+    shift 2
+  done
+  json="$json]"
+  printf '%s' "$json" > "$dir/responses/$n.out"
+}
+
 cmux_panes_empty_response() {  # <dir> <n>
   printf '{"panes":[]}' > "$1/responses/$2.out"
 }
@@ -310,6 +324,19 @@ test_dispatch_busy_state_unknown_for_cmux() {
   pass "fm_backend_busy_state: cmux (no native primitive) always reports unknown, same as tmux/zellij/orca"
 }
 
+test_dispatch_composer_state_routes_cmux() {
+  local dir fb out target
+  dir="$TMP_ROOT/dispatch-composer"; mkdir -p "$dir/responses"
+  target="aaaaaaaa-0000-0000-0000-000000000000:bbbbbbbb-1111-1111-1111-111111111111"
+  cmux_panes_response "$dir" 1 "bbbbbbbb-1111-1111-1111-111111111111"
+  cmux_read_screen_response "$dir" 2 $'  ╭────────────────────────╮\n  │ ❯ hello captain         │\n  ╰──────── Composer ─────╯'
+  fb=$(make_cmux_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
+    bash -c '. "$0/bin/fm-backend.sh"; fm_backend_composer_state cmux "$1"' "$ROOT" "$target" )
+  [ "$out" = pending ] || fail "fm_backend_composer_state should route cmux to its classifier, got '$out'"
+  pass "fm_backend_composer_state: routes cmux to the cmux composer classifier"
+}
+
 # --- ping_state / ensure_running ---------------------------------------------
 
 test_ping_state_ok() {
@@ -342,6 +369,17 @@ test_ping_state_unauth() {
     bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_ping_state' "$ROOT" )
   [ "$out" = unauth ] || fail "ping_state should report unauth when no password was presented, got '$out'"
   pass "fm_backend_cmux_ping_state: reports 'unauth' when password mode rejects a missing/wrong password"
+}
+
+test_ping_state_invalid_password() {
+  local dir fb out
+  dir="$TMP_ROOT/ping-invalid-pw"; mkdir -p "$dir/responses"
+  fb=$(make_cmux_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" FM_CMUX_FAKE_PING_EXIT=1 \
+    FM_CMUX_FAKE_PING="Error: ERROR: Invalid password" \
+    bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_ping_state' "$ROOT" )
+  [ "$out" = unauth ] || fail "ping_state should report unauth on the wrong-password rejection text, got '$out'"
+  pass "fm_backend_cmux_ping_state: reports 'unauth' when password mode rejects a wrong password (Invalid password)"
 }
 
 test_ping_state_down() {
@@ -390,7 +428,33 @@ SH
   [ "$status" -ne 0 ] || fail "ensure_running should refuse when the socket is denied (relaunching cannot fix a config problem)"
   [ ! -f "$dir/launched" ] || fail "ensure_running should not attempt to launch cmux on a denied socket"
   assert_contains "$out" "docs/cmux-backend.md" "ensure_running's denied error did not point at the setup docs"
-  pass "fm_backend_cmux_ensure_running: fails fast on a denied socket without attempting to launch"
+  assert_contains "$out" "Automation mode" "ensure_running's denied error did not name the recommended Automation mode"
+  assert_contains "$out" "Password mode" "ensure_running's denied error did not name the Password mode alternative"
+  assert_contains "$out" "Full open access" "ensure_running's denied error did not name (and caveat) Full open access"
+  pass "fm_backend_cmux_ensure_running: fails fast on a denied socket without attempting to launch, naming every viable mode"
+}
+
+test_ensure_running_fails_fast_on_unauth_without_launching() {
+  local dir fb out status
+  dir="$TMP_ROOT/ensure-unauth"; mkdir -p "$dir/responses"
+  fb=$(make_cmux_fakebin "$dir")
+  cat > "$fb/open" <<'SH'
+#!/usr/bin/env bash
+echo "LAUNCHED" >> "${FM_CMUX_LAUNCH_MARKER:?}"
+exit 0
+SH
+  chmod +x "$fb/open"
+  out=$( PATH="$fb:$PATH" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" FM_CMUX_FAKE_PING_EXIT=1 \
+    FM_CMUX_FAKE_PING="Error: ERROR: Authentication required - send auth <password> first" \
+    FM_CMUX_LAUNCH_MARKER="$dir/launched" \
+    bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_ensure_running' "$ROOT" 2>&1 )
+  status=$?
+  [ "$status" -ne 0 ] || fail "ensure_running should refuse when the socket is unauthenticated (relaunching cannot fix a password problem)"
+  [ ! -f "$dir/launched" ] || fail "ensure_running should not attempt to launch cmux on an unauthenticated socket"
+  assert_contains "$out" "config/cmux-socket-password" "ensure_running's unauth error did not name the password config file"
+  assert_contains "$out" "Automation mode" "ensure_running's unauth error did not name the recommended no-password Automation mode"
+  assert_contains "$out" "docs/cmux-backend.md" "ensure_running's unauth error did not point at the setup docs"
+  pass "fm_backend_cmux_ensure_running: fails fast on an unauthenticated socket, naming the password config and the Automation mode alternative"
 }
 
 # --- create_task: duplicate refusal, id resolution ---------------------------
@@ -778,25 +842,94 @@ test_send_text_submit_send_failed_when_target_absent() {
   pass "fm_backend_cmux_send_text_submit: reports 'send-failed' when the target workspace/surface is absent"
 }
 
-# --- kill: close whole workspace ---------------------------------------------
+# --- window_of_workspace: which window holds a workspace, and its count ------
 
-test_kill_closes_workspace_directly() {
+test_window_of_workspace_finds_window_and_count() {
+  local dir fb out
+  dir="$TMP_ROOT/win-of-ws"; mkdir -p "$dir/responses"
+  # 1: list-windows --json -> two windows
+  cmux_windows_response "$dir" 1 "e1111111-0000-0000-0000-000000000000" 2 "e2222222-0000-0000-0000-000000000000" 2
+  # 2: workspace list --window e1111111 -> does NOT contain the target
+  cmux_workspace_list_response "$dir" 2 "ffffffff-0000-0000-0000-000000000000" "other"
+  # 3: workspace list --window e2222222 -> contains the target
+  cmux_workspace_list_response "$dir" 3 "aaaaaaaa-0000-0000-0000-000000000000" "the-task"
+  fb=$(make_cmux_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
+    bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_window_of_workspace "aaaaaaaa-0000-0000-0000-000000000000"' "$ROOT" )
+  [ "$out" = "e2222222-0000-0000-0000-000000000000 1" ] \
+    || fail "window_of_workspace should echo the owning window and its matched-list count, got '$out'"
+  cmux_assert_call_order "$dir/log" $'\x1f''list-windows' $'\x1f''workspace'$'\x1f''list'$'\x1f''--json'$'\x1f''--id-format'$'\x1f''uuids'$'\x1f''--window'$'\x1f''e1111111-0000-0000-0000-000000000000' \
+    "window_of_workspace did not list windows before scanning per-window workspaces"
+  pass "fm_backend_cmux_window_of_workspace: walks windows and counts the membership-confirming workspace list"
+}
+
+test_window_of_workspace_empty_when_not_found() {
+  local dir fb out
+  dir="$TMP_ROOT/win-of-ws-none"; mkdir -p "$dir/responses"
+  cmux_windows_response "$dir" 1 "e1111111-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 2 "ffffffff-0000-0000-0000-000000000000" "other"
+  fb=$(make_cmux_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
+    bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_window_of_workspace "aaaaaaaa-0000-0000-0000-000000000000"' "$ROOT" )
+  [ -z "$out" ] || fail "window_of_workspace should echo nothing when the workspace is not found, got '$out'"
+  pass "fm_backend_cmux_window_of_workspace: echoes nothing when no window holds the workspace"
+}
+
+# --- kill: close the task workspace, adding a sibling when it is the last one -
+
+# The common case: the task workspace shares its window with at least one other
+# workspace, so cmux closes it directly with no sibling dance.
+test_kill_closes_workspace_directly_when_not_last() {
   local dir fb
   dir="$TMP_ROOT/kill-workspace"; mkdir -p "$dir/responses"
+  # 1: list-windows -> the owning window has 2 workspaces (target is NOT last)
+  cmux_windows_response "$dir" 1 "eeeeeeee-0000-0000-0000-000000000000" 2
+  # 2: workspace list --window eeeeeeee -> contains the target
+  cmux_workspace_list_response "$dir" 2 "aaaaaaaa-0000-0000-0000-000000000000" "the-task" "ffffffff-0000-0000-0000-000000000000" "other"
   fb=$(make_cmux_fakebin "$dir")
   PATH="$fb:$PATH" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
     bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_kill "aaaaaaaa-0000-0000-0000-000000000000:bbbbbbbb-1111-1111-1111-111111111111"' "$ROOT"
   assert_contains "$(cat "$dir/log")" $'\x1f''close-workspace'$'\x1f''--workspace'$'\x1f''aaaaaaaa-0000-0000-0000-000000000000' \
     "kill did not close the task workspace"
+  assert_not_contains "$(cat "$dir/log")" $'\x1f''new-workspace' \
+    "kill should not add a sibling workspace when the target is not the last one in its window"
   assert_not_contains "$(cat "$dir/log")" $'\x1f''close-surface' \
     "kill should close the whole workspace directly"
-  pass "fm_backend_cmux_kill: closes the whole task workspace directly"
+  pass "fm_backend_cmux_kill: closes the task workspace directly when it is not the last in its window"
+}
+
+# The selected-workspace teardown bug: cmux refuses to close the only workspace
+# in a window (returns OK but no-ops), so kill first creates a throwaway sibling
+# and only then closes the target - which now succeeds.
+test_kill_adds_sibling_when_last_in_window() {
+  local dir fb
+  dir="$TMP_ROOT/kill-last-in-window"; mkdir -p "$dir/responses"
+  cmux_windows_response "$dir" 1 "eeeeeeee-0000-0000-0000-000000000000" 2
+  # 2: workspace list --window eeeeeeee -> contains the target
+  cmux_workspace_list_response "$dir" 2 "aaaaaaaa-0000-0000-0000-000000000000" "the-task"
+  fb=$(make_cmux_fakebin "$dir")
+  PATH="$fb:$PATH" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
+    bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_kill "aaaaaaaa-0000-0000-0000-000000000000:bbbbbbbb-1111-1111-1111-111111111111"' "$ROOT"
+  assert_contains "$(cat "$dir/log")" $'\x1f''new-workspace'$'\x1f''--window'$'\x1f''eeeeeeee-0000-0000-0000-000000000000'$'\x1f''--focus'$'\x1f''false' \
+    "kill did not add a throwaway sibling in the target's own window before closing the last workspace"
+  assert_not_contains "$(cat "$dir/log")" $'\x1f''new-workspace'$'\x1f''--name' \
+    "the throwaway sibling must stay an unnamed default workspace, never an fm- task title"
+  assert_contains "$(cat "$dir/log")" $'\x1f''close-workspace'$'\x1f''--workspace'$'\x1f''aaaaaaaa-0000-0000-0000-000000000000' \
+    "kill did not close the target workspace after adding the sibling"
+  cmux_assert_call_order "$dir/log" $'\x1f''new-workspace'$'\x1f''--window' $'\x1f''close-workspace'$'\x1f''--workspace'$'\x1f''aaaaaaaa-0000-0000-0000-000000000000' \
+    "kill must add the sibling BEFORE closing the last workspace, or the close still no-ops"
+  assert_not_contains "$(cat "$dir/log")" $'\x1f''close-surface' \
+    "kill should not call close-surface"
+  pass "fm_backend_cmux_kill: adds a throwaway sibling then closes the target when it is the last workspace in its window"
 }
 
 test_kill_is_best_effort_when_close_workspace_fails() {
   local dir fb
   dir="$TMP_ROOT/kill-workspace-fail"; mkdir -p "$dir/responses"
-  printf '1\n' > "$dir/responses/1.exit"
+  # 1: list-windows (not last), 2: workspace list --window, 3: close-workspace fails
+  cmux_windows_response "$dir" 1 "eeeeeeee-0000-0000-0000-000000000000" 2
+  cmux_workspace_list_response "$dir" 2 "aaaaaaaa-0000-0000-0000-000000000000" "the-task" "ffffffff-0000-0000-0000-000000000000" "other"
+  printf '1\n' > "$dir/responses/3.exit"
   fb=$(make_cmux_fakebin "$dir")
   PATH="$fb:$PATH" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
     bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_kill "aaaaaaaa-0000-0000-0000-000000000000:bbbbbbbb-1111-1111-1111-111111111111"' "$ROOT"
@@ -812,9 +945,14 @@ test_kill_recovers_stale_target_by_label() {
   local dir fb title
   dir="$TMP_ROOT/kill-stale-target"; mkdir -p "$dir/responses"
   title=$(cmux_expected_scoped_title fm-label)
+  # target_ready label recovery: 1 workspace list (title lookup, misses stale id),
+  # 2 workspace list (id-for-label -> refreshed id), 3 list-panes (surface id).
   cmux_workspace_list_response "$dir" 1 "cccccccc-2222-2222-2222-222222222222" "$title"
   cmux_workspace_list_response "$dir" 2 "cccccccc-2222-2222-2222-222222222222" "$title"
   cmux_panes_response "$dir" 3 "dddddddd-3333-3333-3333-333333333333"
+  # window_of_workspace on the REFRESHED id: 4 list-windows (not last), 5 workspace list --window.
+  cmux_windows_response "$dir" 4 "eeeeeeee-0000-0000-0000-000000000000" 2
+  cmux_workspace_list_response "$dir" 5 "cccccccc-2222-2222-2222-222222222222" "$title" "ffffffff-0000-0000-0000-000000000000" "other"
   fb=$(make_cmux_fakebin "$dir")
   PATH="$fb:$PATH" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
     bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_kill "aaaaaaaa-0000-0000-0000-000000000000:bbbbbbbb-1111-1111-1111-111111111111" "" fm-label' "$ROOT"
@@ -884,12 +1022,15 @@ test_scoped_title_uses_secondmate_home_label
 test_scoped_title_changes_with_root_path
 test_dispatch_routes_cmux_backend
 test_dispatch_busy_state_unknown_for_cmux
+test_dispatch_composer_state_routes_cmux
 test_ping_state_ok
 test_ping_state_denied
 test_ping_state_unauth
+test_ping_state_invalid_password
 test_ping_state_down
 test_ensure_running_returns_immediately_when_already_ok
 test_ensure_running_fails_fast_on_denied_without_launching
+test_ensure_running_fails_fast_on_unauth_without_launching
 test_create_task_refuses_duplicate_label
 test_create_task_creates_and_parses_ids
 test_target_ready_fails_when_target_absent
@@ -912,7 +1053,10 @@ test_send_text_submit_detects_landed_send
 test_send_text_submit_detects_swallowed_enter
 test_send_text_submit_popup_autocomplete_requires_second_enter
 test_send_text_submit_send_failed_when_target_absent
-test_kill_closes_workspace_directly
+test_window_of_workspace_finds_window_and_count
+test_window_of_workspace_empty_when_not_found
+test_kill_closes_workspace_directly_when_not_last
+test_kill_adds_sibling_when_last_in_window
 test_kill_is_best_effort_when_close_workspace_fails
 test_kill_recovers_stale_target_by_label
 test_list_live_filters_by_title_prefix

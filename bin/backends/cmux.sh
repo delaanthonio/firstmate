@@ -19,8 +19,10 @@
 # with no embedded colon, so splitting on the FIRST colon is trivially
 # correct (mirrors herdr's/zellij's target-string convention).
 #
-# GUI-first, macOS-only (docs/cmux-backend.md "Setup"): explicit-only
-# selection, never auto-detected, exactly like Orca. Unlike Orca, cmux is a
+# GUI-first, macOS-only (docs/cmux-backend.md "Setup"): explicit selection or
+# runtime auto-detection when firstmate itself is already running inside a
+# cmux-spawned terminal (primary CMUX_WORKSPACE_ID marker, with documented
+# macOS fallback signals for wrapper-stripped claude). Unlike Orca, cmux is a
 # pure session provider (treehouse still owns the worktree) and Escape IS
 # natively supported.
 #
@@ -61,10 +63,11 @@
 #      herdr (auto-closes the workspace) nor zellij (leaves a ghost tab):
 #      `close-surface` REFUSES outright with a typed error
 #      (`invalid_state: Cannot close the last surface`), leaving both the
-#      surface and the workspace untouched. `close-workspace` cleanly removes
-#      the whole workspace (surface included) in one call with no ghost left
-#      behind. Kill therefore closes the whole workspace directly, which also
-#      reclaims any extra surfaces inside the task workspace.
+#      surface and the workspace untouched. `close-workspace` removes the
+#      whole workspace (surface included) only when it is not the last
+#      workspace in its window. `fm_backend_cmux_kill` handles the documented
+#      last-in-window exception below, while still reclaiming every surface in
+#      the task workspace.
 #   5. Workspace ids do NOT survive an app relaunch - verified via source
 #      (`Sources/Workspace.swift`'s only initializer unconditionally sets
 #      `self.id = UUID()`, with no restored-id parameter, unlike surfaces'
@@ -84,14 +87,21 @@
 #   defaults to `socketControlMode=cmuxOnly`, which REJECTS any CLI process
 #   not spawned inside cmux itself ("Access denied - only processes started
 #   inside cmux can connect"). Since firstmate always drives cmux from an
-#   external shell, `automation.socketControlMode` must be set to `password`
-#   (or laxer) with a socket password configured, and firstmate must supply
-#   that same password on every invocation. See docs/cmux-backend.md "Setup"
-#   for the one-time configuration steps this requires.
+#   external shell, `automation.socketControlMode` must be one of the three
+#   externally-viable modes (docs/cmux-backend.md "Setup" owns the full
+#   matrix, verified from cmux source): `automation` (RECOMMENDED - same-user
+#   external clients, no shared secret), `password` (works, needs
+#   config/cmux-socket-password or CMUX_SOCKET_PASSWORD supplied on every
+#   invocation), or `allowAll` (works, but opens the socket to every local
+#   user - not recommended). `off` and `cmuxOnly` can never work externally.
+#   A configured password is harmless under non-password modes: cmux's own
+#   CLI sends `auth` preemptively and tolerates the server's "Unknown
+#   command 'auth'" reply (cli/cmux.swift, authenticateSocketClientIfNeeded).
 #
 # Requires: cmux (CLI, bundled inside cmux.app - not guaranteed to be on PATH;
-# see fm_backend_cmux_bin), jq (JSON parsing). Both are gated behind selecting
-# this backend; bin/fm-bootstrap.sh's core tool list is unaffected.
+# see fm_backend_cmux_bin), jq (JSON parsing). Bootstrap detects these through
+# fm_backend_required_tools only when cmux is the resolved backend; this adapter
+# also gates them again before spawning.
 
 # FM_HOME fallback: every real caller already sets FM_HOME as a global before
 # sourcing fm-backend.sh (which sources this file); this exists only so this
@@ -101,10 +111,18 @@ FM_BACKEND_CMUX_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-${FM_ROOT:-$FM_BACKEND_CMUX_ROOT}}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 
+# shellcheck source=bin/fm-backend-hometag-lib.sh
+. "$FM_BACKEND_CMUX_ROOT/bin/fm-backend-hometag-lib.sh"
+
+# Shared composer-content classifier (empty|pending|unknown, and the fleet-wide
+# dead-shell-vs-agent-composer rule). Owned by bin/fm-composer-lib.sh, reused by
+# every backend so the decision cannot drift.
+# shellcheck source=bin/fm-composer-lib.sh
+. "$FM_BACKEND_CMUX_ROOT/bin/fm-composer-lib.sh"
+
 # Verified minimum: the version the live pass ran against (docs/cmux-backend.md).
 FM_BACKEND_CMUX_MIN_MAJOR=0
 FM_BACKEND_CMUX_MIN_MINOR=64
-FM_BACKEND_CMUX_SECONDMATE_MARKER=".fm-secondmate-home"
 
 # fm_backend_cmux_bin: resolve the cmux CLI binary. cmux does not reliably
 # land on PATH after a plain app install - it ships an OPTIONAL "install CLI"
@@ -194,6 +212,13 @@ fm_backend_cmux_version_check() {
 # fm_backend_cmux_ping_state: classify socket reachability/auth from `cmux
 # ping`'s own text, since a missing/rejected connection is a normal, expected
 # outcome here (never treated as a scripting bug) - ok|denied|unauth|down|error.
+# The three auth-shaped server replies (verified from cmux source,
+# Sources/TerminalController.swift): "Authentication required" (password mode,
+# no password presented), "Password mode is enabled but no socket password"
+# (password mode, app side has no password configured), and "Invalid password"
+# (password mode, wrong password presented) all classify as unauth - each is a
+# password-configuration problem on one side or the other, never fixable by
+# relaunching the app.
 fm_backend_cmux_ping_state() {
   local out
   out=$(fm_backend_cmux_cli ping 2>&1)
@@ -203,28 +228,46 @@ fm_backend_cmux_ping_state() {
   fi
   case "$out" in
     *'only processes started inside cmux can connect'*) printf 'denied' ;;
-    *'Password mode is enabled but no socket password'*|*'Authentication required'*) printf 'unauth' ;;
+    *'Password mode is enabled but no socket password'*|*'Authentication required'*|*'Invalid password'*) printf 'unauth' ;;
     *'Socket not found'*) printf 'down' ;;
     *) printf 'error' ;;
   esac
+}
+
+# fm_backend_cmux_refuse_denied / fm_backend_cmux_refuse_unauth: the two
+# fail-fast auth refusals, factored so the pre-launch and post-launch checks
+# cannot drift. Each names every externally-viable socket mode (automation
+# RECOMMENDED, password, allowAll - docs/cmux-backend.md "Setup" owns the
+# matrix) plus the config/backend opt-out for a caller who only landed on
+# cmux via auto-detection.
+fm_backend_cmux_refuse_denied() {
+  echo "error: backend=cmux socket rejected the connection (automation.socketControlMode is cmuxOnly, the default, which never admits an external CLI like firstmate). In cmux Settings > Automation set Socket Control Mode to 'Automation mode' (recommended - same-user external clients, no password), or 'Password mode' plus config/cmux-socket-password/CMUX_SOCKET_PASSWORD, or 'Full open access' (NOT recommended - admits every local user) - see docs/cmux-backend.md 'Setup' - or set config/backend to tmux (or pass --backend tmux) if you did not mean to use cmux." >&2
+}
+
+fm_backend_cmux_refuse_unauth() {
+  echo "error: backend=cmux socket requires a password (automation.socketControlMode=password) but none is configured for this caller, or the configured one was rejected. Set config/cmux-socket-password or export CMUX_SOCKET_PASSWORD to the password from cmux Settings > Automation, or switch Socket Control Mode to 'Automation mode' (recommended - no password needed) - see docs/cmux-backend.md 'Setup' - or set config/backend to tmux (or pass --backend tmux) if you did not mean to use cmux." >&2
 }
 
 # fm_backend_cmux_ensure_running: launch cmux (mirrors the CLI's own
 # `connectClient`/`launchApp` `open -a cmux` fallback) only when the socket is
 # simply not up yet (`down`); an auth failure (`denied`/`unauth`) is a
 # configuration problem a relaunch cannot fix, so it fails fast with an
-# actionable pointer to docs/cmux-backend.md instead of retry-looping.
+# actionable pointer to docs/cmux-backend.md instead of retry-looping. A
+# launch that never becomes reachable also names the `off` mode (socket
+# listener disabled entirely - no listener ever comes up, no matter how long
+# the app has been running), since that is indistinguishable from a slow
+# launch on the wire.
 fm_backend_cmux_ensure_running() {
   local state i
   state=$(fm_backend_cmux_ping_state)
   case "$state" in
     ok) return 0 ;;
     denied)
-      echo "error: backend=cmux socket rejected the connection (automation.socketControlMode is cmuxOnly, the default). See docs/cmux-backend.md 'Setup' to switch to password mode for external CLI access." >&2
+      fm_backend_cmux_refuse_denied
       return 1
       ;;
     unauth)
-      echo "error: backend=cmux socket requires a password (automation.socketControlMode=password) but none is configured for this caller. Set config/cmux-socket-password or export CMUX_SOCKET_PASSWORD. See docs/cmux-backend.md 'Setup'." >&2
+      fm_backend_cmux_refuse_unauth
       return 1
       ;;
   esac
@@ -234,17 +277,17 @@ fm_backend_cmux_ensure_running() {
     case "$state" in
       ok) return 0 ;;
       denied)
-        echo "error: backend=cmux socket rejected the connection (automation.socketControlMode is cmuxOnly, the default). See docs/cmux-backend.md 'Setup' to switch to password mode for external CLI access." >&2
+        fm_backend_cmux_refuse_denied
         return 1
         ;;
       unauth)
-        echo "error: backend=cmux socket requires a password (automation.socketControlMode=password) but none is configured for this caller. Set config/cmux-socket-password or export CMUX_SOCKET_PASSWORD. See docs/cmux-backend.md 'Setup'." >&2
+        fm_backend_cmux_refuse_unauth
         return 1
         ;;
     esac
     sleep 0.5
   done
-  echo "error: cmux did not become reachable within 10s of launch" >&2
+  echo "error: cmux did not become reachable within 10s of launch. If the app is already running, its Socket Control Mode may be 'Off' (no control socket at all) - set it to 'Automation mode' (recommended) in Settings > Automation, see docs/cmux-backend.md 'Setup'." >&2
   return 1
 }
 
@@ -264,28 +307,12 @@ fm_backend_cmux_container_ensure() {
 # path hash distinguishes every firstmate installation, including multiple
 # primary homes. Moving an installation changes this tag and old cmux titles
 # stop matching; task meta already records absolute worktree paths, so repo
-# relocation is already outside the supported recovery contract.
+# relocation is already outside the supported recovery contract. Derivation
+# itself lives in bin/fm-backend-hometag-lib.sh, shared with zellij's
+# identical shared-namespace collision fix (docs/zellij-backend.md
+# "Home-scoped tab titles").
 fm_backend_cmux_home_label() {
-  local marker="$FM_HOME/$FM_BACKEND_CMUX_SECONDMATE_MARKER" id prefix root hash
-  if [ -f "$marker" ]; then
-    id=$(tr -d '[:space:]' < "$marker" 2>/dev/null)
-    if [ -n "$id" ]; then
-      prefix="2ndmate-$id"
-    else
-      prefix="firstmate"
-    fi
-  else
-    prefix="firstmate"
-  fi
-  root=$(cd "$FM_ROOT" 2>/dev/null && pwd -P) || root=$FM_ROOT
-  if command -v shasum >/dev/null 2>&1; then
-    hash=$(printf '%s' "$root" | shasum -a 256 | awk '{print substr($1,1,8)}')
-  elif command -v sha256sum >/dev/null 2>&1; then
-    hash=$(printf '%s' "$root" | sha256sum | awk '{print substr($1,1,8)}')
-  else
-    hash=$(printf '%s' "$root" | cksum | awk '{printf "%08x", $1}')
-  fi
-  printf '%s-%s' "$prefix" "$hash"
+  fm_backend_hometag
 }
 
 fm_backend_cmux_scoped_title() {  # <fm-task-label>
@@ -502,16 +529,17 @@ fm_backend_cmux_capture() {  # <target> <lines> [expected-label]
 }
 
 # fm_backend_cmux_composer_state: classify the composer's own row as
-# empty|pending|unknown. Adapted directly from herdr's structural border-row
-# classifier (fm_backend_herdr_composer_state, bin/backends/herdr.sh:598-665)
-# per the build task's explicit direction - this is the highest-risk piece of
-# a new backend's send-and-verify logic, and cmux's `read-screen` gives the
-# same kind of plain-text capture with no cursor-row primitive that herdr's
-# `pane read` does, so the same structural approach applies unchanged: locate
-# the composer row as the only captured line whose TRIMMED content both
-# STARTS and ENDS with the same border glyph (│, ┃, or a plain ASCII |),
-# scanning forward and keeping the LAST match so an earlier border-shaped line
-# (scrollback, a popup) never outranks the real bottom-anchored composer row.
+# empty|pending|unknown. Adapted from the bordered-row branch of herdr's
+# structural classifier (fm_backend_herdr_composer_state) per the build task's
+# explicit direction - this is the highest-risk piece of a new backend's
+# send-and-verify logic, and cmux's `read-screen` gives plain-text capture
+# with no cursor-row primitive and no ANSI style channel like herdr's newer
+# `pane read --format ansi` path. The cmux classifier intentionally remains
+# border-row based: locate the
+# composer row as the only captured line whose TRIMMED content both STARTS and
+# ENDS with the same border glyph (│, ┃, or a plain ASCII |), scanning forward
+# and keeping the LAST match so an earlier border-shaped line (scrollback, a
+# popup) never outranks the real bottom-anchored composer row.
 FM_BACKEND_CMUX_COMPOSER_LINES=${FM_BACKEND_CMUX_COMPOSER_LINES:-20}
 FM_BACKEND_CMUX_IDLE_RE=${FM_BACKEND_CMUX_IDLE_RE:-'^Type a message\.\.\.$'}
 
@@ -535,31 +563,25 @@ fm_backend_cmux_composer_state() {  # <target> [expected-label] -> empty|pending
   stripped=${stripped//|/}
   stripped="${stripped#"${stripped%%[![:space:]]*}"}"
   stripped="${stripped%"${stripped##*[![:space:]]}"}"
-  case "$stripped" in
-    '❯'|'>'|'$'|'%'|'#') printf 'empty'; return 0 ;;
-  esac
-  case "$stripped" in
-    '❯ '*|'> '*|'$ '*|'% '*|'# '*) stripped=${stripped#??} ;;
-    '❯'*|'>'*|'$'*|'%'*|'#'*) stripped=${stripped#?} ;;
-  esac
-  stripped="${stripped#"${stripped%%[![:space:]]*}"}"
-  stripped="${stripped%"${stripped##*[![:space:]]}"}"
-  [ -n "$stripped" ] || { printf 'empty'; return 0; }
-  if printf '%s' "$stripped" | grep -qE "$FM_BACKEND_CMUX_IDLE_RE"; then
-    printf 'empty'; return 0
-  fi
-  printf 'pending'
+  # A row was found only by the bordered shape above, so content came from a
+  # genuine composer box - delegate to the shared owner with bordered=1. A bare
+  # dead-shell prompt has no bordered row and already returned 'unknown' above.
+  fm_composer_classify_content 1 "$stripped" "$FM_BACKEND_CMUX_IDLE_RE"
 }
 
 # fm_backend_cmux_send_text_submit: type <text> into <target> once (raw,
 # unsubmitted, via send_literal), then submit with a named Enter key, retried
 # (Enter only, never retyped) until the composer's own row reads empty.
-# Mirrors fm_backend_herdr_send_text_submit's verification strategy exactly:
-# a slash-command popup's first Enter can close the popup and fill an
-# argument-hint placeholder into the composer rather than submitting, which a
-# raw-diff check would misread as "submitted" - classifying the composer row
-# specifically avoids that false positive, so the retry loop correctly sends
-# a second Enter when needed. Echoes empty|pending|unknown|send-failed, the
+# Mirrors fm_backend_herdr_send_text_submit's ORIGINAL (composer-row)
+# verification strategy: a slash-command popup's first Enter can close the
+# popup and fill an argument-hint placeholder into the composer rather than
+# submitting, which a raw-diff check would misread as "submitted" -
+# classifying the composer row specifically avoids that false positive, so
+# the retry loop correctly sends a second Enter when needed. Herdr's adapter
+# has since moved its own confirmation to a native agent-state read instead
+# (docs/herdr-backend.md "Native agent-state submit confirmation"); cmux has
+# no analogous native primitive, so this composer-row approach remains
+# cmux's own confirmation strategy. Echoes empty|pending|unknown|send-failed, the
 # SAME vocabulary every existing backend already speaks.
 fm_backend_cmux_send_text_submit() {  # <target> <text> <retries> <enter-sleep> <settle> [expected-label]
   local target=$1 text=$2 retries=$3 sleep_s=$4 settle=$5 expected_label=${6:-} i=0 state
@@ -576,17 +598,59 @@ fm_backend_cmux_send_text_submit() {  # <target> <text> <retries> <enter-sleep> 
   done
 }
 
+# fm_backend_cmux_window_of_workspace: echo "<window_id> <workspace_count>" for
+# the window that contains <workspace_id>, or nothing if it is not found live.
+# `workspace list --json` with no `--window` is scoped to the CURRENT window
+# only (verified live), so the containing window is found by walking every
+# window from `list-windows --json` and asking each for its own scoped list.
+# The count comes from the same scoped workspace list that confirms membership.
+fm_backend_cmux_window_of_workspace() {  # <workspace_id> -> "<window_id> <count>"
+  local wsid=$1 wins wid wss count
+  wins=$(fm_backend_cmux_cli list-windows --json --id-format uuids 2>/dev/null) || return 0
+  while IFS= read -r wid; do
+    [ -n "$wid" ] || continue
+    wss=$(fm_backend_cmux_cli workspace list --json --id-format uuids --window "$wid" 2>/dev/null) || continue
+    count=$(printf '%s' "$wss" | jq -er --arg id "$wsid" '
+      (.workspaces // []) as $workspaces
+      | select(any($workspaces[]?; .id == $id))
+      | ($workspaces | length)
+    ' 2>/dev/null) || continue
+    printf '%s %s' "$wid" "$count"
+    return 0
+  done < <(printf '%s' "$wins" | jq -r '.[]? | .id' 2>/dev/null)
+}
+
 # fm_backend_cmux_kill: remove the task's whole workspace, best-effort (mirrors
 # every other backend's `kill` `|| true` contract). A cmux task owns one
 # workspace, so teardown reclaims that workspace and all of its surfaces.
+#
+# The selected-workspace teardown bug (docs/cmux-backend.md "Closing the last
+# workspace in a window"): cmux keeps every window at >=1 workspace, so
+# `close-workspace` on the ONLY workspace in its window silently no-ops - it
+# still returns `OK`, but the workspace stays, which is exactly what left a
+# selected task workspace open at teardown (the last workspace in a window is
+# always the selected one). `close-window`/`window.close` cannot rescue it
+# either: a window holding a live terminal session cannot be closed over the
+# control socket (verified: returns success-shaped output, closes nothing).
+# The reliable primitive is close-workspace on a NON-last workspace, so when the
+# target is the last one in its window a throwaway sibling is created first,
+# leaving that window a fresh default workspace (never an fm-<home>- title, so
+# recovery/list_live ignore it) - cmux's own "closed the last tab" outcome.
 fm_backend_cmux_kill() {  # <target> [unused] [expected-label]
-  local expected_label=${3:-}
+  local expected_label=${3:-} wsid wininfo win count
   if [ -n "$expected_label" ]; then
     fm_backend_cmux_target_ready "$1" "$expected_label" || return 0
   else
     fm_backend_cmux_parse_target "$1" || return 0
   fi
-  fm_backend_cmux_cli close-workspace --workspace "$FM_BACKEND_CMUX_WORKSPACE" >/dev/null 2>&1 || true
+  wsid=$FM_BACKEND_CMUX_WORKSPACE
+  wininfo=$(fm_backend_cmux_window_of_workspace "$wsid")
+  win=${wininfo%% *}
+  count=${wininfo##* }
+  if [ -n "$win" ] && [ "$count" = 1 ]; then
+    fm_backend_cmux_cli new-workspace --window "$win" --focus false --id-format uuids >/dev/null 2>&1 || true
+  fi
+  fm_backend_cmux_cli close-workspace --workspace "$wsid" >/dev/null 2>&1 || true
 }
 
 # fm_backend_cmux_list_live: recovery/orphan discovery. Lists every workspace
