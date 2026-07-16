@@ -84,6 +84,15 @@ test_ship_contracts_are_mode_specific() {
       "$id: PR description contract does not require all four headings"
     assert_grep "embed them in the PR description" "$brief" \
       "$id: PR-producing brief missing screenshot embedding requirement"
+    assert_grep "both in every done status line and in the PR description's explicitly titled \"How it was tested\" section." "$brief" \
+      "$id: non-UI evidence is not required in both status and PR description"
+    if [ "$proj" = direct-proj ]; then
+      assert_grep "done: PR {url} - {summary}" "$brief" \
+        "$id: direct-PR done status has no summary slot"
+    else
+      assert_grep "done: PR {url} checks green - {summary}" "$brief" \
+        "$id: no-mistakes final done status has no summary slot"
+    fi
   done
 
   id="brief-contract-localonly"
@@ -93,12 +102,16 @@ test_ship_contracts_are_mode_specific() {
     "local-only brief gained a PR description contract"
   assert_no_grep "embed them in the PR description" "$brief" \
     "local-only brief still requires PR screenshot embedding"
-  assert_grep "Save both files under \`$home/data/$id/\`" "$brief" \
-    "local-only brief does not save screenshots under the task data directory"
+  assert_grep "Save both files under \`$home/data/$id/shots/\`" "$brief" \
+    "local-only brief does not save screenshots under the task shots directory"
   assert_grep "screenshot evidence explicitly required below" "$brief" \
     "local-only brief rules still forbid required screenshot evidence writes"
-  assert_grep "reference their paths in the done report" "$brief" \
-    "local-only brief does not require screenshot references in the done report"
+  assert_grep "done: ready in branch fm/$id; screenshots: $home/data/$id/shots/" "$brief" \
+    "local-only brief does not reference the task shots directory in its done status"
+  assert_grep "done: ready in branch fm/$id; no user-visible change - screenshots not applicable" "$brief" \
+    "local-only brief does not preserve non-UI applicability in its done status"
+  assert_no_grep "done report" "$brief" \
+    "local-only brief still requires an undefined done report"
   pass "fm-brief.sh: ship contracts match PR-producing and local-only delivery modes"
 }
 

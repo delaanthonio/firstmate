@@ -280,7 +280,7 @@ case "$MODE" in
 # Definition of done
 This project ships **direct-PR**: you raise the PR yourself, without the no-mistakes pipeline.
 The task is complete only when committed on your branch.
-When it is implemented and committed, push your branch and open a PR with \`gh-axi\`, then append \`done: PR {url}\` to the status file and stop.
+When it is implemented and committed, push your branch and open a PR with \`gh-axi\`, then append \`done: PR {url} - {summary}\` to the status file and stop.
 Do NOT run /no-mistakes. The captain reviews and merges the PR; firstmate relays it.
 EOF
 )
@@ -294,7 +294,7 @@ EOF
 This project ships **local-only**: no remote, no PR, no pipeline.
 The task is complete only when committed on your branch \`fm/$ID\`. Do NOT push, do NOT open a PR, do NOT merge.
 Keep your branch a clean fast-forward onto the current default branch - if \`main\` has advanced, rebase onto it so the eventual merge stays a fast-forward.
-When it is implemented and committed, append \`done: ready in branch fm/$ID\` to the status file and stop.
+When it is implemented and committed, append the applicable done status specified in the UI screenshot contract to the status file and stop.
 Firstmate then reviews your branch diff, the captain approves, and firstmate merges it into local \`main\`.
 EOF
 )
@@ -318,7 +318,7 @@ Two firstmate-specific rules layer on top of that guidance:
   When the decision comes back, feed it to the gate with \`no-mistakes axi respond\` and let the pipeline apply it - do not route the question to "the user" or implement the fix yourself.
 - Avoid \`--yes\`: the captain, not you, owns the ask-user decisions it would silently auto-resolve.
 
-After /no-mistakes reports CI green (the CI-ready return point - do not wait for it to keep monitoring in the background until merge), append \`done: PR {url} checks green\` and stop. You are finished.
+After /no-mistakes reports CI green (the CI-ready return point - do not wait for it to keep monitoring in the background until merge), append \`done: PR {url} checks green - {summary}\` and stop. You are finished.
 EOF
 )
     ;;
@@ -329,11 +329,11 @@ PR_DESCRIPTION_CONTRACT=""
 UI_SCREENSHOT_CONTRACT=$(cat <<EOF
 # UI screenshot contract
 If the change alters a user-visible web page, mobile screen, desktop window, or email template, capture before and after screenshots.
-Save both files under \`$DATA/$ID/\`, never commit them to the repo, and reference their paths in the done report so firstmate can relay them for review.
+Save both files under \`$DATA/$ID/shots/\`, never commit them to the repo, and append \`done: ready in branch fm/$ID; screenshots: $DATA/$ID/shots/\` so firstmate can relay them for review.
 This mode has no PR, so do not embed the screenshots in a PR description.
 Use the shared automation browser, \`chrome-devtools-axi\`.
 For agenda-mobile UI, prefer Expo web in the automation browser over the iOS simulator.
-For a non-UI change, skip screenshots and include \`no user-visible change - screenshots not applicable\` in the done summary.
+For a non-UI change, skip screenshots and append \`done: ready in branch fm/$ID; no user-visible change - screenshots not applicable\`.
 EOF
 )
 else
@@ -352,7 +352,7 @@ Use the shared automation browser, `chrome-devtools-axi`.
 Attach each image by converting base64 to a File and dispatching a native drop event on the GitHub description textarea; file inputs and synthetic drags do not work.
 Verify the saved description renders the `user-attachments` image URLs, and never commit screenshot files to the repo.
 For agenda-mobile UI, prefer Expo web in the automation browser over the iOS simulator.
-For a non-UI change, skip screenshots and include `no user-visible change - screenshots not applicable` in the done summary.
+For a non-UI change, skip screenshots and include the exact sentence `no user-visible change - screenshots not applicable` both in every done status line and in the PR description's explicitly titled "How it was tested" section.
 EOF
 )
 fi
