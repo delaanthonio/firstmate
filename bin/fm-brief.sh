@@ -270,6 +270,7 @@ fi
 read -r MODE _ <<EOF
 $("$FM_ROOT/bin/fm-project-mode.sh" "$REPO")
 EOF
+RULE2="2. Stay inside this worktree; modify nothing outside it."
 
 case "$MODE" in
   direct-PR)
@@ -287,6 +288,7 @@ EOF
   local-only)
     SETUP2=""
     RULE1="1. Never push to any remote and never open a PR. Work only on your \`fm/$ID\` branch; firstmate handles the merge into local \`main\`."
+    RULE2="2. Stay inside this worktree except for screenshot evidence explicitly required below, which may be saved only under \`$DATA/$ID/\`; modify nothing else outside the worktree."
     DOD=$(cat <<EOF
 # Definition of done
 This project ships **local-only**: no remote, no PR, no pipeline.
@@ -322,6 +324,39 @@ EOF
     ;;
 esac
 
+if [ "$MODE" = local-only ]; then
+PR_DESCRIPTION_CONTRACT=""
+UI_SCREENSHOT_CONTRACT=$(cat <<EOF
+# UI screenshot contract
+If the change alters a user-visible web page, mobile screen, desktop window, or email template, capture before and after screenshots.
+Save both files under \`$DATA/$ID/\`, never commit them to the repo, and reference their paths in the done report so firstmate can relay them for review.
+This mode has no PR, so do not embed the screenshots in a PR description.
+Use the shared automation browser, \`chrome-devtools-axi\`.
+For agenda-mobile UI, prefer Expo web in the automation browser over the iOS simulator.
+For a non-UI change, skip screenshots and include \`no user-visible change - screenshots not applicable\` in the done summary.
+EOF
+)
+else
+PR_DESCRIPTION_CONTRACT=$(cat <<'EOF'
+# PR description contract
+When this task opens or updates a PR, whether directly in direct-PR mode or through the no-mistakes pipeline, you own the quality of its description.
+Include explicitly titled sections named "Summary", "What changed", "Why", and "How it was tested".
+Make the Summary plain-language and understandable to a non-engineer.
+Write for a reader who has not seen the diff, with no filler or restated commit lists.
+EOF
+)
+UI_SCREENSHOT_CONTRACT=$(cat <<'EOF'
+# UI screenshot contract
+If the change alters a user-visible web page, mobile screen, desktop window, or email template, capture before and after screenshots and embed them in the PR description before reporting done.
+Use the shared automation browser, `chrome-devtools-axi`.
+Attach each image by converting base64 to a File and dispatching a native drop event on the GitHub description textarea; file inputs and synthetic drags do not work.
+Verify the saved description renders the `user-attachments` image URLs, and never commit screenshot files to the repo.
+For agenda-mobile UI, prefer Expo web in the automation browser over the iOS simulator.
+For a non-UI change, skip screenshots and include `no user-visible change - screenshots not applicable` in the done summary.
+EOF
+)
+fi
+
 cat > "$BRIEF" <<EOF
 You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
 
@@ -341,7 +376,7 @@ If the top-level path is the primary checkout or not the worktree you were launc
 
 # Rules
 $RULE1
-2. Stay inside this worktree; modify nothing outside it.
+$RULE2
 3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations.
 4. Report status by appending one line:
    \`echo "{state}: {one short line}" >> $STATUS_FILE\`
@@ -369,18 +404,9 @@ For anything the codebase already shows, prefer a pointer to the authoritative f
 If you touch a project \`AGENTS.md\` that lacks \`## Maintaining this file\`, add that short self-governance section from \`$FM_ROOT/bin/fm-ensure-agents-md.sh\` in the same pass.
 Keep it proportionate: skip \`AGENTS.md\` edits for trivial tasks that produced no durable project knowledge.
 
-# PR description contract
-When this task opens or updates a PR, whether directly in direct-PR mode or through the no-mistakes pipeline, you own the quality of its description.
-Include a plain-language Summary that a non-engineer can understand, plus sections titled "What changed", "Why", and "How it was tested".
-Write for a reader who has not seen the diff, with no filler or restated commit lists.
+$PR_DESCRIPTION_CONTRACT
 
-# UI screenshot contract
-If the change alters a user-visible web page, mobile screen, desktop window, or email template, capture before and after screenshots and embed them in the PR description before reporting done.
-Use the shared automation browser, \`chrome-devtools-axi\`.
-Attach each image by converting base64 to a File and dispatching a native drop event on the GitHub description textarea; file inputs and synthetic drags do not work.
-Verify the saved description renders the \`user-attachments\` image URLs, and never commit screenshot files to the repo.
-For agenda-mobile UI, prefer Expo web in the automation browser over the iOS simulator.
-For a non-UI change, skip screenshots and include \`no user-visible change - screenshots not applicable\` in the done summary.
+$UI_SCREENSHOT_CONTRACT
 
 $DOD
 EOF

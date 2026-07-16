@@ -60,12 +60,46 @@ test_ship_modes_generate_clean_briefs() {
     brief="$home/data/$id/brief.md"
     assert_present "$brief" "$id: brief was not scaffolded"
     assert_grep "# Definition of done" "$brief" "$id: brief missing Definition of done section"
-    assert_grep "# PR description contract" "$brief" "$id: brief missing PR description contract"
     assert_grep "# UI screenshot contract" "$brief" "$id: brief missing UI screenshot contract"
+    assert_grep "no user-visible change - screenshots not applicable" "$brief" \
+      "$id: brief missing non-UI screenshot applicability wording"
     assert_grep "{TASK}" "$brief" "$id: brief missing the {TASK} placeholder"
     assert_no_grep "EOF" "$brief" "$id: brief leaked a heredoc EOF marker (unterminated heredoc)"
   done
   pass "fm-brief.sh: no-mistakes/direct-PR/local-only briefs generate cleanly"
+}
+
+test_ship_contracts_are_mode_specific() {
+  local home id brief
+  home="$TMP_ROOT/mode-contract-home"
+  write_registry "$home"
+
+  for id_proj in "brief-contract-nomistakes:no-registry-proj" "brief-contract-directpr:direct-proj"; do
+    id=${id_proj%%:*}
+    proj=${id_proj##*:}
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" "$proj" >/dev/null 2>&1
+    brief="$home/data/$id/brief.md"
+    assert_grep "# PR description contract" "$brief" "$id: brief missing PR description contract"
+    assert_grep 'Include explicitly titled sections named "Summary", "What changed", "Why", and "How it was tested".' "$brief" \
+      "$id: PR description contract does not require all four headings"
+    assert_grep "embed them in the PR description" "$brief" \
+      "$id: PR-producing brief missing screenshot embedding requirement"
+  done
+
+  id="brief-contract-localonly"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" local-proj >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_no_grep "# PR description contract" "$brief" \
+    "local-only brief gained a PR description contract"
+  assert_no_grep "embed them in the PR description" "$brief" \
+    "local-only brief still requires PR screenshot embedding"
+  assert_grep "Save both files under \`$home/data/$id/\`" "$brief" \
+    "local-only brief does not save screenshots under the task data directory"
+  assert_grep "screenshot evidence explicitly required below" "$brief" \
+    "local-only brief rules still forbid required screenshot evidence writes"
+  assert_grep "reference their paths in the done report" "$brief" \
+    "local-only brief does not require screenshot references in the done report"
+  pass "fm-brief.sh: ship contracts match PR-producing and local-only delivery modes"
 }
 
 test_ship_contracts_do_not_leak_to_other_brief_kinds() {
@@ -283,6 +317,7 @@ test_pause_verb_override_renders_all_brief_scaffolds() {
 test_script_parses
 test_help_includes_entire_header
 test_ship_modes_generate_clean_briefs
+test_ship_contracts_are_mode_specific
 test_ship_contracts_do_not_leak_to_other_brief_kinds
 test_no_mistakes_dod_wording
 test_ship_project_memory_wording
