@@ -19,6 +19,9 @@ make_spawn_fakebin() {
   cat > "$fakebin/tmux" <<'SH'
 #!/usr/bin/env bash
 set -u
+if [ -n "${FM_FAKE_TMUX_CALL_LOG:-}" ]; then
+  printf '%s\n' "$*" >> "$FM_FAKE_TMUX_CALL_LOG"
+fi
 case "$*" in
   *"#{pane_current_path}"*) printf '%s\n' "${FM_FAKE_PANE_PATH:-}"; exit 0 ;;
 esac
@@ -90,6 +93,21 @@ run_spawn() {
     FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$wt" TMUX="fake,1,0" \
     FM_FAKE_LAUNCH_LOG="$launchlog" GROK_HOME="$home/grok-home" PATH="$fakebin:$PATH" \
     "$SPAWN" "$@" 2>&1
+}
+
+run_spawn_without_jq() {
+  local home=$1 wt=$2 fakebin=$3 launchlog=$4
+  shift 4
+  : > "$launchlog"
+  ln -sf /bin/bash "$fakebin/bash"
+  ln -sf /usr/bin/dirname "$fakebin/dirname"
+  HOME="$home" FM_ROOT_OVERRIDE='' FM_HOME="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
+    FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$wt" TMUX="fake,1,0" \
+    FM_FAKE_LAUNCH_LOG="$launchlog" FM_FAKE_TMUX_CALL_LOG="$launchlog" \
+    GROK_HOME="$home/grok-home" PATH="$fakebin" \
+    /bin/bash "$SPAWN" "$@" 2>&1
 }
 
 read_case_record() {
@@ -354,6 +372,24 @@ test_droid_threads_custom_model_and_dynamic_effort_through_settings() {
   pass "droid receives custom model and dynamic effort through settings alongside its Stop hook"
 }
 
+test_droid_requires_jq_before_allocating_backend() {
+  local rec id out status
+  id=profile-droid-no-jq-z18
+  rec=$(make_spawn_case profile-droid-no-jq droid "$id")
+  read_case_record "$rec"
+
+  out=$(run_spawn_without_jq "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --harness droid --model gpt-5.6-sol --effort dynamic --backend tmux)
+  status=$?
+  [ "$status" -ne 0 ] || fail "droid spawn without jq should fail"
+  assert_contains "$out" "error: jq is required to build droid runtime settings" \
+    "droid spawn did not report its missing settings dependency"
+  [ ! -s "$LAUNCH_LOG" ] || fail "droid spawn allocated or launched a backend before checking jq"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "droid spawn wrote task metadata despite missing jq"
+  [ ! -e "$HOME_DIR/state/$id.droid-settings.json" ] || fail "droid spawn wrote settings despite missing jq"
+  pass "droid refuses missing jq before backend allocation"
+}
+
 test_batch_forwards_shared_profile_flags() {
   local rec id1 id2 out status
   id1=profile-batch-a-z9
@@ -427,6 +463,7 @@ test_grok_omits_invalid_max_reasoning_effort
 test_opencode_threads_model_and_ignores_effort_axis
 test_pi_omits_invalid_max_effort
 test_droid_threads_custom_model_and_dynamic_effort_through_settings
+test_droid_requires_jq_before_allocating_backend
 test_batch_forwards_shared_profile_flags
 test_active_dispatch_profile_does_not_block_secondmate_launch
 test_droid_secondmate_uses_settings_for_profile_without_turn_end_hook

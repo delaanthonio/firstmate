@@ -420,6 +420,11 @@ if [ "$KIND" = secondmate ] && [ -z "$ARG3" ]; then
   fi
 fi
 
+if [ "${HARNESS%% *}" = droid ] && ! command -v jq >/dev/null 2>&1; then
+  echo "error: jq is required to build droid runtime settings" >&2
+  exit 1
+fi
+
 secondmate_registry_value() {
   local id=$1 key=$2 reg line value
   reg="$DATA/secondmates.md"
