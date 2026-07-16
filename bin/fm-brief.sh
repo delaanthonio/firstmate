@@ -455,11 +455,11 @@ PR_DESCRIPTION_CONTRACT=""
 UI_SCREENSHOT_CONTRACT=$(cat <<EOF
 # UI screenshot contract
 If the change alters a user-visible web page, mobile screen, desktop window, or email template, capture before and after screenshots.
-Save both files under \`$DATA/$ID/\`, never commit them to the repo, and reference their paths in the done report so firstmate can relay them for review.
+Save both files under \`$DATA/$ID/shots/\`, never commit them to the repo, and append \`done: ready in branch fm/$ID; screenshots: $DATA/$ID/shots/\` so firstmate can relay them for review.
 This mode has no PR, so do not embed the screenshots in a PR description.
 Use the shared automation browser, \`chrome-devtools-axi\`.
 For agenda-mobile UI, prefer Expo web in the automation browser over the iOS simulator.
-For a non-UI change, skip screenshots and include \`no user-visible change - screenshots not applicable\` in the done summary.
+For a non-UI change, skip screenshots and append \`done: ready in branch fm/$ID; no user-visible change - screenshots not applicable\`.
 EOF
 )
 else
@@ -478,7 +478,7 @@ Use the shared automation browser, `chrome-devtools-axi`.
 Attach each image by converting base64 to a File and dispatching a native drop event on the GitHub description textarea; file inputs and synthetic drags do not work.
 Verify the saved description renders the `user-attachments` image URLs, and never commit screenshot files to the repo.
 For agenda-mobile UI, prefer Expo web in the automation browser over the iOS simulator.
-For a non-UI change, skip screenshots and include `no user-visible change - screenshots not applicable` in the done summary.
+For a non-UI change, skip screenshots and include the exact sentence `no user-visible change - screenshots not applicable` both in every done status line and in the PR description's explicitly titled "How it was tested" section.
 EOF
 )
 fi
