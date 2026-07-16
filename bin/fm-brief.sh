@@ -44,6 +44,12 @@
 # it carries the AGENTS.md authoring bar (widely useful knowledge only, pointers
 # over copied detail) and has the crewmate add the fm-ensure-agents-md.sh
 # self-governance section when a touched project AGENTS.md lacks it.
+# Ship tasks also carry review-evidence contracts near the definition of done:
+# PR-producing modes require a plain-language, four-section PR description, and
+# every mode requires before/after screenshots for user-visible UI changes or an
+# explicit screenshots-not-applicable note for non-UI work. Local-only evidence
+# stays under the task data directory; PR modes attach it to the PR description.
+# Scout and secondmate briefs intentionally omit both contracts.
 # Refuses to overwrite an existing brief.
 set -eu
 
