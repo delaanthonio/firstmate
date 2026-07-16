@@ -209,6 +209,8 @@ test_ship_modes_generate_clean_briefs() {
     assert_grep "# Definition of done" "$brief" "$id: brief missing Definition of done section"
     grep -qx "Delivery contract: mode=$mode" "$brief" \
       || fail "$id: brief did not record its machine-readable delivery contract line"
+    assert_grep "# PR description contract" "$brief" "$id: brief missing PR description contract"
+    assert_grep "# UI screenshot contract" "$brief" "$id: brief missing UI screenshot contract"
     assert_grep "{TASK}" "$brief" "$id: brief missing the {TASK} placeholder"
     assert_grep "{FIRSTMATE_SPEC}" "$brief" "$id: brief missing the {FIRSTMATE_SPEC} placeholder"
     assert_grep "## Captain's intent" "$brief" "$id: brief missing Captain's intent subsection"
@@ -321,6 +323,24 @@ test_faster_paths_use_configured_authority_without_stacked_review() {
   assert_no_grep "pass \`--intent\` as only this brief's \`## Captain's intent\`" "$home/data/$id/brief.md" \
     "direct-PR brief must not include the no-mistakes --intent contract"
   pass "fm-brief.sh: faster paths use configured authority without stacked review"
+}
+
+test_ship_contracts_do_not_leak_to_other_brief_kinds() {
+  local home brief
+  home="$TMP_ROOT/contract-scope-home"
+  mkdir -p "$home/data"
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-contract-scout some-proj --scout >/dev/null 2>&1
+  brief="$home/data/brief-contract-scout/brief.md"
+  assert_no_grep "# PR description contract" "$brief" "scout brief gained the PR description contract"
+  assert_no_grep "# UI screenshot contract" "$brief" "scout brief gained the UI screenshot contract"
+
+  FM_HOME="$home" FM_SECONDMATE_CHARTER=ops \
+    "$ROOT/bin/fm-brief.sh" brief-contract-secondmate --secondmate --no-projects >/dev/null 2>&1
+  brief="$home/data/brief-contract-secondmate/brief.md"
+  assert_no_grep "# PR description contract" "$brief" "secondmate brief gained the PR description contract"
+  assert_no_grep "# UI screenshot contract" "$brief" "secondmate brief gained the UI screenshot contract"
+  pass "fm-brief.sh: ship-only PR and screenshot contracts do not leak to scout or secondmate briefs"
 }
 
 # Pin the specific line the bug lived on: the no-mistakes DOD's no-mistakes
@@ -944,6 +964,7 @@ test_ship_mode_is_required_and_closed_set
 test_ship_mode_is_explicit_not_registry
 test_delivery_flags_are_refused_where_they_do_not_apply
 test_faster_paths_use_configured_authority_without_stacked_review
+test_ship_contracts_do_not_leak_to_other_brief_kinds
 test_no_mistakes_dod_wording
 test_no_mistakes_pause_binds_terminal_run
 test_ask_user_escalation_format
