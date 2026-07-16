@@ -209,8 +209,9 @@ test_ship_modes_generate_clean_briefs() {
     assert_grep "# Definition of done" "$brief" "$id: brief missing Definition of done section"
     grep -qx "Delivery contract: mode=$mode" "$brief" \
       || fail "$id: brief did not record its machine-readable delivery contract line"
-    assert_grep "# PR description contract" "$brief" "$id: brief missing PR description contract"
     assert_grep "# UI screenshot contract" "$brief" "$id: brief missing UI screenshot contract"
+    assert_grep "no user-visible change - screenshots not applicable" "$brief" \
+      "$id: brief missing non-UI screenshot applicability wording"
     assert_grep "{TASK}" "$brief" "$id: brief missing the {TASK} placeholder"
     assert_grep "{FIRSTMATE_SPEC}" "$brief" "$id: brief missing the {FIRSTMATE_SPEC} placeholder"
     assert_grep "## Captain's intent" "$brief" "$id: brief missing Captain's intent subsection"
@@ -323,6 +324,39 @@ test_faster_paths_use_configured_authority_without_stacked_review() {
   assert_no_grep "pass \`--intent\` as only this brief's \`## Captain's intent\`" "$home/data/$id/brief.md" \
     "direct-PR brief must not include the no-mistakes --intent contract"
   pass "fm-brief.sh: faster paths use configured authority without stacked review"
+}
+
+test_ship_contracts_are_mode_specific() {
+  local home id mode brief
+  home="$TMP_ROOT/mode-contract-home"
+  write_registry "$home"
+
+  for id_mode in "brief-contract-nomistakes:no-mistakes" "brief-contract-directpr:direct-PR"; do
+    id=${id_mode%%:*}
+    mode=${id_mode##*:}
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode "$mode" >/dev/null 2>&1
+    brief="$home/data/$id/brief.md"
+    assert_grep "# PR description contract" "$brief" "$id: brief missing PR description contract"
+    assert_grep 'Include explicitly titled sections named "Summary", "What changed", "Why", and "How it was tested".' "$brief" \
+      "$id: PR description contract does not require all four headings"
+    assert_grep "embed them in the PR description" "$brief" \
+      "$id: PR-producing brief missing screenshot embedding requirement"
+  done
+
+  id="brief-contract-localonly"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" local-proj --mode local-only >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_no_grep "# PR description contract" "$brief" \
+    "local-only brief gained a PR description contract"
+  assert_no_grep "embed them in the PR description" "$brief" \
+    "local-only brief still requires PR screenshot embedding"
+  assert_grep "Save both files under \`$home/data/$id/\`" "$brief" \
+    "local-only brief does not save screenshots under the task data directory"
+  assert_grep "screenshot evidence explicitly required below" "$brief" \
+    "local-only brief rules still forbid required screenshot evidence writes"
+  assert_grep "reference their paths in the done report" "$brief" \
+    "local-only brief does not require screenshot references in the done report"
+  pass "fm-brief.sh: ship contracts match PR-producing and local-only delivery modes"
 }
 
 test_ship_contracts_do_not_leak_to_other_brief_kinds() {
@@ -964,6 +998,7 @@ test_ship_mode_is_required_and_closed_set
 test_ship_mode_is_explicit_not_registry
 test_delivery_flags_are_refused_where_they_do_not_apply
 test_faster_paths_use_configured_authority_without_stacked_review
+test_ship_contracts_are_mode_specific
 test_ship_contracts_do_not_leak_to_other_brief_kinds
 test_no_mistakes_dod_wording
 test_no_mistakes_pause_binds_terminal_run
