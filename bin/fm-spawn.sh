@@ -5,7 +5,7 @@
 #        fm-spawn.sh <task-id> [<firstmate-home>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] --secondmate
 #   --harness <name> is the explicit per-spawn harness/profile adapter. The old
 #   positional harness arg still works for back-compat.
-#   --model <name> and --effort <low|medium|high|xhigh|max> are concrete profile
+#   --model <name> and --effort <low|medium|high|xhigh|max|dynamic> are concrete profile
 #   axes chosen by firstmate at intake. They are only threaded into harnesses whose
 #   installed CLIs were verified to support that axis; unsupported axes are omitted
 #   from that harness's launch rather than guessed.
@@ -72,8 +72,9 @@
 #     __PIEXT__    absolute path to state/<task-id>.pi-ext.ts (pi turn-end extension,
 #                  written by this script; outside the worktree to avoid pi's trust gate)
 #     __DROIDSETTINGS__  absolute path to state/<task-id>.droid-settings.json (droid
-#                  runtime settings carrying the Stop turn-end hook, written by this
-#                  script; passed via droid's --settings so it lives outside the worktree)
+#                  runtime settings pinning high autonomy, carrying model/effort
+#                  overrides and, for crews, the Stop turn-end hook; passed via
+#                  droid's --settings so it lives outside the worktree)
 #     __PITURNEND__ absolute path to .pi/extensions/fm-primary-turnend-guard.ts in a pi secondmate home
 #     __PIWATCH__   absolute path to .pi/extensions/fm-primary-pi-watch.ts in a pi secondmate home
 # Per-harness turn-end hooks are installed automatically; some live outside the worktree.
@@ -161,8 +162,8 @@ done
 [ "$EFFORT_SET" -eq 0 ] || [ -n "$EFFORT" ] || { echo "error: --effort requires a non-empty value" >&2; exit 1; }
 [ "$BACKEND_SET" -eq 0 ] || [ -n "$BACKEND_ARG" ] || { echo "error: --backend requires a non-empty value" >&2; exit 1; }
 case "$EFFORT" in
-  ''|low|medium|high|xhigh|max) ;;
-  *) echo "error: --effort must be one of low, medium, high, xhigh, max" >&2; exit 1 ;;
+  ''|low|medium|high|xhigh|max|dynamic) ;;
+  *) echo "error: --effort must be one of low, medium, high, xhigh, max, dynamic" >&2; exit 1 ;;
 esac
 
 # Backend selection (data/fm-backend-design-d7): explicit --backend, else
@@ -351,15 +352,12 @@ launch_template() {
     # droid: --auto high is the autonomy level (footer "Auto (High) - allow all
     # commands"), the analog of claude's --dangerously-skip-permissions. The brief
     # stays one positional arg. Turn-end rides --settings (a process-only settings
-    # merge) carrying a claude-style Stop hook; the file is written OUTSIDE the
-    # worktree, like pi's extension, so it never dirties the worktree or trips a gate.
-    droid)
-      if [ "$kind" = secondmate ]; then
-        printf '%s' 'droid --auto high "$(cat __BRIEF__)"'
-      else
-        printf '%s' 'droid --settings __DROIDSETTINGS__ --auto high "$(cat __BRIEF__)"'
-      fi
-      ;;
+    # merge) pinning high autonomy, carrying model/effort overrides and, for crews,
+    # a claude-style Stop hook. The settings pin is authoritative because global
+    # sessionDefaultSettings can override --auto high. The file is written OUTSIDE
+    # the worktree, like pi's extension, so it never dirties the worktree or trips a
+    # gate. Secondmates use the same path so their model/effort pins work too.
+    droid) printf '%s' 'droid --settings __DROIDSETTINGS__ --auto high "$(cat __BRIEF__)"' ;;
     *) return 1 ;;
   esac
 }
@@ -415,8 +413,8 @@ if [ "$KIND" = secondmate ] && [ -z "$ARG3" ]; then
     SM_EFFORT=$("$SCRIPT_DIR/fm-harness.sh" secondmate-effort)
     if [ -n "$SM_EFFORT" ]; then
       case "$SM_EFFORT" in
-        low|medium|high|xhigh|max) EFFORT=$SM_EFFORT ;;
-        *) echo "warning: config/secondmate-harness effort token '$SM_EFFORT' is not one of low, medium, high, xhigh, max; ignoring" >&2 ;;
+        low|medium|high|xhigh|max|dynamic) EFFORT=$SM_EFFORT ;;
+        *) echo "warning: config/secondmate-harness effort token '$SM_EFFORT' is not one of low, medium, high, xhigh, max, dynamic; ignoring" >&2 ;;
       esac
     fi
   fi
@@ -488,6 +486,29 @@ effort_flag_for_harness() {
     # opencode's interactive `opencode --prompt` launch has a verified --model
     # flag but no verified effort flag. Its `opencode run --variant` flag belongs
     # to a different, non-interactive launch mode, so fm-spawn does not pass it.
+  esac
+}
+
+droid_model_reference() {
+  local model=$1 settings ref
+  [ -n "$model" ] && [ "$model" != default ] || return 0
+  settings="$HOME/.factory/settings.json"
+  ref=
+  if [ -f "$settings" ]; then
+    # A custom model's registry id, not its provider-facing model field, pins the
+    # custom provider in sessionDefaultSettings. Read only those two fields; the
+    # same file may contain credentials that must never enter firstmate state.
+    ref=$(jq -r --arg model "$model" \
+      '[.customModels[]? | select(.model == $model) | .id][0] // empty' \
+      "$settings" 2>/dev/null || true)
+  fi
+  printf '%s' "${ref:-$model}"
+}
+
+droid_effort_value() {
+  local effort=$1
+  case "$effort" in
+    low|medium|high|xhigh|max|dynamic) printf '%s' "$effort" ;;
   esac
 }
 
@@ -932,16 +953,7 @@ export default function (pi: any) {
 EOF
       ;;
     droid*)
-      # droid: turn-end via a claude-style Stop hook carried in a process-only
-      # --settings file (see launch_template). Written to state/, OUTSIDE the
-      # worktree like pi's extension, so it never dirties the worktree or trips a
-      # gate. droid's Stop hook fires when it finishes responding (and NOT on a
-      # user interrupt), touching the turn-end file the watcher polls. The file
-      # merges on top of the user's global ~/.factory settings for this process
-      # only. Cleaned up by fm-teardown.
-      cat > "$STATE/$ID.droid-settings.json" <<EOF
-{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"touch '$TURNEND'"}]}]}}
-EOF
+      # The droid settings file is assembled below for crews and secondmates.
       ;;
     codex*)
       # codex: turn-end rides the launch command via -c notify=[...] and __TURNEND__.
@@ -996,6 +1008,25 @@ EOF
       exclude_path '.fm-grok-turnend'
       ;;
   esac
+fi
+
+if [ "${HARNESS%% *}" = droid ]; then
+  DROID_MODEL=$(droid_model_reference "$MODEL")
+  DROID_EFFORT=$(droid_effort_value "$EFFORT")
+  DROID_HOOK_COMMAND=
+  [ "$KIND" = secondmate ] || DROID_HOOK_COMMAND="touch '$TURNEND'"
+  jq -n \
+    --arg model "$DROID_MODEL" \
+    --arg effort "$DROID_EFFORT" \
+    --arg hook_command "$DROID_HOOK_COMMAND" '
+      {sessionDefaultSettings:
+        ({autonomyLevel: "high", autonomyMode: "auto-high"} +
+         (if $model == "" then {} else {model: $model} end) +
+         (if $effort == "" then {} else {reasoningEffort: $effort} end))} +
+      (if $hook_command == "" then {}
+       else {hooks: {Stop: [{hooks: [{type: "command", command: $hook_command}]}]}}
+       end)
+    ' > "$STATE/$ID.droid-settings.json"
 fi
 
 # Per-project delivery mode + yolo flag (bin/fm-project-mode.sh; AGENTS.md project management and task lifecycle).

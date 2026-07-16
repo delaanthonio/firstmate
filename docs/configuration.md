@@ -176,7 +176,7 @@ This section is the single owner of the canonical schema and its per-field seman
     {
       "when": "<natural-language condition describing a kind of task>",
       "use": [
-        { "harness": "<adapter>", "model": "<optional model>", "effort": "<low|medium|high|xhigh|max, optional>" }
+        { "harness": "<adapter>", "model": "<optional model>", "effort": "<low|medium|high|xhigh|max|dynamic, optional>" }
       ],
       "select": "<optional strategy>",
       "why": "<optional rationale that helps firstmate choose>"

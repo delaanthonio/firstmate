@@ -84,7 +84,7 @@ run_spawn() {
   local home=$1 wt=$2 fakebin=$3 launchlog=$4
   shift 4
   : > "$launchlog"
-  FM_ROOT_OVERRIDE='' FM_HOME="$home" \
+  HOME="$home" FM_ROOT_OVERRIDE='' FM_HOME="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
     FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
     FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$wt" TMUX="fake,1,0" \
@@ -327,6 +327,33 @@ test_pi_omits_invalid_max_effort() {
   pass "pi threads model and omits unsupported max effort"
 }
 
+test_droid_threads_custom_model_and_dynamic_effort_through_settings() {
+  local rec id out status launch settings turnend
+  id=profile-droid-z17
+  rec=$(make_spawn_case profile-droid droid "$id")
+  read_case_record "$rec"
+  mkdir -p "$HOME_DIR/.factory"
+  printf '%s\n' '{"customModels":[{"id":"custom:GPT-5.6-Sol-0","model":"gpt-5.6-sol","provider":"custom"}]}' \
+    > "$HOME_DIR/.factory/settings.json"
+
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --harness droid --model gpt-5.6-sol --effort dynamic)
+  status=$?
+  expect_code 0 "$status" "droid spawn with model and dynamic effort should succeed"
+  assert_meta_profile "$HOME_DIR/state/$id.meta" droid gpt-5.6-sol dynamic
+  launch=$(cat "$LAUNCH_LOG")
+  settings="$HOME_DIR/state/$id.droid-settings.json"
+  turnend="$(cd "$HOME_DIR/state" && pwd -P)/$id.turn-ended"
+  assert_contains "$launch" "droid --settings '$settings' --auto high" \
+    "droid launch did not use its process-only settings merge"
+  jq -e '.sessionDefaultSettings == {"autonomyLevel":"high","autonomyMode":"auto-high","model":"custom:GPT-5.6-Sol-0","reasoningEffort":"dynamic"}' "$settings" >/dev/null \
+    || fail "droid settings did not pin autonomy, map the custom model id, and retain dynamic effort"
+  jq -e --arg turnend "$turnend" \
+    '.hooks.Stop[0].hooks[0] == {"type":"command","command":("touch '\''" + $turnend + "'\''")}' "$settings" >/dev/null \
+    || fail "droid settings lost the Stop turn-end hook"
+  pass "droid receives custom model and dynamic effort through settings alongside its Stop hook"
+}
+
 test_batch_forwards_shared_profile_flags() {
   local rec id1 id2 out status
   id1=profile-batch-a-z9
@@ -364,6 +391,28 @@ test_active_dispatch_profile_does_not_block_secondmate_launch() {
   pass "active crew-dispatch profile does not block secondmate launches"
 }
 
+test_droid_secondmate_uses_settings_for_profile_without_turn_end_hook() {
+  local rec id sm out status launch settings
+  id=profile-droid-secondmate-z19
+  rec=$(make_spawn_case profile-droid-secondmate droid "$id")
+  read_case_record "$rec"
+  printf '%s\n' 'droid custom:GPT-5.6-Sol-0 dynamic' > "$HOME_DIR/config/secondmate-harness"
+  sm="$CASE_DIR/secondmate-home"
+  make_seeded_secondmate_home "$sm" "$id"
+
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$sm" --secondmate)
+  status=$?
+  expect_code 0 "$status" "droid secondmate with configured model and effort should succeed"
+  assert_meta_profile "$HOME_DIR/state/$id.meta" droid custom:GPT-5.6-Sol-0 dynamic
+  launch=$(cat "$LAUNCH_LOG")
+  settings="$HOME_DIR/state/$id.droid-settings.json"
+  assert_contains "$launch" "droid --settings '$settings' --auto high" \
+    "droid secondmate launch did not use the process-only settings merge"
+  jq -e '.sessionDefaultSettings == {"autonomyLevel":"high","autonomyMode":"auto-high","model":"custom:GPT-5.6-Sol-0","reasoningEffort":"dynamic"} and (has("hooks") | not)' "$settings" >/dev/null \
+    || fail "droid secondmate settings did not pin both axes or unexpectedly installed a turn-end hook"
+  pass "droid secondmates receive configured model and effort through settings without a turn-end hook"
+}
+
 test_no_profile_keeps_claude_launch_unchanged
 test_active_dispatch_profile_requires_explicit_harness_for_ship
 test_active_dispatch_profile_requires_explicit_harness_for_scout
@@ -377,7 +426,9 @@ test_grok_threads_model_and_reasoning_effort
 test_grok_omits_invalid_max_reasoning_effort
 test_opencode_threads_model_and_ignores_effort_axis
 test_pi_omits_invalid_max_effort
+test_droid_threads_custom_model_and_dynamic_effort_through_settings
 test_batch_forwards_shared_profile_flags
 test_active_dispatch_profile_does_not_block_secondmate_launch
+test_droid_secondmate_uses_settings_for_profile_without_turn_end_hook
 
 echo "# all fm-spawn-dispatch-profile tests passed"
