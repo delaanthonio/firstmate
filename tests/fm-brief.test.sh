@@ -60,10 +60,30 @@ test_ship_modes_generate_clean_briefs() {
     brief="$home/data/$id/brief.md"
     assert_present "$brief" "$id: brief was not scaffolded"
     assert_grep "# Definition of done" "$brief" "$id: brief missing Definition of done section"
+    assert_grep "# PR description contract" "$brief" "$id: brief missing PR description contract"
+    assert_grep "# UI screenshot contract" "$brief" "$id: brief missing UI screenshot contract"
     assert_grep "{TASK}" "$brief" "$id: brief missing the {TASK} placeholder"
     assert_no_grep "EOF" "$brief" "$id: brief leaked a heredoc EOF marker (unterminated heredoc)"
   done
   pass "fm-brief.sh: no-mistakes/direct-PR/local-only briefs generate cleanly"
+}
+
+test_ship_contracts_do_not_leak_to_other_brief_kinds() {
+  local home brief
+  home="$TMP_ROOT/contract-scope-home"
+  mkdir -p "$home/data"
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-contract-scout some-proj --scout >/dev/null 2>&1
+  brief="$home/data/brief-contract-scout/brief.md"
+  assert_no_grep "# PR description contract" "$brief" "scout brief gained the PR description contract"
+  assert_no_grep "# UI screenshot contract" "$brief" "scout brief gained the UI screenshot contract"
+
+  FM_HOME="$home" FM_SECONDMATE_CHARTER=ops \
+    "$ROOT/bin/fm-brief.sh" brief-contract-secondmate --secondmate --no-projects >/dev/null 2>&1
+  brief="$home/data/brief-contract-secondmate/brief.md"
+  assert_no_grep "# PR description contract" "$brief" "secondmate brief gained the PR description contract"
+  assert_no_grep "# UI screenshot contract" "$brief" "secondmate brief gained the UI screenshot contract"
+  pass "fm-brief.sh: ship-only PR and screenshot contracts do not leak to scout or secondmate briefs"
 }
 
 # Pin the specific line the bug lived on: the no-mistakes DOD's no-mistakes
@@ -263,6 +283,7 @@ test_pause_verb_override_renders_all_brief_scaffolds() {
 test_script_parses
 test_help_includes_entire_header
 test_ship_modes_generate_clean_briefs
+test_ship_contracts_do_not_leak_to_other_brief_kinds
 test_no_mistakes_dod_wording
 test_ship_project_memory_wording
 test_herdr_lab_contract_is_explicit_and_complete

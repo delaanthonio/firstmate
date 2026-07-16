@@ -369,6 +369,19 @@ For anything the codebase already shows, prefer a pointer to the authoritative f
 If you touch a project \`AGENTS.md\` that lacks \`## Maintaining this file\`, add that short self-governance section from \`$FM_ROOT/bin/fm-ensure-agents-md.sh\` in the same pass.
 Keep it proportionate: skip \`AGENTS.md\` edits for trivial tasks that produced no durable project knowledge.
 
+# PR description contract
+When this task opens or updates a PR, whether directly in direct-PR mode or through the no-mistakes pipeline, you own the quality of its description.
+Include a plain-language Summary that a non-engineer can understand, plus sections titled "What changed", "Why", and "How it was tested".
+Write for a reader who has not seen the diff, with no filler or restated commit lists.
+
+# UI screenshot contract
+If the change alters a user-visible web page, mobile screen, desktop window, or email template, capture before and after screenshots and embed them in the PR description before reporting done.
+Use the shared automation browser, \`chrome-devtools-axi\`.
+Attach each image by converting base64 to a File and dispatching a native drop event on the GitHub description textarea; file inputs and synthetic drags do not work.
+Verify the saved description renders the \`user-attachments\` image URLs, and never commit screenshot files to the repo.
+For agenda-mobile UI, prefer Expo web in the automation browser over the iOS simulator.
+For a non-UI change, skip screenshots and include \`no user-visible change - screenshots not applicable\` in the done summary.
+
 $DOD
 EOF
 echo "scaffolded: $BRIEF (ship, mode=$MODE; replace {TASK})"
