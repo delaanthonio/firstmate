@@ -68,6 +68,11 @@
 # it carries the AGENTS.md authoring bar (widely useful knowledge only, pointers
 # over copied detail) and defers self-governance recognition and insertion to
 # fm-ensure-agents-md.sh's contract.
+# Ship tasks also carry review-evidence contracts near the definition of done:
+# PR-producing modes require a four-section plain-language PR description, and
+# every mode requires before/after evidence for user-visible UI changes or an
+# explicit screenshots-not-applicable note for non-UI work. Local-only evidence
+# stays in task data; PR modes attach it to the PR description.
 # Scaffolds carry no role scope: fm-spawn.sh supplies fm_brief_worker_role from
 # fm-dod-lib.sh to every ship/scout launch brief, so this file never becomes a
 # second owner of a contract that must stay current across relaunches.
