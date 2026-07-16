@@ -362,6 +362,7 @@ launch_template() {
   esac
 }
 
+DROID_TEMPLATE=0
 case "$ARG3" in
   *' '*)  # raw launch command (unverified-adapter escape hatch)
     LAUNCH=$ARG3
@@ -391,10 +392,12 @@ case "$ARG3" in
       harness_src='config/crew-harness'
     fi
     LAUNCH=$(launch_template "$HARNESS" "$KIND") || { echo "error: no launch template for harness '$HARNESS' (from $harness_src or detection); pass a raw launch command to use an unverified adapter" >&2; exit 1; }
+    [ "$HARNESS" != droid ] || DROID_TEMPLATE=1
     ;;
   *)
     HARNESS=$ARG3
     LAUNCH=$(launch_template "$HARNESS" "$KIND") || { echo "error: unknown harness '$HARNESS'; pass a raw launch command to use an unverified adapter" >&2; exit 1; }
+    [ "$HARNESS" != droid ] || DROID_TEMPLATE=1
     ;;
 esac
 
@@ -420,7 +423,7 @@ if [ "$KIND" = secondmate ] && [ -z "$ARG3" ]; then
   fi
 fi
 
-if [ "${HARNESS%% *}" = droid ] && ! command -v jq >/dev/null 2>&1; then
+if [ "$DROID_TEMPLATE" -eq 1 ] && ! command -v jq >/dev/null 2>&1; then
   echo "error: jq is required to build droid runtime settings" >&2
   exit 1
 fi
@@ -1015,7 +1018,7 @@ EOF
   esac
 fi
 
-if [ "${HARNESS%% *}" = droid ]; then
+if [ "$DROID_TEMPLATE" -eq 1 ]; then
   DROID_MODEL=$(droid_model_reference "$MODEL")
   DROID_EFFORT=$(droid_effort_value "$EFFORT")
   DROID_HOOK_COMMAND=

@@ -226,6 +226,29 @@ test_active_dispatch_profile_allows_raw_launch_command() {
   pass "active crew-dispatch profile allows the raw launch-command escape hatch"
 }
 
+test_raw_droid_launch_does_not_use_template_settings() {
+  local rec id out status launch
+  id=profile-raw-droid-z20
+  rec=$(make_spawn_case profile-raw-droid claude "$id")
+  read_case_record "$rec"
+  cat > "$FAKEBIN_DIR/jq" <<'SH'
+#!/usr/bin/env bash
+exit 99
+SH
+  chmod +x "$FAKEBIN_DIR/jq"
+
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" "droid --experimental")
+  status=$?
+  expect_code 0 "$status" "raw droid launch should not require template settings support"
+  assert_contains "$out" "spawned $id harness=droid" "spawn did not report raw droid command harness"
+  launch=$(cat "$LAUNCH_LOG")
+  [ "$launch" = "droid --experimental" ] || fail "raw droid launch changed"$'\n'"actual: $launch"
+  assert_absent "$HOME_DIR/state/$id.droid-settings.json" \
+    "raw droid launch unexpectedly generated template settings"
+  pass "raw droid launch bypasses template-only jq and settings generation"
+}
+
 test_claude_threads_model_and_effort() {
   local rec id out status launch
   id=profile-claude-z2
@@ -455,6 +478,7 @@ test_active_dispatch_profile_requires_explicit_harness_for_scout
 test_active_dispatch_profile_allows_explicit_harness
 test_active_dispatch_profile_allows_positional_harness
 test_active_dispatch_profile_allows_raw_launch_command
+test_raw_droid_launch_does_not_use_template_settings
 test_claude_threads_model_and_effort
 test_codex_threads_model_and_effort
 test_codex_omits_invalid_max_effort
