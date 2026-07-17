@@ -89,7 +89,7 @@ The supported launch-profile paths below were verified locally with each CLI's h
 | opencode | `--model <provider/model>` | none for firstmate's interactive launch | Verified on opencode 1.17.6. `opencode run` has `--variant`, but firstmate launches the interactive `opencode --prompt` path, which has no verified effort flag. |
 | droid | `sessionDefaultSettings.model` in `--settings <path>` | `sessionDefaultSettings.reasoningEffort` with `low\|medium\|high\|xhigh\|max\|dynamic` in the same file | Verified on droid 0.173.0 on 2026-07-16. Interactive droid has no model or effort CLI flag. `fm-spawn` resolves a requested provider-facing model name to the matching `customModels[].id` when registered, omits rejected effort values, and uses the same process-only settings path for crews and secondmates. The file also pins high autonomy because global session defaults can override `--auto high`. |
 
-When a requested effort value is outside the harness-specific accepted set, `fm-spawn` records the requested `effort=` in meta but emits no effort flag for that harness.
+When a requested effort value is outside the harness-specific accepted set, `fm-spawn` records the requested `effort=` in meta but emits no effort override for that harness.
 This preserves launch success instead of passing a known-bad value.
 
 ## no-mistakes skill invocation
@@ -278,7 +278,7 @@ Grok's primary watcher protocol is Claude-shaped background-notify around `bin/f
 | Skill invocation | `/<skill>` (e.g. `/no-mistakes`); droid imports `~/.claude/skills`, so user-level skills are available and droid can drive no-mistakes itself |
 
 Factory's droid CLI. The base interactive launch is `droid --auto high "$(cat <brief>)"`; `--auto high` is the autonomy level (footer `Auto (High) · allow all commands`), the analog of claude's `--dangerously-skip-permissions`, and it runs every tool with no per-action permission prompt.
-`fm-spawn` adds `--settings <state/<id>.droid-settings.json>` for ship, scout, and secondmate launches.
+`fm-spawn`'s verified droid template adds `--settings <state/<id>.droid-settings.json>` for ship, scout, and secondmate launches; the raw-command escape hatch does not generate adapter settings.
 The file pins process-only high autonomy, carries model and reasoning overrides when requested, and carries the turn-end hook for ship and scout tasks.
 Secondmates use the same settings path so their configured droid model and effort pins apply, but their file has no turn-end hook.
 Keep the brief as one positional argument; a single quoted prompt is processed as one message (no multi-arg splitting).
@@ -291,7 +291,7 @@ On an unauthenticated machine a login prompt can appear instead, so still peek t
 **Autonomy override hazard (verified 2026-07-16, droid 0.173.0).**
 A live launch with `--auto high` still showed `Auto (Med)` when global `~/.factory/settings.json` set `sessionDefaultSettings.autonomyLevel` to `medium`.
 Adding `sessionDefaultSettings` values `{"autonomyLevel":"high","autonomyMode":"auto-high"}` to the process-only settings file produced `Auto (High) · allow all commands` in the same session.
-`fm-spawn` therefore retains `--auto high` and also writes both settings values for every droid launch; do not rely on the CLI flag alone.
+`fm-spawn` therefore retains `--auto high` and also writes both settings values for every template-backed droid launch; do not rely on the CLI flag alone.
 
 droid auto-updates in the background, like opencode: a launch can upgrade the binary mid-stream (observed 0.156.2 → 0.159.1) and the running TUI keeps working on the version it started.
 Treat the recorded version as a floor, and re-verify if a launch reports a much newer one.
