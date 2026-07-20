@@ -96,7 +96,7 @@ state/               volatile runtime signals; gitignored
   <id>.turn-ended    touched by turn-end hooks
   <id>.grok-turnend-token   firstmate-owned grok hook registry token for the task; removed by teardown
   <id>.pi-ext.ts   optional Pi turn-end extension written by fm-spawn
-  <id>.droid-settings.json  per-task Droid runtime settings written by fm-spawn; carries high-autonomy and optional launch-profile pins for every template-backed Droid launch, plus the turn-end hook for crewmates
+  <id>.droid-settings.json  per-task Droid runtime settings written by fm-spawn; carries optional model/effort launch-profile pins for every template-backed Droid launch, plus the turn-end hook for crewmates
   <id>.meta          written by fm-spawn: window=, worktree=, project=, harness=, model=, effort=, kind=, mode=, yolo=, tasktmp=; kind=secondmate also records home= and projects=; a non-default runtime backend records further backend-specific fields (docs/configuration.md "Runtime backend"; bin/fm-backend.sh, section 8); fm-pr-check, including through fm-pr-merge, appends pr= and GitHub's pr_head= when available; fm-x-link appends x_request=, x_request_ts=, x_followups=, and optional x_platform=/x_reply_max_chars= for an X-mode-originated task (section 14)
   <id>.check.sh      optional slow poll you write per task (e.g. merged-PR check)
   x-watch.check.sh   generated X-mode relay poll shim; present only when opted in (section 14)

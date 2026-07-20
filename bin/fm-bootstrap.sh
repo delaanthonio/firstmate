@@ -345,6 +345,10 @@ missing_tool_diagnostic() {
 # never told tmux is missing, and only orca drops treehouse. A backend value with
 # no verified dependency set is reported before the universal checks continue.
 COMMON_TOOLS="node git gh no-mistakes gh-axi chrome-devtools-axi lavish-axi tasks-axi quota-axi"
+if [ "$("$SCRIPT_DIR/fm-harness.sh" crew)" = droid ] \
+  || [ "$("$SCRIPT_DIR/fm-harness.sh" secondmate)" = droid ]; then
+  COMMON_TOOLS="$COMMON_TOOLS jq"
+fi
 BACKEND=$(fm_backend_name)
 BACKEND_VALID=1
 if ! BACKEND_TOOLS=$(fm_backend_required_tools "$BACKEND"); then

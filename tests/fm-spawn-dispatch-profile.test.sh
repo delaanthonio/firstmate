@@ -413,6 +413,31 @@ test_droid_requires_jq_before_allocating_backend() {
   pass "droid refuses missing jq before backend allocation"
 }
 
+test_droid_settings_failure_precedes_backend_allocation() {
+  local rec id out status leftovers
+  id=profile-droid-bad-settings-z21
+  rec=$(make_spawn_case profile-droid-bad-settings droid "$id")
+  read_case_record "$rec"
+  cat > "$FAKEBIN_DIR/jq" <<'SH'
+#!/usr/bin/env bash
+exit 1
+SH
+  chmod +x "$FAKEBIN_DIR/jq"
+
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --harness droid --effort dynamic --backend tmux)
+  status=$?
+  [ "$status" -ne 0 ] || fail "droid spawn should fail when settings generation fails"
+  assert_contains "$out" "error: failed to build droid runtime settings" \
+    "droid spawn did not report settings generation failure"
+  [ ! -s "$LAUNCH_LOG" ] || fail "droid spawn allocated or launched a backend before generating settings"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "droid spawn wrote metadata after settings generation failed"
+  [ ! -e "$HOME_DIR/state/$id.droid-settings.json" ] || fail "failed droid settings generation left a final settings file"
+  leftovers=$(find "$HOME_DIR/state" -name ".$id.droid-settings.*" -print)
+  [ -z "$leftovers" ] || fail "failed droid settings generation left a temporary file: $leftovers"
+  pass "droid settings generation fails atomically before backend allocation"
+}
+
 test_batch_forwards_shared_profile_flags() {
   local rec id1 id2 out status
   id1=profile-batch-a-z9
@@ -488,6 +513,7 @@ test_opencode_threads_model_and_ignores_effort_axis
 test_pi_omits_invalid_max_effort
 test_droid_threads_custom_model_and_dynamic_effort_through_settings
 test_droid_requires_jq_before_allocating_backend
+test_droid_settings_failure_precedes_backend_allocation
 test_batch_forwards_shared_profile_flags
 test_active_dispatch_profile_does_not_block_secondmate_launch
 test_droid_secondmate_uses_settings_for_profile_without_turn_end_hook

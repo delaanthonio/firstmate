@@ -510,6 +510,40 @@ ROWS
   pass "bootstrap: JSON-emitting backends require jq (their genuine dep), never tmux"
 }
 
+test_static_droid_harnesses_require_jq() {
+  local kind case_dir home fakebin bash_env out
+  for kind in crew secondmate; do
+    case_dir="$TMP_ROOT/static-droid-$kind"
+    home="$case_dir/home"
+    mkdir -p "$home/config"
+    printf '%s\n' manual > "$home/config/backlog-backend"
+    if [ "$kind" = crew ]; then
+      printf '%s\n' droid > "$home/config/crew-harness"
+    else
+      printf '%s\n' 'droid custom:GPT-5.6-Sol-0 dynamic' > "$home/config/secondmate-harness"
+    fi
+    fakebin=$(make_fake_toolchain "$case_dir")
+    bash_env="$case_dir/no-jq.bash"
+    cat > "$bash_env" <<'SH'
+command() {
+  if [ "${1:-}" = -v ] && [ "${2:-}" = jq ]; then
+    return 1
+  fi
+  builtin command "$@"
+}
+jq() {
+  return 127
+}
+SH
+
+    out=$(PATH="$fakebin:$BASE_PATH" BASH_ENV="$bash_env" FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
+      FM_FAKE_TREEHOUSE_LEASE_HELP=1 "$ROOT/bin/fm-bootstrap.sh")
+    assert_contains "$out" "MISSING: jq (install: brew install jq  # or the platform's package manager)" \
+      "static $kind droid configuration did not require jq"
+  done
+  pass "bootstrap requires jq for static droid crew and secondmate harnesses"
+}
+
 test_treehouse_lease_check_follows_resolved_backend() {
   local case_dir fakebin out
   # A treehouse that lacks durable --lease support is only a problem for a backend
@@ -695,6 +729,7 @@ test_herdr_install_requires_manual_action
 test_cmux_bundled_cli_satisfies_dependency
 test_unknown_backend_reports_invalid_configuration
 test_json_backends_require_jq_not_tmux
+test_static_droid_harnesses_require_jq
 test_treehouse_lease_check_follows_resolved_backend
 test_fleet_sync_timeout_scales_with_origin_backed_project_count
 test_fleet_sync_timeout_floor_preserves_small_fleets

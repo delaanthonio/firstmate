@@ -699,6 +699,39 @@ fi
 # (docs/herdr-backend.md "Known gaps").
 PROJ_ABS_REAL=$(cd "$PROJ_ABS" 2>/dev/null && pwd -P) || PROJ_ABS_REAL="$PROJ_ABS"
 
+mkdir -p "$STATE"
+STATE_REAL=$(cd "$STATE" && pwd -P)
+TURNEND="$STATE_REAL/$ID.turn-ended"
+
+if [ "$DROID_TEMPLATE" -eq 1 ]; then
+  DROID_MODEL=$(droid_model_reference "$MODEL")
+  DROID_EFFORT=$(droid_effort_value "$EFFORT")
+  DROID_HOOK_COMMAND=
+  [ "$KIND" = secondmate ] || DROID_HOOK_COMMAND="touch '$TURNEND'"
+  DROID_SETTINGS_TMP=$(mktemp "$STATE/.${ID}.droid-settings.XXXXXXXXXXXX")
+  if jq -n \
+    --arg model "$DROID_MODEL" \
+    --arg effort "$DROID_EFFORT" \
+    --arg hook_command "$DROID_HOOK_COMMAND" '
+      (if $model == "" and $effort == "" then {}
+       else {sessionDefaultSettings:
+         ((if $model == "" then {} else {model: $model} end) +
+          (if $effort == "" then {} else {reasoningEffort: $effort} end))}
+       end) +
+      (if $hook_command == "" then {}
+       else {hooks: {Stop: [{hooks: [{type: "command", command: $hook_command}]}]}}
+       end)
+    ' > "$DROID_SETTINGS_TMP" \
+    && jq -e 'type == "object"' "$DROID_SETTINGS_TMP" >/dev/null \
+    && mv "$DROID_SETTINGS_TMP" "$STATE/$ID.droid-settings.json"; then
+    :
+  else
+    rm -f "$DROID_SETTINGS_TMP"
+    echo "error: failed to build droid runtime settings" >&2
+    exit 1
+  fi
+fi
+
 real_path_or_raw() {  # <path>
   local path=$1 real
   if real=$(cd "$path" 2>/dev/null && pwd -P); then
@@ -914,9 +947,6 @@ mkdir -p "$TASK_TMP/gotmp"
 # Per-harness turn-end hook: a file that touches state/<id>.turn-ended when the
 # agent finishes a turn. Worktree-resident hooks are kept out of git's view so
 # they never block teardown's dirty check or leak into a commit.
-mkdir -p "$STATE"
-STATE_REAL=$(cd "$STATE" && pwd -P)
-TURNEND="$STATE_REAL/$ID.turn-ended"
 exclude_path() {
   local rel=$1 EXCL
   EXCL=$(git -C "$WT" rev-parse --git-path info/exclude 2>/dev/null || true)
@@ -1015,26 +1045,6 @@ EOF
       exclude_path '.fm-grok-turnend'
       ;;
   esac
-fi
-
-if [ "$DROID_TEMPLATE" -eq 1 ]; then
-  DROID_MODEL=$(droid_model_reference "$MODEL")
-  DROID_EFFORT=$(droid_effort_value "$EFFORT")
-  DROID_HOOK_COMMAND=
-  [ "$KIND" = secondmate ] || DROID_HOOK_COMMAND="touch '$TURNEND'"
-  jq -n \
-    --arg model "$DROID_MODEL" \
-    --arg effort "$DROID_EFFORT" \
-    --arg hook_command "$DROID_HOOK_COMMAND" '
-      (if $model == "" and $effort == "" then {}
-       else {sessionDefaultSettings:
-         ((if $model == "" then {} else {model: $model} end) +
-          (if $effort == "" then {} else {reasoningEffort: $effort} end))}
-       end) +
-      (if $hook_command == "" then {}
-       else {hooks: {Stop: [{hooks: [{type: "command", command: $hook_command}]}]}}
-       end)
-    ' > "$STATE/$ID.droid-settings.json"
 fi
 
 # Per-project delivery mode + yolo flag (bin/fm-project-mode.sh; AGENTS.md project management and task lifecycle).
