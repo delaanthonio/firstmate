@@ -387,8 +387,8 @@ test_droid_threads_custom_model_and_dynamic_effort_through_settings() {
   turnend="$(cd "$HOME_DIR/state" && pwd -P)/$id.turn-ended"
   assert_contains "$launch" "droid --settings '$settings' --auto high" \
     "droid launch did not use its process-only settings merge"
-  jq -e '.sessionDefaultSettings == {"autonomyLevel":"high","autonomyMode":"auto-high","model":"custom:GPT-5.6-Sol-0","reasoningEffort":"dynamic"}' "$settings" >/dev/null \
-    || fail "droid settings did not pin autonomy, map the custom model id, and retain dynamic effort"
+  jq -e '.sessionDefaultSettings == {"model":"custom:GPT-5.6-Sol-0","reasoningEffort":"dynamic"}' "$settings" >/dev/null \
+    || fail "droid settings did not map the custom model id and retain dynamic effort"
   jq -e --arg turnend "$turnend" \
     '.hooks.Stop[0].hooks[0] == {"type":"command","command":("touch '\''" + $turnend + "'\''")}' "$settings" >/dev/null \
     || fail "droid settings lost the Stop turn-end hook"
@@ -467,7 +467,7 @@ test_droid_secondmate_uses_settings_for_profile_without_turn_end_hook() {
   settings="$HOME_DIR/state/$id.droid-settings.json"
   assert_contains "$launch" "droid --settings '$settings' --auto high" \
     "droid secondmate launch did not use the process-only settings merge"
-  jq -e '.sessionDefaultSettings == {"autonomyLevel":"high","autonomyMode":"auto-high","model":"custom:GPT-5.6-Sol-0","reasoningEffort":"dynamic"} and (has("hooks") | not)' "$settings" >/dev/null \
+  jq -e '.sessionDefaultSettings == {"model":"custom:GPT-5.6-Sol-0","reasoningEffort":"dynamic"} and (has("hooks") | not)' "$settings" >/dev/null \
     || fail "droid secondmate settings did not pin both axes or unexpectedly installed a turn-end hook"
   pass "droid secondmates receive configured model and effort through settings without a turn-end hook"
 }

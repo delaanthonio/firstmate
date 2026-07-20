@@ -72,9 +72,9 @@
 #     __PIEXT__    absolute path to state/<task-id>.pi-ext.ts (pi turn-end extension,
 #                  written by this script; outside the worktree to avoid pi's trust gate)
 #     __DROIDSETTINGS__  absolute path to state/<task-id>.droid-settings.json (droid
-#                  runtime settings pinning high autonomy, carrying model/effort
-#                  overrides and, for crews, the Stop turn-end hook; passed via
-#                  droid's --settings so it lives outside the worktree)
+#                  runtime settings carrying model/effort overrides and, for crews,
+#                  the Stop turn-end hook; passed via droid's --settings so it lives
+#                  outside the worktree)
 #     __PITURNEND__ absolute path to .pi/extensions/fm-primary-turnend-guard.ts in a pi secondmate home
 #     __PIWATCH__   absolute path to .pi/extensions/fm-primary-pi-watch.ts in a pi secondmate home
 # Per-harness turn-end hooks are installed automatically; some live outside the worktree.
@@ -352,11 +352,10 @@ launch_template() {
     # droid: --auto high is the autonomy level (footer "Auto (High) - allow all
     # commands"), the analog of claude's --dangerously-skip-permissions. The brief
     # stays one positional arg. Turn-end rides --settings (a process-only settings
-    # merge) pinning high autonomy, carrying model/effort overrides and, for crews,
-    # a claude-style Stop hook. The settings pin is authoritative because global
-    # sessionDefaultSettings can override --auto high. The file is written OUTSIDE
-    # the worktree, like pi's extension, so it never dirties the worktree or trips a
-    # gate. Secondmates use the same path so their model/effort pins work too.
+    # merge) carrying model/effort overrides and, for crews, a claude-style Stop
+    # hook. The file is written OUTSIDE the worktree, like pi's extension, so it
+    # never dirties the worktree or trips a gate. Secondmates use the same path so
+    # their model/effort pins work too.
     droid) printf '%s' 'droid --settings __DROIDSETTINGS__ --auto high "$(cat __BRIEF__)"' ;;
     *) return 1 ;;
   esac
@@ -1027,10 +1026,11 @@ if [ "$DROID_TEMPLATE" -eq 1 ]; then
     --arg model "$DROID_MODEL" \
     --arg effort "$DROID_EFFORT" \
     --arg hook_command "$DROID_HOOK_COMMAND" '
-      {sessionDefaultSettings:
-        ({autonomyLevel: "high", autonomyMode: "auto-high"} +
-         (if $model == "" then {} else {model: $model} end) +
-         (if $effort == "" then {} else {reasoningEffort: $effort} end))} +
+      (if $model == "" and $effort == "" then {}
+       else {sessionDefaultSettings:
+         ((if $model == "" then {} else {model: $model} end) +
+          (if $effort == "" then {} else {reasoningEffort: $effort} end))}
+       end) +
       (if $hook_command == "" then {}
        else {hooks: {Stop: [{hooks: [{type: "command", command: $hook_command}]}]}}
        end)
