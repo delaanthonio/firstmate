@@ -28,7 +28,11 @@ esac
 case "${1:-}" in
   display-message) printf 'firstmate\n'; exit 0 ;;
   list-windows) exit 0 ;;
-  has-session|new-session|new-window|kill-window) exit 0 ;;
+  new-window)
+    [ ! -e "${0%/*}/fail-new-window" ]
+    exit
+    ;;
+  has-session|new-session|kill-window) exit 0 ;;
   send-keys)
     if [ -n "${FM_FAKE_LAUNCH_LOG:-}" ]; then
       prev=
@@ -438,6 +442,46 @@ SH
   pass "droid settings generation fails atomically before backend allocation"
 }
 
+test_droid_settings_refuse_duplicate_id_without_overwrite() {
+  local rec id out status settings original
+  id=profile-droid-duplicate-z22
+  rec=$(make_spawn_case profile-droid-duplicate droid "$id")
+  read_case_record "$rec"
+  settings="$HOME_DIR/state/$id.droid-settings.json"
+  original='{"existing":"live-task-settings"}'
+  printf '%s\n' "$original" > "$settings"
+
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --harness droid --effort dynamic --backend tmux)
+  status=$?
+  [ "$status" -ne 0 ] || fail "duplicate droid task id should fail"
+  assert_contains "$out" "error: droid runtime settings already exist for task '$id'" \
+    "duplicate droid spawn did not report the protected settings collision"
+  [ "$(cat "$settings")" = "$original" ] || fail "duplicate droid spawn overwrote existing settings"
+  [ ! -s "$LAUNCH_LOG" ] || fail "duplicate droid spawn allocated or launched a backend"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "duplicate droid spawn wrote task metadata"
+  pass "droid settings publication refuses duplicate task ids without overwriting live settings"
+}
+
+test_droid_settings_cleanup_after_backend_failure() {
+  local rec id out status leftovers
+  id=profile-droid-backend-failure-z23
+  rec=$(make_spawn_case profile-droid-backend-failure droid "$id")
+  read_case_record "$rec"
+  touch "$FAKEBIN_DIR/fail-new-window"
+
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --harness droid --effort dynamic --backend tmux)
+  status=$?
+  [ "$status" -ne 0 ] || fail "droid spawn should fail when backend allocation fails"
+  [ ! -e "$HOME_DIR/state/$id.droid-settings.json" ] \
+    || fail "failed backend allocation left finalized droid settings"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "failed backend allocation wrote task metadata"
+  leftovers=$(find "$HOME_DIR/state" -name ".$id.droid-settings.*" -print)
+  [ -z "$leftovers" ] || fail "failed backend allocation left a droid settings temporary file: $leftovers"
+  pass "droid settings are removed when spawn fails after atomic publication"
+}
+
 test_batch_forwards_shared_profile_flags() {
   local rec id1 id2 out status
   id1=profile-batch-a-z9
@@ -514,6 +558,8 @@ test_pi_omits_invalid_max_effort
 test_droid_threads_custom_model_and_dynamic_effort_through_settings
 test_droid_requires_jq_before_allocating_backend
 test_droid_settings_failure_precedes_backend_allocation
+test_droid_settings_refuse_duplicate_id_without_overwrite
+test_droid_settings_cleanup_after_backend_failure
 test_batch_forwards_shared_profile_flags
 test_active_dispatch_profile_does_not_block_secondmate_launch
 test_droid_secondmate_uses_settings_for_profile_without_turn_end_hook

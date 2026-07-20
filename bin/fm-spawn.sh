@@ -194,6 +194,7 @@ fi
 ORCA_ABORT_CLEANUP=0
 ORCA_WORKTREE_ID=
 ORCA_TERMINAL=
+DROID_SETTINGS_CLEANUP=
 
 parse_orca_worktree_result() {
   local raw=$1 rest
@@ -214,6 +215,10 @@ parse_orca_worktree_result() {
 
 orca_spawn_abort_cleanup() {
   local status=$?
+  if [ -n "$DROID_SETTINGS_CLEANUP" ]; then
+    rm -f "$DROID_SETTINGS_CLEANUP"
+    DROID_SETTINGS_CLEANUP=
+  fi
   [ "$ORCA_ABORT_CLEANUP" = 1 ] || return "$status"
   ORCA_ABORT_CLEANUP=0
   if [ -n "${ORCA_TERMINAL:-}" ]; then
@@ -722,9 +727,16 @@ if [ "$DROID_TEMPLATE" -eq 1 ]; then
        else {hooks: {Stop: [{hooks: [{type: "command", command: $hook_command}]}]}}
        end)
     ' > "$DROID_SETTINGS_TMP" \
-    && jq -e 'type == "object"' "$DROID_SETTINGS_TMP" >/dev/null \
-    && mv "$DROID_SETTINGS_TMP" "$STATE/$ID.droid-settings.json"; then
-    :
+    && jq -e 'type == "object"' "$DROID_SETTINGS_TMP" >/dev/null; then
+    DROID_SETTINGS_PATH="$STATE/$ID.droid-settings.json"
+    if ln "$DROID_SETTINGS_TMP" "$DROID_SETTINGS_PATH" 2>/dev/null; then
+      rm -f "$DROID_SETTINGS_TMP"
+      DROID_SETTINGS_CLEANUP=$DROID_SETTINGS_PATH
+    else
+      rm -f "$DROID_SETTINGS_TMP"
+      echo "error: droid runtime settings already exist for task '$ID'" >&2
+      exit 1
+    fi
   else
     rm -f "$DROID_SETTINGS_TMP"
     echo "error: failed to build droid runtime settings" >&2
@@ -1134,5 +1146,6 @@ sleep 0.3
 spawn_send_literal "$T" "$LAUNCH"
 sleep 0.3
 spawn_send_key "$T" Enter
+DROID_SETTINGS_CLEANUP=
 
 echo "spawned $ID harness=$HARNESS kind=$KIND mode=$MODE yolo=$YOLO window=$META_WINDOW worktree=$WT"
