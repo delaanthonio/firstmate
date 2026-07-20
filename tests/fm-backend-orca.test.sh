@@ -691,7 +691,7 @@ test_spawn_releases_orca_resources_when_metadata_write_fails() {
     "Orca spawn should close the recorded terminal when a later abort occurs"
   assert_contains "$(cat "$LOG")" $'orca\x1f''worktree'$'\x1f''rm'$'\x1f''--worktree'$'\x1f''id:wt-meta-fail'$'\x1f''--force'$'\x1f''--json' \
     "Orca spawn should remove the recorded worktree when a later abort occurs"
-  [ -d "$state/$id.meta" ] || fail "metadata-write abort should leave the failing fixture unchanged"
+  [ ! -f "$state/$id.meta" ] || fail "metadata-write abort should not leave task metadata after successful cleanup"
   pass "fm-spawn.sh --backend orca: releases terminal and worktree on later aborts"
 }
 
