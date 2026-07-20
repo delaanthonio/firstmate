@@ -43,7 +43,10 @@ case "${1:-}" in
         prev=$a
       done
     fi
-    exit 0
+    if [ -e "${0%/*}/fail-gotmp-send" ] && case "$*" in *'export GOTMPDIR='*) true ;; *) false ;; esac; then
+      exit 1
+    fi
+    exit
     ;;
 esac
 exit 0
@@ -482,6 +485,23 @@ test_droid_settings_cleanup_after_backend_failure() {
   pass "droid settings are removed when spawn fails after atomic publication"
 }
 
+test_droid_settings_survive_launch_failure_after_metadata_commit() {
+  local rec id out status
+  id=profile-droid-launch-failure-z24
+  rec=$(make_spawn_case profile-droid-launch-failure droid "$id")
+  read_case_record "$rec"
+  touch "$FAKEBIN_DIR/fail-gotmp-send"
+
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --harness droid --effort dynamic --backend tmux)
+  status=$?
+  [ "$status" -ne 0 ] || fail "droid spawn should fail when launch delivery fails"
+  assert_meta_profile "$HOME_DIR/state/$id.meta" droid default dynamic
+  [ -e "$HOME_DIR/state/$id.droid-settings.json" ] \
+    || fail "launch failure removed settings owned by committed task metadata"
+  pass "droid settings survive launch failure after task metadata commits"
+}
+
 test_batch_forwards_shared_profile_flags() {
   local rec id1 id2 out status
   id1=profile-batch-a-z9
@@ -560,6 +580,7 @@ test_droid_requires_jq_before_allocating_backend
 test_droid_settings_failure_precedes_backend_allocation
 test_droid_settings_refuse_duplicate_id_without_overwrite
 test_droid_settings_cleanup_after_backend_failure
+test_droid_settings_survive_launch_failure_after_metadata_commit
 test_batch_forwards_shared_profile_flags
 test_active_dispatch_profile_does_not_block_secondmate_launch
 test_droid_secondmate_uses_settings_for_profile_without_turn_end_hook

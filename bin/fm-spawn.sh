@@ -216,7 +216,7 @@ parse_orca_worktree_result() {
 orca_spawn_abort_cleanup() {
   local status=$?
   if [ -n "$DROID_SETTINGS_CLEANUP" ]; then
-    rm -f "$DROID_SETTINGS_CLEANUP"
+    rm -f "$DROID_SETTINGS_CLEANUP" || true
     DROID_SETTINGS_CLEANUP=
   fi
   [ "$ORCA_ABORT_CLEANUP" = 1 ] || return "$status"
@@ -1116,6 +1116,7 @@ META_WINDOW=$T
     echo "projects=$SECONDMATE_PROJECTS"
   fi
 } > "$STATE/$ID.meta"
+DROID_SETTINGS_CLEANUP=
 [ "$BACKEND" = orca ] && ORCA_ABORT_CLEANUP=0
 
 sq_brief=$(shell_quote "$BRIEF")
@@ -1146,6 +1147,5 @@ sleep 0.3
 spawn_send_literal "$T" "$LAUNCH"
 sleep 0.3
 spawn_send_key "$T" Enter
-DROID_SETTINGS_CLEANUP=
 
 echo "spawned $ID harness=$HARNESS kind=$KIND mode=$MODE yolo=$YOLO window=$META_WINDOW worktree=$WT"
