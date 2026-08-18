@@ -35,7 +35,40 @@ document:
 # security, Herdr, tmux, and lifecycle coverage). A full-suite override here
 # would duplicate CI and defeat the targeted Test contract.
 commands:
-  lint: 'bin/fm-lint.sh'
+  lint: |
+    required=$(bin/fm-lint.sh --required-version) || exit
+    pinned=
+    path_rest=$PATH
+    while :; do
+      case $path_rest in
+        *:*) dir=${path_rest%%:*}; path_rest=${path_rest#*:}; more=1 ;;
+        *) dir=$path_rest; path_rest=; more=0 ;;
+      esac
+      [ -n "$dir" ] || dir=.
+      if [ -d "$dir" ]; then
+        candidate=$(cd "$dir" && pwd -P)/shellcheck
+      else
+        candidate=
+      fi
+      if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+        resolved=$("$candidate" --version 2>/dev/null | awk '/^version:/ {print $2; exit}')
+      else
+        resolved=
+      fi
+      if [ "$resolved" = "$required" ]; then
+        pinned=$candidate
+        break
+      fi
+      [ "$more" -eq 1 ] || break
+    done
+    [ -n "$pinned" ] || {
+      printf 'no-mistakes lint: ShellCheck %s is not available on PATH\n' "$required" >&2
+      exit 127
+    }
+    shim=$(mktemp -d "${TMPDIR:-/tmp}/fm-pinned-shellcheck.XXXXXX") || exit
+    trap 'rm -rf "$shim"' EXIT HUP INT TERM
+    ln -s "$pinned" "$shim/shellcheck" || exit
+    PATH="$shim:$PATH" bin/fm-lint.sh
 
 # Publish each run's test evidence to the orphan no-mistakes/evidence branch linked from the PR.
 # The evidence is not committed to the feature or default branch.
