@@ -50,8 +50,8 @@
 #   3. a valid, gen-matching, source-trusted record -> its state and source
 #   4. no record at all: herdr's native busy verdict is trusted as busy
 #      (generation state is sufficient for busy, not for idle), then the
-#      muse session-log and cursor transcript pull sources, then the Grok-only
-#      temporary regex fallbacks classify grok and droid tasks from their
+#      muse session-log and cursor transcript pull sources, then the Grok and
+#      Droid temporary regex fallbacks classify their respective tasks from
 #      verified rendered tails,
 #      then unknown missing
 #   5. malformed, stale, or untrusted records -> unknown, never a fallback
@@ -178,9 +178,9 @@ fm_busy_current_gen() {  # <state-dir> <id>
 # fm_busy_sources_for_harness: the semantic sources trusted to classify a
 # task recorded with <harness>. One line, space-separated, possibly empty.
 # The firstmate-owned sources are appended for every converted adapter.
-# Grok and muse deliberately trust nothing: neither has a semantic WRITER, so
-# neither is armed, and both read their live source on demand in the classifier
-# (grok's rendered tail, muse's session log) rather than through a stored
+# Grok, Droid, and muse deliberately trust nothing: none has a semantic WRITER,
+# so none is armed, and all read their live source on demand in the classifier
+# (Grok's and Droid's rendered tails, muse's session log) rather than a stored
 # record. Listing a source here without a writer that can clear it would seed a
 # busy record nothing could ever settle.
 fm_busy_sources_for_harness() {  # <harness>
@@ -987,7 +987,7 @@ fm_busy_classify_live() {  # <backend> <target> <harness> <id> <state-dir> [expe
 # fm_busy_classify_meta: classify a task from its recorded metadata, so every
 # consumer resolves backend, target, and harness the same way instead of
 # re-deriving them. Requires fm-backend.sh to be sourced. <tail40> is
-# optional pre-captured plain output reused by the Grok arm.
+# optional pre-captured plain output reused by the Grok or Droid arm.
 fm_busy_classify_meta() {  # <meta-file> <id> <state-dir> [tail40]
   local meta=$1 id=$2 state=$3 tail40=${4-} backend target harness
   [ -f "$meta" ] || { printf 'unknown missing'; return 0; }
