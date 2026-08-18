@@ -378,11 +378,15 @@ test_policy_cli_direct() {
 # that definition, and would disagree the moment this checker sourced a shared
 # library.
 test_scripts_are_shellcheck_clean() {
-  local out
+  local fakebin out tmp
   command -v shellcheck >/dev/null 2>&1 || { pass "shellcheck not installed, skipping"; return; }
-  out=$("$ROOT/bin/fm-lint.sh" "$ROOT/bin/fm-cd-pretool-check.sh" 2>&1) \
+  tmp=$(fm_test_tmproot fm-cd-lint-path-skew)
+  fakebin=$(fm_fakebin "$tmp")
+  fm_test_stub_shellcheck_version "$fakebin" 0.10.0
+  out=$(PATH="$fakebin:$PATH" fm_test_run_with_pinned_shellcheck \
+    "$ROOT/bin/fm-lint.sh" "$ROOT/bin/fm-cd-pretool-check.sh" 2>&1) \
     || fail "bin/fm-cd-pretool-check.sh is not lint-clean under the pinned definition: $out"
-  pass "bin/fm-cd-pretool-check.sh is clean under bin/fm-lint.sh"
+  pass "bin/fm-cd-pretool-check.sh selects pinned ShellCheck under PATH skew"
 }
 
 test_full_acceptance_matrix

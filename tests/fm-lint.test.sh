@@ -319,6 +319,7 @@ test_zero_changed_files_exits_clean() {
   tmp=$(fm_test_tmproot fm-lint-zero-changed)
   fakebin=$(fm_fakebin "$tmp")
   fm_lint_stub_git "$fakebin"
+  fm_test_stub_shellcheck_version "$fakebin" 0.10.0
   diff_file="$tmp/diff.nul"
   : > "$diff_file"
 
@@ -326,13 +327,14 @@ test_zero_changed_files_exits_clean() {
   # Clear CI/GITHUB_ACTIONS so changed-file mode runs and can reach the empty
   # target set; a CI run would otherwise force a full lint instead.
   out=$(PATH="$fakebin:$PATH" GITHUB_ACTIONS='' CI='' FM_TEST_GIT_BRANCH=feature \
-    FM_TEST_GIT_DIFF_FILE="$diff_file" "$LINT" 2>&1) || rc=$?
+    FM_TEST_GIT_DIFF_FILE="$diff_file" fm_test_run_with_pinned_shellcheck \
+    "$LINT" 2>&1) || rc=$?
   [ "$rc" -eq 0 ] || fail "zero changed lint targets must exit 0, got $rc"$'\n'"$out"
   assert_contains "$out" "ShellCheck 0.11.0" "zero-changed run did not print the ShellCheck version line"
   assert_contains "$out" "no changed lint targets" "zero-changed run did not note the empty target set"
   assert_contains "$out" "workflow files valid" \
     "zero-changed run skipped workflow YAML validation"
-  pass "fm-lint.sh exits 0 with a note when the local branch has no changed lint targets"
+  pass "zero-target lint selects pinned ShellCheck under PATH skew"
 }
 
 test_list_files_respects_changed_mode() {

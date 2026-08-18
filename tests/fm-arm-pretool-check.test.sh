@@ -447,41 +447,16 @@ test_allow_is_silent_both_modes() {
 # linter directly here would be a second, weaker copy of that definition, and it
 # disagreed with the owner the moment this checker sourced a shared library.
 
-find_pinned_shellcheck() {
-  local candidate dir more path_rest required resolved
-  required=$("$ROOT/bin/fm-lint.sh" --required-version)
-  path_rest=$PATH
-  while :; do
-    case $path_rest in
-      *:*) dir=${path_rest%%:*}; path_rest=${path_rest#*:}; more=1 ;;
-      *) dir=$path_rest; path_rest=; more=0 ;;
-    esac
-    [ -n "$dir" ] || dir=.
-    candidate="$dir/shellcheck"
-    if [ -x "$candidate" ]; then
-      resolved=$("$candidate" --version 2>/dev/null | awk '/^version:/ {print $2; exit}')
-    else
-      resolved=
-    fi
-    if [ "$resolved" = "$required" ]; then
-      printf '%s\n' "$candidate"
-      return 0
-    fi
-    [ "$more" -eq 1 ] || break
-  done
-  return 1
-}
-
 test_shellcheck_clean() {
-  local out pinned pinned_dir required
+  local fakebin out tmp
   command -v shellcheck >/dev/null 2>&1 || { pass "shellcheck not installed, skipping"; return; }
-  required=$("$ROOT/bin/fm-lint.sh" --required-version)
-  pinned=$(find_pinned_shellcheck) \
-    || fail "ShellCheck $required is not available on PATH for the pinned lint assertion"
-  pinned_dir=${pinned%/*}
-  out=$(PATH="$pinned_dir:$PATH" "$ROOT/bin/fm-lint.sh" "$CHECK" 2>&1) \
+  tmp=$(fm_test_tmproot fm-arm-lint-path-skew)
+  fakebin=$(fm_fakebin "$tmp")
+  fm_test_stub_shellcheck_version "$fakebin" 0.10.0
+  out=$(PATH="$fakebin:$PATH" fm_test_run_with_pinned_shellcheck \
+    "$ROOT/bin/fm-lint.sh" "$CHECK" 2>&1) \
     || fail "bin/fm-arm-pretool-check.sh is not lint-clean under the pinned definition: $out"
-  pass "bin/fm-arm-pretool-check.sh is clean under bin/fm-lint.sh"
+  pass "bin/fm-arm-pretool-check.sh selects pinned ShellCheck under PATH skew"
 }
 
 test_full_acceptance_matrix

@@ -187,6 +187,66 @@ SH
   chmod +x "$fakebin/$tool"
 }
 
+# fm_test_find_pinned_shellcheck: print the first ShellCheck on PATH whose
+# reported version matches bin/fm-lint.sh's pin. This keeps nested lint checks
+# deterministic when another tool manager places an older ShellCheck first.
+fm_test_find_pinned_shellcheck() {
+  local candidate dir more path_rest required resolved
+  required=$("$ROOT/bin/fm-lint.sh" --required-version) || return 1
+  path_rest=$PATH
+  while :; do
+    case $path_rest in
+      *:*) dir=${path_rest%%:*}; path_rest=${path_rest#*:}; more=1 ;;
+      *) dir=$path_rest; path_rest=; more=0 ;;
+    esac
+    [ -n "$dir" ] || dir=.
+    if [ -d "$dir" ]; then
+      candidate=$(cd "$dir" && pwd -P)/shellcheck
+    else
+      candidate=
+    fi
+    if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+      resolved=$("$candidate" --version 2>/dev/null | awk '/^version:/ {print $2; exit}')
+    else
+      resolved=
+    fi
+    if [ "$resolved" = "$required" ]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+    [ "$more" -eq 1 ] || break
+  done
+  printf 'fm-test: ShellCheck %s is not available on PATH\n' "$required" >&2
+  return 1
+}
+
+# fm_test_run_with_pinned_shellcheck <command> [args...]: run a nested lint
+# command through a one-tool PATH shim, preserving the caller's remaining PATH
+# order for git and other fixture tools.
+fm_test_run_with_pinned_shellcheck() {
+  local pinned shim
+  pinned=$(fm_test_find_pinned_shellcheck) || return 127
+  shim=$(fm_test_tmproot fm-pinned-shellcheck) || return 1
+  ln -s "$pinned" "$shim/shellcheck" || return 1
+  PATH="$shim:$PATH" "$@"
+}
+
+# fm_test_stub_shellcheck_version <fakebin> <version>: install a version-only
+# ShellCheck stub for PATH-skew regressions. Any lint attempt through this wrong
+# candidate fails so a passing test proves the pinned resolver selected another.
+fm_test_stub_shellcheck_version() {
+  local fakebin=$1 version=$2
+  cat > "$fakebin/shellcheck" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = --version ]; then
+  printf 'ShellCheck - shell script analysis tool\nversion: %s\n' "$version"
+  exit 0
+fi
+exit 99
+SH
+  chmod +x "$fakebin/shellcheck"
+}
+
 # --- deterministic git identity and fixtures --------------------------------
 
 # fm_git_identity [name] [email]: export a fixed author/committer identity so
