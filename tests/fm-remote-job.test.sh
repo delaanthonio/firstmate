@@ -129,6 +129,15 @@ rm -f "$LOCAL_BIN_PARENT/bin"
 mkdir "$LOCAL_BIN_PARENT/bin"
 pass "operator PATH excludes a symlinked local bin"
 
+GLOB_ROOT="$TMP_ROOT/glob-order"
+mkdir -p "$GLOB_ROOT/zeta/2/bin" "$GLOB_ROOT/alpha/2/bin" "$GLOB_ROOT/alpha/10/bin"
+FM_REMOTE_JOB_OPERATOR_PATH=
+fm_remote_job_append_glob_dirs "$GLOB_ROOT/*/*/bin"
+EXPECTED_GLOB_PATH="$GLOB_ROOT/alpha/10/bin:$GLOB_ROOT/alpha/2/bin:$GLOB_ROOT/zeta/2/bin"
+[ "$FM_REMOTE_JOB_OPERATOR_PATH" = "$EXPECTED_GLOB_PATH" ] \
+  || fail "glob-discovered PATH directories were not appended in deterministic lexical order"
+pass "operator PATH appends glob-discovered manager directories in deterministic lexical order"
+
 NVM_ROOT="$ACCOUNT_HOME/.nvm"
 NVM_V20="$NVM_ROOT/versions/node/v20.18.0/bin"
 NVM_V24="$NVM_ROOT/versions/node/v24.14.1/bin"
