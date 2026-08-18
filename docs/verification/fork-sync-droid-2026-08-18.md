@@ -14,7 +14,13 @@ The preserved fork-only commits are `3079e87`, `12542db`, `9db5b56`, and `5540c3
 
 The merge conflicted in `.agents/skills/afk/SKILL.md`, `.agents/skills/harness-adapters/SKILL.md`, `AGENTS.md`, `README.md`, `bin/fm-harness.sh`, `bin/fm-lock.sh`, `bin/fm-spawn.sh`, `bin/fm-teardown.sh`, `bin/fm-tmux-lib.sh`, `bin/fm-watch.sh`, and `docs/configuration.md`.
 Each conflict used the current upstream architecture as its baseline, followed by an explicit Droid capability restoration and a repository-wide verified-harness allowlist audit.
-The resulting fork-specific delta was inspected with `git diff upstream/main..HEAD`.
+
+## Complete branch audit
+
+The complete pre-publication audit used `git diff --name-status origin/main..HEAD`, `git diff --stat origin/main..HEAD`, and `git diff origin/main..HEAD` so the inspected range included both the imported upstream baseline and the fork-specific reconciliation.
+The range contained 381 changed files with 117,607 insertions and 8,145 deletions across agent contracts, harness integrations, hooks, runtime backends, operator and maintainer documentation, workflows, and tests.
+The audit reconciled the verified-harness inventories in `AGENTS.md`, `.agents/skills/harness-adapters/SKILL.md`, `docs/configuration.md`, `docs/architecture.md`, `docs/remote-secondmates.md`, and `docs/trace-context.md` against the executable allowlists and focused tests.
+The fork-specific overlay was separately inspected with `git diff 64d61aed84373e02b1a28c4e6b262908ed8128d5..HEAD`; it contained 31 changed files with 262 insertions and 50 deletions.
 
 ## Droid capability inventory
 
@@ -30,7 +36,7 @@ The resulting fork-specific delta was inspected with `git diff upstream/main..HE
 - Droid worker busy state remains an adapter-scoped rendered fallback in `bin/fm-busy-lib.sh`, never a cross-harness regex.
 - The bootstrap dispatch validator accepts `droid` and rejects unsupported Droid effort values in `bin/fm-bootstrap.sh`.
 - The local secondmate-liveness recovery allowlist accepts both `droid` and the already-verified `cursor` adapter in `bin/fm-bootstrap.sh`.
-- Operator guidance remains in `AGENTS.md`, `README.md`, `docs/configuration.md`, `docs/agent-control.md`, `.agents/skills/afk/SKILL.md`, and `.agents/skills/harness-adapters/SKILL.md`.
+- Operator and maintainer guidance remains in `AGENTS.md`, `README.md`, `docs/configuration.md`, `docs/agent-control.md`, `docs/architecture.md`, `docs/remote-secondmates.md`, `docs/trace-context.md`, `.agents/skills/afk/SKILL.md`, and `.agents/skills/harness-adapters/SKILL.md`.
 - Focused coverage remains in `tests/fm-bootstrap.test.sh`, `tests/fm-secondmate-liveness.test.sh`, `tests/fm-control.test.sh`, `tests/fm-composer-ghost.test.sh`, `tests/fm-busy-state.test.sh`, and `tests/fm-busy-adapter-wiring.test.sh`.
 
 The valid Droid dispatch-profile regression produces no `CREW_DISPATCH: invalid ... unverified harness: droid` diagnostic.

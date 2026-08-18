@@ -337,6 +337,10 @@
       "audience": "maintainer-verification"
     },
     {
+      "path": "docs/verification/fork-sync-droid-2026-08-18.md",
+      "audience": "maintainer-verification"
+    },
+    {
       "path": "docs/verification/muse.md",
       "audience": "maintainer-verification"
     },
