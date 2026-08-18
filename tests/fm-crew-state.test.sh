@@ -845,6 +845,54 @@ test_no_run_grok_uses_isolated_fallback() {
   pass "grok still reads working through its isolated rendered-tail fallback"
 }
 
+test_no_run_droid_recovers_stale_cmux_target_by_label() {
+  command -v jq >/dev/null 2>&1 || { pass "Droid cmux recovery skipped without jq"; return; }
+  reset_fakes
+  local d id=feat-droid-cmux title out calls
+  local stale_ws=aaaaaaaa-0000-0000-0000-000000000000
+  local stale_sf=bbbbbbbb-1111-1111-1111-111111111111
+  d=$(new_case droid-cmux-stale)
+  make_repo_on_branch "$d/wt" fm/feat-droid-cmux
+  make_fakebin "$d" >/dev/null
+  title=$(FM_ROOT="$ROOT" FM_HOME="$ROOT" bash -c '. "$1/bin/backends/cmux.sh"; fm_backend_cmux_scoped_title "$2"' _ "$ROOT" "fm-$id")
+  cat > "$d/fakebin/cmux" <<'SH'
+#!/usr/bin/env bash
+set -u
+live_ws=cccccccc-2222-2222-2222-222222222222
+live_sf=dddddddd-3333-3333-3333-333333333333
+printf '%s\n' "$*" >> "$FM_FAKE_CMUX_LOG"
+case "${1:-}:${2:-}" in
+  workspace:list)
+    printf '{"workspaces":[{"id":"%s","title":"%s"}]}' "$live_ws" "$FM_FAKE_CMUX_TITLE"
+    ;;
+  list-panes:*)
+    case " $* " in
+      *" --workspace $live_ws "*) printf '{"panes":[{"selected_surface_id":"%s","surface_ids":["%s"]}]}' "$live_sf" "$live_sf" ;;
+      *) printf '{"panes":[]}' ;;
+    esac
+    ;;
+  read-screen:*)
+    case " $* " in
+      *" --workspace $live_ws --surface $live_sf "*) printf '{"text":"Executing... (Press ESC to stop)"}' ;;
+      *) exit 1 ;;
+    esac
+    ;;
+esac
+SH
+  chmod +x "$d/fakebin/cmux"
+  fm_write_meta "$d/state/$id.meta" "window=$stale_ws:$stale_sf" "worktree=$d/wt" "kind=scout" \
+    "backend=cmux" "harness=droid"
+  out=$(FM_FAKE_CMUX_TITLE="$title" FM_FAKE_CMUX_LOG="$d/cmux.log" run_crew_state "$d" "$id")
+  calls=$(cat "$d/cmux.log")
+  assert_contains "$out" "state: working" "Droid stale cmux target recovers to working"
+  assert_contains "$out" "droid-regex" "Droid stale cmux target preserves its fallback source"
+  assert_contains "$calls" "read-screen --workspace cccccccc-2222-2222-2222-222222222222 --surface dddddddd-3333-3333-3333-333333333333" \
+    "Droid scoped capture must use the label-recovered cmux ids"
+  assert_not_contains "$calls" "read-screen --workspace $stale_ws --surface $stale_sf" \
+    "Droid scoped capture must not read from stale cmux ids"
+  pass "Droid busy state recovers stale cmux ids by task label"
+}
+
 test_no_run_herdr_unknown_uses_backend_capture() {
   command -v jq >/dev/null 2>&1 || { pass "herdr pane fallback skipped without jq"; return; }
   reset_fakes
@@ -1336,6 +1384,7 @@ test_other_branch_run_ignored
 test_no_run_busy_pane
 test_no_run_footer_text_alone_is_not_working
 test_no_run_grok_uses_isolated_fallback
+test_no_run_droid_recovers_stale_cmux_target_by_label
 test_no_run_herdr_unknown_uses_backend_capture
 test_no_run_herdr_idle_agent_status_outranked_by_record
 test_no_run_herdr_idle_agent_status_and_idle_record_stays_idle
