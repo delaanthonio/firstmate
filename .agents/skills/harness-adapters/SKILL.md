@@ -78,7 +78,7 @@ When changing any primary watcher adapter, update `docs/supervision-protocols/`,
 
 `bin/fm-spawn.sh` accepts concrete `--harness`, `--model`, and `--effort` values chosen by firstmate at intake.
 Do not make the shell scripts parse or match natural-language dispatch rules.
-The supported launch-profile flags below were verified locally on 2026-06-30 with each CLI's help and parser path.
+The supported launch-profile paths below were verified locally with each CLI's help and parser path.
 
 | Harness | Model flag | Effort flag | Notes |
 |---|---|---|---|
@@ -87,8 +87,9 @@ The supported launch-profile flags below were verified locally on 2026-06-30 wit
 | grok | `--model <model>` | `--reasoning-effort <low\|medium\|high\|xhigh>` | Verified on grok 0.2.73. `--effort` parses too, but firstmate's profile axis is reasoning effort. `--reasoning-effort max` is rejected, so `max` is omitted. |
 | pi | `--model <model>` | `--thinking <low\|medium\|high\|xhigh>` | Verified on pi 0.80.2. `max` prints an invalid-thinking warning, so firstmate omits Pi effort when the requested effort is `max`. |
 | opencode | `--model <provider/model>` | none for firstmate's interactive launch | Verified on opencode 1.17.6. `opencode run` has `--variant`, but firstmate launches the interactive `opencode --prompt` path, which has no verified effort flag. |
+| droid | `sessionDefaultSettings.model` in `--settings <path>` | `sessionDefaultSettings.reasoningEffort` with `low\|medium\|high\|xhigh\|max\|dynamic` in the same file | Verified on droid 0.173.0 on 2026-07-16. Interactive droid has no model or effort CLI flag. `fm-spawn` resolves a requested provider-facing model name to the matching `customModels[].id` when registered, omits rejected effort values, and uses the same process-only settings path for crews and secondmates. |
 
-When a requested effort value is outside the harness-specific accepted set, `fm-spawn` records the requested `effort=` in meta but emits no effort flag for that harness.
+When a requested effort value is outside the harness-specific accepted set, `fm-spawn` records the requested `effort=` in meta but emits no effort override for that harness.
 This preserves launch success instead of passing a known-bad value.
 
 ## no-mistakes skill invocation
@@ -267,7 +268,7 @@ It does not pass `--permission-mode`, so the passive hook cannot escalate the pr
 Project-local Grok hooks require folder trust, verified with launch-time `--trust`; if the primary firstmate checkout is not trusted for Grok hooks, this primary guard fails open and `fm-guard.sh` remains the next-command alarm.
 Grok's primary watcher protocol is Claude-shaped background-notify around `bin/fm-watch-arm.sh`; the passive Stop hook is only a backstop for blind turn ends.
 
-## droid (VERIFIED 2026-06-27, droid 0.159.1)
+## droid (VERIFIED 2026-07-16, droid 0.173.0)
 
 | Fact | Value |
 |---|---|
@@ -277,7 +278,9 @@ Grok's primary watcher protocol is Claude-shaped background-notify around `bin/f
 | Skill invocation | `/<skill>` (e.g. `/no-mistakes`); droid imports `~/.claude/skills`, so user-level skills are available and droid can drive no-mistakes itself |
 
 Factory's droid CLI. The base interactive launch is `droid --auto high "$(cat <brief>)"`; `--auto high` is the autonomy level (footer `Auto (High) · allow all commands`), the analog of claude's `--dangerously-skip-permissions`, and it runs every tool with no per-action permission prompt.
-For ship and scout tasks, `fm-spawn` adds `--settings <state/<id>.droid-settings.json>` to carry the turn-end hook; secondmate launches use the base form.
+`fm-spawn`'s verified droid template adds `--settings <state/<id>.droid-settings.json>` for ship, scout, and secondmate launches; the raw-command escape hatch does not generate adapter settings.
+The file carries process-only model and reasoning overrides when requested and the turn-end hook for ship and scout tasks.
+Secondmates use the same settings path so their configured droid model and effort pins apply, but their file has no turn-end hook.
 Keep the brief as one positional argument; a single quoted prompt is processed as one message (no multi-arg splitting).
 The interactive TUI stays alive after a turn, idling in the composer, so firstmate steers it with `fm-send` exactly like the other harnesses.
 Mid-turn, Enter steers the running turn and Ctrl+Enter queues; the composer's `Enter to steer · Ctrl+Enter to queue` placeholder is dim/ghost text, and `fm-tmux-lib.sh`'s composer reader correctly reads a busy or idle droid pane as empty, so no `FM_COMPOSER_IDLE_RE` override is needed.
@@ -285,9 +288,21 @@ Mid-turn, Enter steers the running turn and Ctrl+Enter queues; the composer's `E
 No trust or permission dialog appears on first run in a fresh worktree when droid is already authenticated; authentication and trust persist globally under `~/.factory/`, not per-directory, so later worktrees never re-prompt.
 On an unauthenticated machine a login prompt can appear instead, so still peek the pane after spawn like any other harness.
 
+**Autonomy override behavior (verified 2026-07-16, droid 0.173.0).**
+A live launch with `--auto high` showed `Auto (Med)` when global `~/.factory/settings.json` set `sessionDefaultSettings.autonomyLevel` to `medium`.
+This is an intentional operator override: `fm-spawn` keeps `--auto high` in its launch template but does not write `autonomyLevel` or `autonomyMode` into the per-task settings merge.
+
 droid auto-updates in the background, like opencode: a launch can upgrade the binary mid-stream (observed 0.156.2 → 0.159.1) and the running TUI keeps working on the version it started.
 Treat the recorded version as a floor, and re-verify if a launch reports a much newer one.
 The default model is `claude-opus-4-8`; a machine may pin a different model (e.g. a local `gpt-5.5` via a custom provider) through `~/.factory/settings.json`, which is captain environment, not an adapter fact.
+Interactive droid 0.173.0 exposes no `--model` or reasoning-effort CLI flags.
+Its process-only `--settings` merge accepts `sessionDefaultSettings.model` and `sessionDefaultSettings.reasoningEffort`.
+On 2026-07-16, the exact model/effort probe command was `droid --settings /tmp/droid-model-effort-x7-custom.json --auto high`, with a hand-written file containing `{"sessionDefaultSettings":{"model":"custom:GPT-5.6-Sol-0","reasoningEffort":"dynamic"}}`.
+The captured model footer was `GPT-5.6 Sol (Medium) [custom]`.
+The `/settings` surface showed `GPT-5.6 Sol` and `Dynamic`, both labeled `[overridden by runtime --settings flag]`.
+The same probe confirmed `low`, `medium`, `high`, `xhigh`, `max`, and `dynamic`; the corresponding footers showed Low, Medium, High, Extra high, Max, while Dynamic appeared in `/settings` and selected a per-turn level in the footer.
+Both the bare provider model name and custom registry id parse, but the registry id is what explicitly selects the registered custom provider (`[custom]` in the footer).
+`fm-spawn` therefore resolves a requested bare model against `customModels[].model` in `~/.factory/settings.json` and writes the matching `customModels[].id` when present, without copying any other settings fields.
 
 Resume after exit with `droid --resume <session-id>` (or bare `droid -r` for the last session); the id is printed on `/quit`.
 
@@ -295,5 +310,5 @@ droid exports no dedicated harness-identification env var to tool subprocesses (
 So, like codex and opencode, it is detected by the `droid` command name in the process ancestry, not an env marker.
 
 Turn-end hook: droid implements the full claude-style hook system, including a `Stop` hook that fires when it finishes responding (and not on a user interrupt) - the per-turn turn-end signal the watcher needs.
-`fm-spawn` installs it by writing a settings file to `state/<id>.droid-settings.json`, OUTSIDE the worktree like pi's extension, and launching with `droid --settings <that-file>`, which merges the hook on top of the user's global `~/.factory` settings for that process only.
-The file carries `{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"touch <turn-ended-file>"}]}]}}`; verified to fire on every turn (exit 0) and cleaned up by `fm-teardown`.
+`fm-spawn` installs it by writing a settings file to `state/<id>.droid-settings.json`, OUTSIDE the worktree like pi's extension, and launching with `droid --settings <that-file>`, which merges the hook and requested session defaults on top of the user's global `~/.factory` settings for that process only.
+For ship and scout tasks the file retains `{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"touch <turn-ended-file>"}]}]}}` alongside any `sessionDefaultSettings`; verified to fire on every turn (exit 0) and cleaned up by `fm-teardown`.
