@@ -30,6 +30,7 @@ The first crewmate spawn creates whatever tmux session and window it needs.
 
 Launch your harness from inside a tmux session (`tmux new -s firstmate` or similar, then start your agent).
 Every crewmate window then lands in that same session, where you can watch the crew work in real time or type into any window to intervene.
+The duplicate-window check and window creation both target that resolved session explicitly, including when its name is numeric, so they cannot be interpreted against another tmux session.
 When following the commands below, use that session's actual name.
 Inside tmux, `tmux display-message -p '#S'` prints it.
 

@@ -104,9 +104,8 @@ The helper's header owns the exact signal detection, relocated-home limitation, 
 
 ## Two task shapes
 
-Ship tasks change projects and ship by project mode (`no-mistakes`, `direct-PR`, or `local-only`); every generated ship brief also includes the same concise code-quality pass before done.
-The no-mistakes ship brief keeps pipeline mechanics in version-matched no-mistakes guidance and adds only the first-run `no-mistakes axi run --intent "<summary>"` hint.
-Scout tasks investigate, plan, reproduce bugs, or audit, then leave a report at `data/<id>/report.md` and never push.
+Ship tasks change projects and ship by project mode (`no-mistakes`, `direct-PR`, or `local-only`); scout tasks investigate, plan, reproduce bugs, or audit, then leave a report at `data/<id>/report.md` and never push.
+`AGENTS.md` section 11 owns the generated brief standards for both shapes.
 
 ## Dispatch profiles
 
