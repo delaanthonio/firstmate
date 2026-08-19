@@ -44,6 +44,12 @@
 # it carries the AGENTS.md authoring bar (widely useful knowledge only, pointers
 # over copied detail) and has the crewmate add the fm-ensure-agents-md.sh
 # self-governance section when a touched project AGENTS.md lacks it.
+# Ship tasks also carry review-evidence contracts near the definition of done:
+# PR-producing modes require a plain-language, four-section PR description, and
+# every mode requires before/after screenshots for user-visible UI changes or an
+# explicit screenshots-not-applicable note for non-UI work. Local-only evidence
+# stays under the task data directory; PR modes attach it to the PR description.
+# Scout and secondmate briefs intentionally omit both contracts.
 # Refuses to overwrite an existing brief.
 set -eu
 
@@ -270,6 +276,7 @@ fi
 read -r MODE _ <<EOF
 $("$FM_ROOT/bin/fm-project-mode.sh" "$REPO")
 EOF
+RULE2="2. Stay inside this worktree; modify nothing outside it."
 
 case "$MODE" in
   direct-PR)
@@ -279,7 +286,7 @@ case "$MODE" in
 # Definition of done
 This project ships **direct-PR**: you raise the PR yourself, without the no-mistakes pipeline.
 The task is complete only when committed on your branch.
-When it is implemented and committed, push your branch and open a PR with \`gh-axi\`, then append \`done: PR {url}\` to the status file and stop.
+When it is implemented and committed, push your branch and open a PR with \`gh-axi\`, then append \`done: PR {url} - {summary}\` to the status file and stop.
 Do NOT run /no-mistakes. The captain reviews and merges the PR; firstmate relays it.
 EOF
 )
@@ -287,12 +294,13 @@ EOF
   local-only)
     SETUP2=""
     RULE1="1. Never push to any remote and never open a PR. Work only on your \`fm/$ID\` branch; firstmate handles the merge into local \`main\`."
+    RULE2="2. Stay inside this worktree except for screenshot evidence explicitly required below, which may be saved only under \`$DATA/$ID/\`; modify nothing else outside the worktree."
     DOD=$(cat <<EOF
 # Definition of done
 This project ships **local-only**: no remote, no PR, no pipeline.
 The task is complete only when committed on your branch \`fm/$ID\`. Do NOT push, do NOT open a PR, do NOT merge.
 Keep your branch a clean fast-forward onto the current default branch - if \`main\` has advanced, rebase onto it so the eventual merge stays a fast-forward.
-When it is implemented and committed, append \`done: ready in branch fm/$ID\` to the status file and stop.
+When it is implemented and committed, append the applicable done status specified in the UI screenshot contract to the status file and stop.
 Firstmate then reviews your branch diff, the captain approves, and firstmate merges it into local \`main\`.
 EOF
 )
@@ -316,11 +324,44 @@ Two firstmate-specific rules layer on top of that guidance:
   When the decision comes back, feed it to the gate with \`no-mistakes axi respond\` and let the pipeline apply it - do not route the question to "the user" or implement the fix yourself.
 - Avoid \`--yes\`: the captain, not you, owns the ask-user decisions it would silently auto-resolve.
 
-After /no-mistakes reports CI green (the CI-ready return point - do not wait for it to keep monitoring in the background until merge), append \`done: PR {url} checks green\` and stop. You are finished.
+After /no-mistakes reports CI green (the CI-ready return point - do not wait for it to keep monitoring in the background until merge), append \`done: PR {url} checks green - {summary}\` and stop. You are finished.
 EOF
 )
     ;;
 esac
+
+if [ "$MODE" = local-only ]; then
+PR_DESCRIPTION_CONTRACT=""
+UI_SCREENSHOT_CONTRACT=$(cat <<EOF
+# UI screenshot contract
+If the change alters a user-visible web page, mobile screen, desktop window, or email template, capture before and after screenshots.
+Save both files under \`$DATA/$ID/shots/\`, never commit them to the repo, and append \`done: ready in branch fm/$ID; screenshots: $DATA/$ID/shots/\` so firstmate can relay them for review.
+This mode has no PR, so do not embed the screenshots in a PR description.
+Use the shared automation browser, \`chrome-devtools-axi\`.
+For agenda-mobile UI, prefer Expo web in the automation browser over the iOS simulator.
+For a non-UI change, skip screenshots and append \`done: ready in branch fm/$ID; no user-visible change - screenshots not applicable\`.
+EOF
+)
+else
+PR_DESCRIPTION_CONTRACT=$(cat <<'EOF'
+# PR description contract
+When this task opens or updates a PR, whether directly in direct-PR mode or through the no-mistakes pipeline, you own the quality of its description.
+Include explicitly titled sections named "Summary", "What changed", "Why", and "How it was tested".
+Make the Summary plain-language and understandable to a non-engineer.
+Write for a reader who has not seen the diff, with no filler or restated commit lists.
+EOF
+)
+UI_SCREENSHOT_CONTRACT=$(cat <<'EOF'
+# UI screenshot contract
+If the change alters a user-visible web page, mobile screen, desktop window, or email template, capture before and after screenshots and embed them in the PR description before reporting done.
+Use the shared automation browser, `chrome-devtools-axi`.
+Attach each image by converting base64 to a File and dispatching a native drop event on the GitHub description textarea; file inputs and synthetic drags do not work.
+Verify the saved description renders the `user-attachments` image URLs, and never commit screenshot files to the repo.
+For agenda-mobile UI, prefer Expo web in the automation browser over the iOS simulator.
+For a non-UI change, skip screenshots and include the exact sentence `no user-visible change - screenshots not applicable` both in every done status line and in the PR description's explicitly titled "How it was tested" section.
+EOF
+)
+fi
 
 cat > "$BRIEF" <<EOF
 You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
@@ -341,7 +382,7 @@ If the top-level path is the primary checkout or not the worktree you were launc
 
 # Rules
 $RULE1
-2. Stay inside this worktree; modify nothing outside it.
+$RULE2
 3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations.
 4. Report status by appending one line:
    \`echo "{state}: {one short line}" >> $STATUS_FILE\`
@@ -368,6 +409,10 @@ Record only project knowledge useful to almost every future session.
 For anything the codebase already shows, prefer a pointer to the authoritative file, command, or doc over copying the detail.
 If you touch a project \`AGENTS.md\` that lacks \`## Maintaining this file\`, add that short self-governance section from \`$FM_ROOT/bin/fm-ensure-agents-md.sh\` in the same pass.
 Keep it proportionate: skip \`AGENTS.md\` edits for trivial tasks that produced no durable project knowledge.
+
+$PR_DESCRIPTION_CONTRACT
+
+$UI_SCREENSHOT_CONTRACT
 
 $DOD
 EOF
