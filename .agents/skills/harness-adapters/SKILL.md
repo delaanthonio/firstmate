@@ -122,7 +122,7 @@ Choose intermediate levels proportionally as complexity, uncertainty, blast radi
 When a verified adapter lacks `xhigh`, cap the choice at its highest supported non-`max` level rather than omitting the intended effort silently.
 Never select `max` from this fallback; use it only when the captain has explicitly expressed that per-task or standing preference.
 
-The supported launch-profile flags below are verified locally; each row records its evidence.
+The supported launch-profile paths below are verified locally; each row records its evidence.
 
 | Harness | Model flag | Effort flag | Notes |
 |---|---|---|---|
@@ -134,7 +134,7 @@ The supported launch-profile flags below are verified locally; each row records 
 | kimi | `--model <model>` | none | Verified 2026-07-25 on Kimi Code CLI 0.29.1. |
 | cursor | `--model <model>` | none | Verified 2026-08-11 on Cursor Agent CLI 2026.08.11-e8db854. No effort flag exists, so firstmate records the requested effort in task metadata and omits it from the launch. Validate ids against `cursor-agent --list-models` rather than assuming a low/medium/high family: the live catalog carries only `-high` Grok ids. |
 | muse | `--model <model>` | `--reasoning-effort <low\|medium\|high\|xhigh>`, and `ultra` only for an explicit `max` | Verified 2026-08-05 on Muse Code 0.1.0-R708.1. The flag accepts `none\|minimal\|low\|medium\|high\|xhigh\|ultra` and defaults to `high`. `ultra` is muse's max-class level, so it is reachable only through an explicit captain `max`, never from the generic fallback; `none` and `minimal` sit below the shared vocabulary and stay unreachable. |
-| droid | none | none | Verified 2026-06-27 on Droid 0.159.1. The adapter preserves the captain's configured default model and effort. |
+| droid | `sessionDefaultSettings.model` in `--settings <path>` | `sessionDefaultSettings.reasoningEffort` with `low\|medium\|high\|xhigh\|max\|dynamic` in the same file | Verified on Droid 0.173.0 on 2026-07-16. Interactive Droid has no model or effort CLI flag. `fm-spawn` resolves a requested provider-facing model name to the matching `customModels[].id` when registered, omits rejected effort values, and uses the same process-only settings path for crews and secondmates. |
 
 The concrete `harness` field owns adapter identity independently of the model provider: `harness=pi` with `model=xai/grok-*` is Pi using xAI, not `harness=grok`, and does not require Grok CLI login; `harness=grok` remains the standalone Grok Build CLI adapter.
 Likewise, `harness=cursor` with `model=cursor-grok-4.5-*` is Cursor Agent CLI routing a Grok model, not the xAI Grok Build `grok` harness.
@@ -154,12 +154,13 @@ Use the discovery surface in the current authenticated environment because suppo
 | grok | Run `grok models`, which lists the models available to the current Grok installation and account. |
 | kimi | Run `kimi provider list --json`, which lists the current provider and model configuration. |
 | cursor | Run `cursor-agent --list-models` (or the legacy `agent --list-models`), which lists the ids available to the current Cursor account. `cursor` is not the CLI name. |
+| droid | Inspect `customModels` in `~/.factory/settings.json` for registered provider-facing model names and ids; interactive Droid exposes no model-listing CLI. |
 
 For an unfamiliar harness or model namespace, establish support and provider identity from that harness's authoritative CLI help, model listing, or current documentation rather than guessing from a name or prefix.
 A listing that reaches the account and does not contain the model is concrete evidence the model is unsupported: block that candidate and quote the result.
 A discovery surface you could not reach establishes nothing; report that as uncertainty rather than turning it into a supported or unsupported verdict.
 
-When a requested effort value is outside the harness-specific accepted set, `fm-spawn` records the requested `effort=` in meta but emits no effort flag for that harness.
+When a requested effort value is outside the harness-specific accepted set, `fm-spawn` records the requested `effort=` in meta but emits no effort override for that harness.
 This preserves launch success instead of passing a known-bad value.
 For Cursor, select the intended reasoning class through a model id the account's own `--list-models` actually returns, and leave the separate effort axis unset.
 
@@ -439,11 +440,11 @@ Spawn a Cursor scout with an explicit model:
 bin/fm-spawn.sh <task-id> <project> --scout --harness cursor --model cursor-grok-4.5-high
 ```
 
-## droid (VERIFIED 2026-06-27, Droid 0.159.1)
+## droid (VERIFIED 2026-07-16, Droid 0.173.0)
 
 | Fact | Value |
 |---|---|
-| Launch | `droid --auto high <brief>`; crewmates and scouts also receive `--settings state/<id>.droid-settings.json` for the Stop notification hook. |
+| Launch | `droid --settings state/<id>.droid-settings.json --auto high <brief>` for every template-backed crew, scout, and secondmate launch. |
 | Busy state | Adapter-scoped rendered fallback in `bin/fm-busy-lib.sh`, matching only the verified `Press ESC to stop` working footer. |
 | Exit command | `/quit` |
 | Interrupt | Single Escape. |
@@ -451,11 +452,18 @@ bin/fm-spawn.sh <task-id> <project> --scout --harness cursor --model cursor-grok
 | Autonomy | `--auto high`, whose TUI labels it `Auto (High) · allow all commands`. |
 | Trust dialog | None on an authenticated fresh worktree; authentication persists under `~/.factory/`. |
 | Environment marker | None; detection uses the `droid` process name in ancestry. |
-| Effort | No adapter flag is passed; the captain's configured Droid defaults remain authoritative. |
+| Model and effort | Process-only `sessionDefaultSettings.model` and `sessionDefaultSettings.reasoningEffort`; `low`, `medium`, `high`, `xhigh`, `max`, and `dynamic` are accepted. |
 | Resume | `droid --resume <session-id>` or `droid -r` for the most recent session. |
 
 Droid exposes a Claude-shaped Stop hook that fires on normal turn completion and not on a manual interrupt.
-`fm-spawn.sh` carries that hook in a process-only settings file outside the worktree, and `fm-teardown.sh` removes the file.
+`fm-spawn.sh` carries that hook and requested session defaults in a process-only settings file outside the worktree, and `fm-teardown.sh` removes the file.
+Crew and scout settings include the Stop hook; secondmate settings carry only model and effort pins.
+The raw-command escape hatch does not generate adapter settings.
+When a requested provider-facing model matches `customModels[].model` in `~/.factory/settings.json`, the generated file uses the matching registry id without copying any other global settings fields.
+Interactive Droid 0.173.0 exposes no model or reasoning-effort CLI flags.
+The 2026-07-16 live probe used `droid --settings /tmp/droid-model-effort-x7-custom.json --auto high` with `sessionDefaultSettings.model=custom:GPT-5.6-Sol-0` and `reasoningEffort=dynamic`; the footer selected the custom model and `/settings` marked both values as runtime overrides.
+The same probe verified every accepted effort value listed above.
+The per-task settings merge deliberately omits autonomy fields, so an operator's global autonomy override remains authoritative even though the launch template retains `--auto high`.
 The Stop hook is a watcher notification only.
 No full semantic lifecycle source was verified, so current worker state remains the isolated rendered fallback rather than an invented hook state machine.
 A Droid primary has no dedicated tracked supervision protocol and therefore uses the unknown-harness fallback.

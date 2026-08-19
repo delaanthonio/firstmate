@@ -34,7 +34,7 @@
 #   the new incarnation.
 #   --harness <name> is the explicit per-spawn harness/profile adapter. The old
 #   positional harness arg still works for back-compat.
-#   --model <name> and --effort <low|medium|high|xhigh|max> are concrete profile
+#   --model <name> and --effort <low|medium|high|xhigh|max|dynamic> are concrete profile
 #   axes chosen by firstmate at intake. They are only threaded into harnesses whose
 #   installed CLIs were verified to support that axis; unsupported axes are omitted
 #   from that harness's launch rather than guessed.
@@ -157,7 +157,8 @@
 #     __PIEXT__    absolute path to state/<task-id>.pi-ext.ts (pi turn-end extension,
 #                  written by this script; outside the worktree to avoid pi's trust gate)
 #     __DROIDSETTINGS__ absolute path to state/<task-id>.droid-settings.json (Droid
-#                  process settings carrying its Stop turn-end hook)
+#                  process settings carrying model/effort overrides and, for crews,
+#                  its Stop turn-end hook)
 #     __PITURNEND__ absolute path to .pi/extensions/fm-primary-turnend-guard.ts in a pi secondmate home
 #     __PIWATCH__   absolute path to .pi/extensions/fm-primary-pi-watch.ts in a pi secondmate home
 #     __OPINPUT__   absolute path to the canonical operational-input encoder
@@ -348,8 +349,8 @@ if [ "$TRACEPARENT_SET" -eq 1 ]; then
   }
 fi
 case "$EFFORT" in
-  ''|low|medium|high|xhigh|max) ;;
-  *) echo "error: --effort must be one of low, medium, high, xhigh, max" >&2; exit 1 ;;
+  ''|low|medium|high|xhigh|max|dynamic) ;;
+  *) echo "error: --effort must be one of low, medium, high, xhigh, max, dynamic" >&2; exit 1 ;;
 esac
 
 # --relaunch reuses an existing task's endpoint, worktree, project, and kind,
@@ -650,6 +651,7 @@ BACKEND=
 ORCA_ABORT_CLEANUP=0
 ORCA_WORKTREE_ID=
 ORCA_TERMINAL=
+DROID_SETTINGS_CLEANUP=
 HERDR_PROJECTION_ABORT_CLEANUP=0
 HERDR_PROJECTION_ABORT_SESSION=
 HERDR_PROJECTION_ABORT_TASK_PANE=
@@ -694,6 +696,10 @@ parse_orca_worktree_result() {
 
 spawn_abort_cleanup() {
   local status=$?
+  if [ -n "$DROID_SETTINGS_CLEANUP" ]; then
+    rm -f "$DROID_SETTINGS_CLEANUP" || true
+    DROID_SETTINGS_CLEANUP=
+  fi
   if [ "$RELAUNCH_REPLACEMENT_PENDING" = 1 ] \
      && [ "$SPAWN_META_PUBLISH_STARTED" = 1 ] \
      && [ -n "$SPAWN_META_TMP" ] \
@@ -1138,17 +1144,11 @@ launch_template() {
     # launch command - it is a Stop-event hook installed below (global hook +
     # per-task pointer), so the template is identical for ship/scout/secondmate.
     grok) printf '%s' 'grok --always-approve __MODELFLAG____EFFORTFLAG__"$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
-    # Droid's --auto high is its allow-all autonomy mode. Ship and scout workers
-    # receive a process-only settings file carrying the verified Stop hook;
-    # secondmates use the base launch because their primary supervision is owned
-    # by the secondmate home's tracked instruction surface.
-    droid)
-      if [ "$kind" = secondmate ]; then
-        printf '%s' 'droid --auto high "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
-      else
-        printf '%s' 'droid --settings __DROIDSETTINGS__ --auto high "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
-      fi
-      ;;
+    # Droid's --auto high is its allow-all autonomy mode. Every template-backed
+    # launch receives a process-only settings file carrying model/effort overrides
+    # and, for crews, the verified Stop hook. Secondmates use the same settings
+    # path so their configured model/effort pins apply without a turn-end hook.
+    droid) printf '%s' 'droid --settings __DROIDSETTINGS__ --auto high "$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
     # Cursor Agent CLI. --trust suppresses the workspace-trust prompt, which
     # --yolo does NOT cover and which would otherwise block every spawn, since
     # each task gets a fresh worktree path cursor has never seen. --yolo is the
@@ -1193,6 +1193,7 @@ launch_template() {
   esac
 }
 
+DROID_TEMPLATE=0
 case "$ARG3" in
   *' '*)  # raw launch command (unverified-adapter escape hatch)
     LAUNCH=$ARG3
@@ -1222,10 +1223,12 @@ case "$ARG3" in
       harness_src='config/crew-harness'
     fi
     LAUNCH=$(launch_template "$HARNESS" "$KIND") || { echo "error: no launch template for harness '$HARNESS' (from $harness_src or detection); pass a raw launch command to use an unverified adapter" >&2; exit 1; }
+    [ "$HARNESS" != droid ] || DROID_TEMPLATE=1
     ;;
   *)
     HARNESS=$ARG3
     LAUNCH=$(launch_template "$HARNESS" "$KIND") || { echo "error: unknown harness '$HARNESS'; pass a raw launch command to use an unverified adapter" >&2; exit 1; }
+    [ "$HARNESS" != droid ] || DROID_TEMPLATE=1
     ;;
 esac
 
@@ -1286,11 +1289,16 @@ if [ "$KIND" = secondmate ] && [ -z "$ARG3" ]; then
     SM_EFFORT=$("$SCRIPT_DIR/fm-harness.sh" secondmate-effort)
     if [ -n "$SM_EFFORT" ]; then
       case "$SM_EFFORT" in
-        low|medium|high|xhigh|max) EFFORT=$SM_EFFORT ;;
-        *) echo "warning: config/secondmate-harness effort token '$SM_EFFORT' is not one of low, medium, high, xhigh, max; ignoring" >&2 ;;
+        low|medium|high|xhigh|max|dynamic) EFFORT=$SM_EFFORT ;;
+        *) echo "warning: config/secondmate-harness effort token '$SM_EFFORT' is not one of low, medium, high, xhigh, max, dynamic; ignoring" >&2 ;;
       esac
     fi
   fi
+fi
+
+if [ "$DROID_TEMPLATE" -eq 1 ] && ! command -v jq >/dev/null 2>&1; then
+  echo "error: jq is required to build droid runtime settings" >&2
+  exit 1
 fi
 
 secondmate_registry_value() {
@@ -1434,6 +1442,29 @@ effort_flag_for_harness() {
     # task metadata but never reaches the launch command. Cursor encodes effort
     # in model ids such as cursor-grok-4.5-high, so it also receives no separate
     # effort flag.
+  esac
+}
+
+droid_model_reference() {
+  local model=$1 settings ref
+  [ -n "$model" ] && [ "$model" != default ] || return 0
+  settings="$HOME/.factory/settings.json"
+  ref=
+  if [ -f "$settings" ]; then
+    # A custom model's registry id, not its provider-facing model field, pins the
+    # custom provider in sessionDefaultSettings. Read only those two fields; the
+    # same file may contain credentials that must never enter firstmate state.
+    ref=$(jq -r --arg model "$model" \
+      '[.customModels[]? | select(.model == $model) | .id][0] // empty' \
+      "$settings" 2>/dev/null || true)
+  fi
+  printf '%s' "${ref:-$model}"
+}
+
+droid_effort_value() {
+  local effort=$1
+  case "$effort" in
+    low|medium|high|xhigh|max|dynamic) printf '%s' "$effort" ;;
   esac
 }
 
@@ -1704,6 +1735,46 @@ BRIEF_REAL="$BRIEF_DIR_REAL/$(basename "$BRIEF")"
 # once here so every downstream comparison uses the same physical form
 # (docs/herdr-backend.md "Known gaps").
 PROJ_ABS_REAL=$(cd "$PROJ_ABS" 2>/dev/null && pwd -P) || PROJ_ABS_REAL="$PROJ_ABS"
+
+mkdir -p "$STATE"
+STATE_REAL=$(cd "$STATE" && pwd -P)
+TURNEND="$STATE_REAL/$ID.turn-ended"
+
+if [ "$DROID_TEMPLATE" -eq 1 ]; then
+  DROID_MODEL=$(droid_model_reference "$MODEL")
+  DROID_EFFORT=$(droid_effort_value "$EFFORT")
+  DROID_HOOK_COMMAND=
+  [ "$KIND" = secondmate ] || DROID_HOOK_COMMAND="touch '$TURNEND'"
+  DROID_SETTINGS_TMP=$(mktemp "$STATE/.${ID}.droid-settings.XXXXXXXXXXXX")
+  if jq -n \
+    --arg model "$DROID_MODEL" \
+    --arg effort "$DROID_EFFORT" \
+    --arg hook_command "$DROID_HOOK_COMMAND" '
+      (if $model == "" and $effort == "" then {}
+       else {sessionDefaultSettings:
+         ((if $model == "" then {} else {model: $model} end) +
+          (if $effort == "" then {} else {reasoningEffort: $effort} end))}
+       end) +
+      (if $hook_command == "" then {}
+       else {hooks: {Stop: [{hooks: [{type: "command", command: $hook_command}]}]}}
+       end)
+    ' > "$DROID_SETTINGS_TMP" \
+    && jq -e 'type == "object"' "$DROID_SETTINGS_TMP" >/dev/null; then
+    DROID_SETTINGS_PATH="$STATE/$ID.droid-settings.json"
+    if ln "$DROID_SETTINGS_TMP" "$DROID_SETTINGS_PATH" 2>/dev/null; then
+      rm -f "$DROID_SETTINGS_TMP"
+      DROID_SETTINGS_CLEANUP=$DROID_SETTINGS_PATH
+    else
+      rm -f "$DROID_SETTINGS_TMP"
+      echo "error: droid runtime settings already exist for task '$ID'" >&2
+      exit 1
+    fi
+  else
+    rm -f "$DROID_SETTINGS_TMP"
+    echo "error: failed to build droid runtime settings" >&2
+    exit 1
+  fi
+fi
 
 real_path_or_raw() {  # <path>
   local path=$1 real
@@ -2470,13 +2541,9 @@ EOF
       # the launch command via -c notify=[...] and __TURNEND__.
       ;;
     droid*)
-      # Droid exposes a Claude-shaped Stop hook in a process-only settings file.
-      # The verified hook touches the watcher notification at normal turn end;
-      # current busy state remains the adapter-scoped rendered fallback in
-      # bin/fm-busy-lib.sh because no full semantic lifecycle was verified.
-      hook_command=$(json_escape "touch $(shell_quote "$TURNEND")")
-      printf '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"%s"}]}]}}\n' \
-        "$hook_command" > "$STATE/$ID.droid-settings.json"
+      # The Droid settings file was assembled atomically before backend allocation
+      # for crews and secondmates. Current busy state remains the adapter-scoped
+      # rendered fallback because no full semantic lifecycle was verified.
       ;;
     grok*)
       # grok fires a Stop hook at every turn boundary (verified, grok 0.2.73), the
@@ -2725,6 +2792,7 @@ if [ "$SPAWN_TASK_SET_LOCK_HELD" = 1 ]; then
   SPAWN_TASK_SET_LOCK_HELD=0
   fm_lock_release "$SPAWN_TASK_SET_LOCK"
 fi
+DROID_SETTINGS_CLEANUP=
 [ "$BACKEND" = orca ] && ORCA_ABORT_CLEANUP=0
 
 sq_brief=$(shell_quote "$BRIEF")

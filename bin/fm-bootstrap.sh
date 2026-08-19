@@ -785,6 +785,10 @@ missing_tool_diagnostic() {
 # never told tmux is missing, and only orca drops treehouse. A backend value with
 # no verified dependency set is reported before the universal checks continue.
 COMMON_TOOLS="node git gh no-mistakes gh-axi chrome-devtools-axi lavish-axi tasks-axi quota-axi"
+if [ "$("$SCRIPT_DIR/fm-harness.sh" crew)" = droid ] \
+  || [ "$("$SCRIPT_DIR/fm-harness.sh" secondmate)" = droid ]; then
+  COMMON_TOOLS="$COMMON_TOOLS jq"
+fi
 BACKEND=$(fm_backend_name)
 BACKEND_VALID=1
 if ! BACKEND_TOOLS=$(fm_backend_required_tools "$BACKEND"); then
@@ -1009,7 +1013,8 @@ crew_dispatch_validate() {
       elif $h == "grok" then (["low","medium","high"] | index($e))
       elif $h == "pi" or $h == "pi-signed" then (["low","medium","high","xhigh","max"] | index($e))
       elif $h == "muse" then (["low","medium","high","xhigh","max"] | index($e))
-      elif $h == "opencode" or $h == "kimi" or $h == "cursor" or $h == "droid" then false
+      elif $h == "droid" then (["low","medium","high","xhigh","max","dynamic"] | index($e))
+      elif $h == "opencode" or $h == "kimi" or $h == "cursor" then false
       else true
       end;
     def profiles($value):

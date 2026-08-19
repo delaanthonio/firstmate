@@ -36,13 +36,20 @@ make_spawn_fakebin() {
   cat > "$fakebin/tmux" <<'SH'
 #!/usr/bin/env bash
 set -u
+if [ -n "${FM_FAKE_TMUX_CALL_LOG:-}" ]; then
+  printf '%s\n' "$*" >> "$FM_FAKE_TMUX_CALL_LOG"
+fi
 case "$*" in
   *"#{pane_current_path}"*) printf '%s\n' "${FM_FAKE_PANE_PATH:-}"; exit 0 ;;
 esac
 case "${1:-}" in
   display-message) printf 'firstmate\n'; exit 0 ;;
   list-windows) exit 0 ;;
-  has-session|new-session|new-window|kill-window) exit 0 ;;
+  new-window)
+    [ ! -e "${0%/*}/fail-new-window" ]
+    exit
+    ;;
+  has-session|new-session|kill-window) exit 0 ;;
   send-keys)
     if [ -n "${FM_FAKE_LAUNCH_LOG:-}" ]; then
       prev=
@@ -53,7 +60,10 @@ case "${1:-}" in
         prev=$a
       done
     fi
-    exit 0
+    if [ -e "${0%/*}/fail-gotmp-send" ] && case "$*" in *'export GOTMPDIR='*) true ;; *) false ;; esac; then
+      exit 1
+    fi
+    exit
     ;;
 esac
 exit 0
@@ -121,7 +131,7 @@ run_spawn() {
   # explicitly (empty by default) instead of leaking the invoking shell's value,
   # which would make launch assertions depend on the developer's environment.
   # A test opts in to the set case via FM_TEST_CLAUDE_CONFIG_DIR.
-  FM_ROOT_OVERRIDE='' FM_HOME="$home" \
+  HOME="$home" FM_ROOT_OVERRIDE='' FM_HOME="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
     FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
     FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$wt" TMUX="fake,1,0" \
@@ -130,6 +140,31 @@ run_spawn() {
     FM_FAKE_CURSOR_MODELS="${FM_TEST_CURSOR_MODELS:-}" \
     FM_FAKE_CURSOR_LIST_STATUS="${FM_TEST_CURSOR_LIST_STATUS:-0}" \
     GROK_HOME="$home/grok-home" PATH="$fakebin:$PATH" \
+    "$SPAWN" "$@" 2>&1
+}
+
+run_spawn_without_jq() {
+  local home=$1 wt=$2 fakebin=$3 launchlog=$4 bash_env
+  shift 4
+  : > "$launchlog"
+  bash_env="$home/no-jq.bash"
+  cat > "$bash_env" <<'SH'
+command() {
+  if [ "${1:-}" = -v ] && [ "${2:-}" = jq ]; then
+    return 1
+  fi
+  builtin command "$@"
+}
+jq() {
+  return 127
+}
+SH
+  HOME="$home" FM_ROOT_OVERRIDE='' FM_HOME="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
+    FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$wt" TMUX="fake,1,0" \
+    FM_FAKE_LAUNCH_LOG="$launchlog" FM_FAKE_TMUX_CALL_LOG="$launchlog" \
+    GROK_HOME="$home/grok-home" BASH_ENV="$bash_env" PATH="$fakebin:$PATH" \
     "$SPAWN" "$@" 2>&1
 }
 
@@ -416,6 +451,30 @@ test_active_dispatch_profile_allows_raw_launch_command() {
   launch=$(cat "$LAUNCH_LOG")
   [ "$launch" = "custom-agent --flag" ] || fail "raw launch command changed"$'\n'"actual: $launch"
   pass "active crew-dispatch profile allows the raw launch-command escape hatch"
+}
+
+test_raw_droid_launch_does_not_use_template_settings() {
+  local rec id out status launch
+  id=profile-raw-droid-z20
+  rec=$(make_spawn_case profile-raw-droid claude "$id")
+  read_case_record "$rec"
+  cat > "$FAKEBIN_DIR/jq" <<'SH'
+#!/usr/bin/env bash
+exit 99
+SH
+  chmod +x "$FAKEBIN_DIR/jq"
+
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" "droid --experimental")
+  status=$?
+  expect_code 0 "$status" "raw droid launch should not require template settings support"
+  assert_contains "$out" "spawned $id harness=droid" "spawn did not report raw droid command harness"
+  launch=$(cat "$LAUNCH_LOG")
+  [ "$launch" = "env -u CURSOR_AGENT -u CURSOR_INVOKED_AS droid --experimental" ] \
+    || fail "raw droid launch changed beyond the shared foreign-marker sanitization"$'\n'"actual: $launch"
+  assert_absent "$HOME_DIR/state/$id.droid-settings.json" \
+    "raw droid launch unexpectedly generated template settings"
+  pass "raw droid launch bypasses template-only jq and settings generation"
 }
 
 test_claude_threads_model_and_effort() {
@@ -740,6 +799,134 @@ test_pi_signed_persistent_secondmate_uses_pi_extensions_and_identity() {
   pass "pi-signed is a distinct persistent secondmate runtime with shared Pi supervision semantics"
 }
 
+test_droid_threads_custom_model_and_dynamic_effort_through_settings() {
+  local rec id out status launch settings turnend
+  id=profile-droid-z20
+  rec=$(make_spawn_case profile-droid droid "$id")
+  read_case_record "$rec"
+  mkdir -p "$HOME_DIR/.factory"
+  printf '%s\n' '{"customModels":[{"id":"custom:GPT-5.6-Sol-0","model":"gpt-5.6-sol","provider":"custom"}]}' \
+    > "$HOME_DIR/.factory/settings.json"
+
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --harness droid --model gpt-5.6-sol --effort dynamic)
+  status=$?
+  expect_code 0 "$status" "droid spawn with model and dynamic effort should succeed"
+  assert_meta_profile "$HOME_DIR/state/$id.meta" droid gpt-5.6-sol dynamic
+  launch=$(cat "$LAUNCH_LOG")
+  settings="$HOME_DIR/state/$id.droid-settings.json"
+  turnend="$(cd "$HOME_DIR/state" && pwd -P)/$id.turn-ended"
+  assert_contains "$launch" "droid --settings '$settings' --auto high" \
+    "droid launch did not use its process-only settings merge"
+  jq -e '.sessionDefaultSettings == {"model":"custom:GPT-5.6-Sol-0","reasoningEffort":"dynamic"}' "$settings" >/dev/null \
+    || fail "droid settings did not map the custom model id and retain dynamic effort"
+  jq -e --arg turnend "$turnend" \
+    '.hooks.Stop[0].hooks[0] == {"type":"command","command":("touch '\''" + $turnend + "'\''")}' "$settings" >/dev/null \
+    || fail "droid settings lost the Stop turn-end hook"
+  pass "droid receives custom model and dynamic effort through settings alongside its Stop hook"
+}
+
+test_droid_requires_jq_before_allocating_backend() {
+  local rec id out status
+  id=profile-droid-no-jq-z21
+  rec=$(make_spawn_case profile-droid-no-jq droid "$id")
+  read_case_record "$rec"
+
+  out=$(run_spawn_without_jq "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --harness droid --model gpt-5.6-sol --effort dynamic \
+    --backend tmux --mode no-mistakes --yolo off)
+  status=$?
+  [ "$status" -ne 0 ] || fail "droid spawn without jq should fail"
+  assert_contains "$out" "error: jq is required to build droid runtime settings" \
+    "droid spawn did not report its missing settings dependency"
+  [ ! -s "$LAUNCH_LOG" ] || fail "droid spawn allocated or launched a backend before checking jq"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "droid spawn wrote task metadata despite missing jq"
+  [ ! -e "$HOME_DIR/state/$id.droid-settings.json" ] || fail "droid spawn wrote settings despite missing jq"
+  pass "droid refuses missing jq before backend allocation"
+}
+
+test_droid_settings_failure_precedes_backend_allocation() {
+  local rec id out status leftovers
+  id=profile-droid-bad-settings-z22
+  rec=$(make_spawn_case profile-droid-bad-settings droid "$id")
+  read_case_record "$rec"
+  cat > "$FAKEBIN_DIR/jq" <<'SH'
+#!/usr/bin/env bash
+exit 1
+SH
+  chmod +x "$FAKEBIN_DIR/jq"
+
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --harness droid --effort dynamic --backend tmux)
+  status=$?
+  [ "$status" -ne 0 ] || fail "droid spawn should fail when settings generation fails"
+  assert_contains "$out" "error: failed to build droid runtime settings" \
+    "droid spawn did not report settings generation failure"
+  [ ! -s "$LAUNCH_LOG" ] || fail "droid spawn allocated or launched a backend before generating settings"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "droid spawn wrote metadata after settings generation failed"
+  [ ! -e "$HOME_DIR/state/$id.droid-settings.json" ] || fail "failed droid settings generation left a final settings file"
+  leftovers=$(find "$HOME_DIR/state" -name ".$id.droid-settings.*" -print)
+  [ -z "$leftovers" ] || fail "failed droid settings generation left a temporary file: $leftovers"
+  pass "droid settings generation fails atomically before backend allocation"
+}
+
+test_droid_settings_refuse_duplicate_id_without_overwrite() {
+  local rec id out status settings original
+  id=profile-droid-duplicate-z23
+  rec=$(make_spawn_case profile-droid-duplicate droid "$id")
+  read_case_record "$rec"
+  settings="$HOME_DIR/state/$id.droid-settings.json"
+  original='{"existing":"live-task-settings"}'
+  printf '%s\n' "$original" > "$settings"
+
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --harness droid --effort dynamic --backend tmux)
+  status=$?
+  [ "$status" -ne 0 ] || fail "duplicate droid task id should fail"
+  assert_contains "$out" "error: droid runtime settings already exist for task '$id'" \
+    "duplicate droid spawn did not report the protected settings collision"
+  [ "$(cat "$settings")" = "$original" ] || fail "duplicate droid spawn overwrote existing settings"
+  [ ! -s "$LAUNCH_LOG" ] || fail "duplicate droid spawn allocated or launched a backend"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "duplicate droid spawn wrote task metadata"
+  pass "droid settings publication refuses duplicate task ids without overwriting live settings"
+}
+
+test_droid_settings_cleanup_after_backend_failure() {
+  local rec id out status leftovers
+  id=profile-droid-backend-failure-z24
+  rec=$(make_spawn_case profile-droid-backend-failure droid "$id")
+  read_case_record "$rec"
+  touch "$FAKEBIN_DIR/fail-new-window"
+
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --harness droid --effort dynamic --backend tmux)
+  status=$?
+  [ "$status" -ne 0 ] || fail "droid spawn should fail when backend allocation fails"
+  [ ! -e "$HOME_DIR/state/$id.droid-settings.json" ] \
+    || fail "failed backend allocation left finalized droid settings"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "failed backend allocation wrote task metadata"
+  leftovers=$(find "$HOME_DIR/state" -name ".$id.droid-settings.*" -print)
+  [ -z "$leftovers" ] || fail "failed backend allocation left a droid settings temporary file: $leftovers"
+  pass "droid settings are removed when spawn fails after atomic publication"
+}
+
+test_droid_settings_survive_launch_failure_after_metadata_commit() {
+  local rec id out status
+  id=profile-droid-launch-failure-z25
+  rec=$(make_spawn_case profile-droid-launch-failure droid "$id")
+  read_case_record "$rec"
+  touch "$FAKEBIN_DIR/fail-gotmp-send"
+
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --harness droid --effort dynamic --backend tmux)
+  status=$?
+  [ "$status" -ne 0 ] || fail "droid spawn should fail when launch delivery fails"
+  assert_meta_profile "$HOME_DIR/state/$id.meta" droid default dynamic
+  [ -e "$HOME_DIR/state/$id.droid-settings.json" ] \
+    || fail "launch failure removed settings owned by committed task metadata"
+  pass "droid settings survive launch failure after task metadata commits"
+}
+
 test_batch_forwards_shared_profile_flags() {
   local rec id1 id2 out status
   id1=profile-batch-a-z9
@@ -826,6 +1013,28 @@ test_active_dispatch_profile_does_not_block_secondmate_launch() {
   pass "active crew-dispatch profile does not block secondmate launches"
 }
 
+test_droid_secondmate_uses_settings_for_profile_without_turn_end_hook() {
+  local rec id sm out status launch settings
+  id=profile-droid-secondmate-z26
+  rec=$(make_spawn_case profile-droid-secondmate droid "$id")
+  read_case_record "$rec"
+  printf '%s\n' 'droid custom:GPT-5.6-Sol-0 dynamic' > "$HOME_DIR/config/secondmate-harness"
+  sm="$CASE_DIR/secondmate-home"
+  make_seeded_secondmate_home "$sm" "$id"
+
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$sm" --secondmate)
+  status=$?
+  expect_code 0 "$status" "droid secondmate with configured model and effort should succeed"
+  assert_meta_profile "$HOME_DIR/state/$id.meta" droid custom:GPT-5.6-Sol-0 dynamic
+  launch=$(cat "$LAUNCH_LOG")
+  settings="$HOME_DIR/state/$id.droid-settings.json"
+  assert_contains "$launch" "droid --settings '$settings' --auto high" \
+    "droid secondmate launch did not use the process-only settings merge"
+  jq -e '.sessionDefaultSettings == {"model":"custom:GPT-5.6-Sol-0","reasoningEffort":"dynamic"} and (has("hooks") | not)' "$settings" >/dev/null \
+    || fail "droid secondmate settings did not pin both axes or unexpectedly installed a turn-end hook"
+  pass "droid secondmates receive configured model and effort through settings without a turn-end hook"
+}
+
 test_no_profile_keeps_claude_profile_defaults
 test_non_cursor_launch_clears_inherited_cursor_markers
 test_relative_home_overrides_launch_with_absolute_cross_process_paths
@@ -837,6 +1046,7 @@ test_active_dispatch_profile_requires_explicit_harness_for_scout
 test_active_dispatch_profile_allows_explicit_harness
 test_active_dispatch_profile_allows_positional_harness
 test_active_dispatch_profile_allows_raw_launch_command
+test_raw_droid_launch_does_not_use_template_settings
 test_claude_threads_model_and_effort
 test_codex_threads_model_and_effort
 test_codex_omits_invalid_max_effort
@@ -852,10 +1062,17 @@ test_pi_tui_mode_probe_is_safe_for_old_and_new_pi
 test_pi_signed_threads_shared_pi_profile_and_preserves_identity
 test_pi_signed_missing_binary_refuses_before_endpoint_or_metadata
 test_pi_signed_persistent_secondmate_uses_pi_extensions_and_identity
+test_droid_threads_custom_model_and_dynamic_effort_through_settings
+test_droid_requires_jq_before_allocating_backend
+test_droid_settings_failure_precedes_backend_allocation
+test_droid_settings_refuse_duplicate_id_without_overwrite
+test_droid_settings_cleanup_after_backend_failure
+test_droid_settings_survive_launch_failure_after_metadata_commit
 test_batch_forwards_shared_profile_flags
 test_claude_forwards_firstmate_config_dir_when_set
 test_claude_omits_config_dir_prefix_when_unset
 test_non_claude_harness_ignores_config_dir
 test_active_dispatch_profile_does_not_block_secondmate_launch
+test_droid_secondmate_uses_settings_for_profile_without_turn_end_hook
 
 echo "# all fm-spawn-dispatch-profile tests passed"
