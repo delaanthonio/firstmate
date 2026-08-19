@@ -5,7 +5,7 @@
 #        fm-spawn.sh <task-id> [<firstmate-home>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] --secondmate
 #   --harness <name> is the explicit per-spawn harness/profile adapter. The old
 #   positional harness arg still works for back-compat.
-#   --model <name> and --effort <low|medium|high|xhigh|max> are concrete profile
+#   --model <name> and --effort <low|medium|high|xhigh|max|dynamic> are concrete profile
 #   axes chosen by firstmate at intake. They are only threaded into harnesses whose
 #   installed CLIs were verified to support that axis; unsupported axes are omitted
 #   from that harness's launch rather than guessed.
@@ -19,9 +19,10 @@
 #   herdr, zellij, orca, and cmux. Orca owns both the task worktree and
 #   terminal, so ship/scout Orca spawns do not run treehouse get; cmux is a
 #   session provider only, exactly like herdr/zellij, so it does. An
-#   auto-detected herdr or cmux spawns print a loud stderr notice;
-#   auto-detected tmux stays silent; zellij and orca are never auto-detected
-#   (always explicit). Default tmux spawns do not write backend= to meta;
+#   auto-detected herdr or cmux spawn prints a loud stderr notice;
+#   auto-detected tmux stays silent; zellij and orca are never auto-detected.
+#   codex-app is not a known backend yet; docs/codex-app-backend.md owns that
+#   blocked backend contract. Default tmux spawns do not write backend= to meta;
 #   absent backend= means tmux. cmux does not support --secondmate spawns yet.
 #   A backend spawn refusal (missing dependency, version gate, unauthenticated
 #   socket, or unsupported secondmate mode) is terminal for that selected backend;
@@ -32,7 +33,7 @@
 #   profile consultation. A --secondmate spawn is exempt and resolves the SECONDMATE
 #   harness (config/secondmate-harness -> config/crew-harness -> own), so the
 #   secondmate-vs-crewmate split is DURABLE across every respawn (recovery,
-#   /updatefirstmate, restart). A bare adapter name (claude|codex|opencode|pi|droid|grok)
+#   /updatefirstmate, restart). A bare adapter name (claude|codex|opencode|pi|grok|droid)
 #   overrides it for this spawn (either kind). A non-flag string containing
 #   whitespace is treated as a RAW launch command - the escape hatch for verifying
 #   new adapters.
@@ -71,8 +72,11 @@
 #     __PIEXT__    absolute path to state/<task-id>.pi-ext.ts (pi turn-end extension,
 #                  written by this script; outside the worktree to avoid pi's trust gate)
 #     __DROIDSETTINGS__  absolute path to state/<task-id>.droid-settings.json (droid
-#                  runtime settings carrying the Stop turn-end hook, written by this
-#                  script; passed via droid's --settings so it lives outside the worktree)
+#                  runtime settings carrying model/effort overrides and, for crews,
+#                  the Stop turn-end hook; passed via droid's --settings so it lives
+#                  outside the worktree)
+#     __PITURNEND__ absolute path to .pi/extensions/fm-primary-turnend-guard.ts in a pi secondmate home
+#     __PIWATCH__   absolute path to .pi/extensions/fm-primary-pi-watch.ts in a pi secondmate home
 # Per-harness turn-end hooks are installed automatically; some live outside the worktree.
 # grok uses a firstmate-owned global hook under ${GROK_HOME:-$HOME/.grok}/hooks
 # plus a gitignored .fm-grok-turnend worktree pointer and a state token.
@@ -82,6 +86,16 @@
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FM_HOME_WAS_SET=${FM_HOME+x}
+
+usage() {
+  sed -n '2,78p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+case "${1:-}" in
+  -h|--help) usage; exit 0 ;;
+esac
+
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
@@ -97,6 +111,11 @@ SUB_HOME_MARKER=".fm-secondmate-home"
 . "$SCRIPT_DIR/fm-backend.sh"
 # shellcheck source=bin/fm-backend-hometag-lib.sh
 . "$SCRIPT_DIR/fm-backend-hometag-lib.sh"
+# shellcheck source=bin/fm-gate-refuse-lib.sh
+. "$SCRIPT_DIR/fm-gate-refuse-lib.sh"
+# Fail closed before any fleet mutation: a no-mistakes gate agent must never spawn
+# a direct report (see bin/fm-gate-refuse-lib.sh).
+fm_refuse_if_gate_agent
 # Skip the watcher guard when re-exec'd for one pair of a batch (FM_SPAWN_NO_GUARD is
 # set by the batch loop below), so the guard runs once for the batch, not once per pair.
 [ -n "${FM_SPAWN_NO_GUARD:-}" ] || "$FM_ROOT/bin/fm-guard.sh" || true
@@ -146,8 +165,8 @@ done
 [ "$EFFORT_SET" -eq 0 ] || [ -n "$EFFORT" ] || { echo "error: --effort requires a non-empty value" >&2; exit 1; }
 [ "$BACKEND_SET" -eq 0 ] || [ -n "$BACKEND_ARG" ] || { echo "error: --backend requires a non-empty value" >&2; exit 1; }
 case "$EFFORT" in
-  ''|low|medium|high|xhigh|max) ;;
-  *) echo "error: --effort must be one of low, medium, high, xhigh, max" >&2; exit 1 ;;
+  ''|low|medium|high|xhigh|max|dynamic) ;;
+  *) echo "error: --effort must be one of low, medium, high, xhigh, max, dynamic" >&2; exit 1 ;;
 esac
 
 # Backend selection (data/fm-backend-design-d7): explicit --backend, else
@@ -178,6 +197,7 @@ fi
 ORCA_ABORT_CLEANUP=0
 ORCA_WORKTREE_ID=
 ORCA_TERMINAL=
+DROID_SETTINGS_CLEANUP=
 
 parse_orca_worktree_result() {
   local raw=$1 rest
@@ -198,6 +218,10 @@ parse_orca_worktree_result() {
 
 orca_spawn_abort_cleanup() {
   local status=$?
+  if [ -n "$DROID_SETTINGS_CLEANUP" ]; then
+    rm -f "$DROID_SETTINGS_CLEANUP" || true
+    DROID_SETTINGS_CLEANUP=
+  fi
   [ "$ORCA_ABORT_CLEANUP" = 1 ] || return "$status"
   ORCA_ABORT_CLEANUP=0
   if [ -n "${ORCA_TERMINAL:-}" ]; then
@@ -272,7 +296,7 @@ FIRSTMATE_HOME=
 
 if [ "$KIND" = secondmate ]; then
   case "${POS[1]:-}" in
-    ''|claude|codex|opencode|pi|droid|grok)
+    ''|claude|codex|opencode|pi|grok|droid)
       ARG3=${POS[1]:-}
       ;;
     *' '*)
@@ -320,21 +344,9 @@ launch_template() {
     opencode) printf '%s' 'OPENCODE_CONFIG_CONTENT='\''{"permission":{"*":"allow"}}'\'' opencode __MODELFLAG__--prompt "$(cat __BRIEF__)"' ;;
     pi)
       if [ "$kind" = secondmate ]; then
-        printf '%s' 'pi __MODELFLAG____EFFORTFLAG__"$(cat __BRIEF__)"'
+        printf '%s' 'pi __MODELFLAG____EFFORTFLAG__-e __PITURNEND__ -e __PIWATCH__ "$(cat __BRIEF__)"'
       else
         printf '%s' 'pi __MODELFLAG____EFFORTFLAG__-e __PIEXT__ "$(cat __BRIEF__)"'
-      fi
-      ;;
-    # droid: --auto high is the autonomy level (footer "Auto (High) - allow all
-    # commands"), the analog of claude's --dangerously-skip-permissions. The brief
-    # stays one positional arg. Turn-end rides --settings (a process-only settings
-    # merge) carrying a claude-style Stop hook; the file is written OUTSIDE the
-    # worktree, like pi's extension, so it never dirties the worktree or trips a gate.
-    droid)
-      if [ "$kind" = secondmate ]; then
-        printf '%s' 'droid --auto high "$(cat __BRIEF__)"'
-      else
-        printf '%s' 'droid --settings __DROIDSETTINGS__ --auto high "$(cat __BRIEF__)"'
       fi
       ;;
     # grok (Grok Build TUI): a positional prompt starts the supervised interactive
@@ -345,10 +357,19 @@ launch_template() {
     # launch command - it is a Stop-event hook installed below (global hook +
     # per-task pointer), so the template is identical for ship/scout/secondmate.
     grok) printf '%s' 'grok --always-approve __MODELFLAG____EFFORTFLAG__"$(cat __BRIEF__)"' ;;
+    # droid: --auto high is the autonomy level (footer "Auto (High) - allow all
+    # commands"), the analog of claude's --dangerously-skip-permissions. The brief
+    # stays one positional arg. Turn-end rides --settings (a process-only settings
+    # merge) carrying model/effort overrides and, for crews, a claude-style Stop
+    # hook. The file is written OUTSIDE the worktree, like pi's extension, so it
+    # never dirties the worktree or trips a gate. Secondmates use the same path so
+    # their model/effort pins work too.
+    droid) printf '%s' 'droid --settings __DROIDSETTINGS__ --auto high "$(cat __BRIEF__)"' ;;
     *) return 1 ;;
   esac
 }
 
+DROID_TEMPLATE=0
 case "$ARG3" in
   *' '*)  # raw launch command (unverified-adapter escape hatch)
     LAUNCH=$ARG3
@@ -378,10 +399,12 @@ case "$ARG3" in
       harness_src='config/crew-harness'
     fi
     LAUNCH=$(launch_template "$HARNESS" "$KIND") || { echo "error: no launch template for harness '$HARNESS' (from $harness_src or detection); pass a raw launch command to use an unverified adapter" >&2; exit 1; }
+    [ "$HARNESS" != droid ] || DROID_TEMPLATE=1
     ;;
   *)
     HARNESS=$ARG3
     LAUNCH=$(launch_template "$HARNESS" "$KIND") || { echo "error: unknown harness '$HARNESS'; pass a raw launch command to use an unverified adapter" >&2; exit 1; }
+    [ "$HARNESS" != droid ] || DROID_TEMPLATE=1
     ;;
 esac
 
@@ -400,11 +423,16 @@ if [ "$KIND" = secondmate ] && [ -z "$ARG3" ]; then
     SM_EFFORT=$("$SCRIPT_DIR/fm-harness.sh" secondmate-effort)
     if [ -n "$SM_EFFORT" ]; then
       case "$SM_EFFORT" in
-        low|medium|high|xhigh|max) EFFORT=$SM_EFFORT ;;
-        *) echo "warning: config/secondmate-harness effort token '$SM_EFFORT' is not one of low, medium, high, xhigh, max; ignoring" >&2 ;;
+        low|medium|high|xhigh|max|dynamic) EFFORT=$SM_EFFORT ;;
+        *) echo "warning: config/secondmate-harness effort token '$SM_EFFORT' is not one of low, medium, high, xhigh, max, dynamic; ignoring" >&2 ;;
       esac
     fi
   fi
+fi
+
+if [ "$DROID_TEMPLATE" -eq 1 ] && ! command -v jq >/dev/null 2>&1; then
+  echo "error: jq is required to build droid runtime settings" >&2
+  exit 1
 fi
 
 secondmate_registry_value() {
@@ -473,6 +501,29 @@ effort_flag_for_harness() {
     # opencode's interactive `opencode --prompt` launch has a verified --model
     # flag but no verified effort flag. Its `opencode run --variant` flag belongs
     # to a different, non-interactive launch mode, so fm-spawn does not pass it.
+  esac
+}
+
+droid_model_reference() {
+  local model=$1 settings ref
+  [ -n "$model" ] && [ "$model" != default ] || return 0
+  settings="$HOME/.factory/settings.json"
+  ref=
+  if [ -f "$settings" ]; then
+    # A custom model's registry id, not its provider-facing model field, pins the
+    # custom provider in sessionDefaultSettings. Read only those two fields; the
+    # same file may contain credentials that must never enter firstmate state.
+    ref=$(jq -r --arg model "$model" \
+      '[.customModels[]? | select(.model == $model) | .id][0] // empty' \
+      "$settings" 2>/dev/null || true)
+  fi
+  printf '%s' "${ref:-$model}"
+}
+
+droid_effort_value() {
+  local effort=$1
+  case "$effort" in
+    low|medium|high|xhigh|max|dynamic) printf '%s' "$effort" ;;
   esac
 }
 
@@ -644,6 +695,67 @@ else
 fi
 [ -f "$BRIEF" ] || { echo "error: no brief at $BRIEF" >&2; exit 1; }
 
+# PROJ_ABS can still carry a symlinked path component (e.g. macOS's /tmp ->
+# /private/tmp) when it came from the ship/scout branch's logical `pwd` above.
+# Every backend's own current-path read (tmux's pane_current_path, herdr's
+# foreground_cwd, zellij/cmux's active pwd probe against the live shell) can
+# report the OS-level, physically-resolved cwd, so comparing it against a
+# still-symlinked PROJ_ABS can misfire both ways: false-negative (the poll
+# below never notices the pane left the project) or false-positive (the
+# isolation guard refuses a spawn that never actually tangled). Canonicalize
+# once here so every downstream comparison uses the same physical form
+# (docs/herdr-backend.md "Known gaps").
+PROJ_ABS_REAL=$(cd "$PROJ_ABS" 2>/dev/null && pwd -P) || PROJ_ABS_REAL="$PROJ_ABS"
+
+mkdir -p "$STATE"
+STATE_REAL=$(cd "$STATE" && pwd -P)
+TURNEND="$STATE_REAL/$ID.turn-ended"
+
+if [ "$DROID_TEMPLATE" -eq 1 ]; then
+  DROID_MODEL=$(droid_model_reference "$MODEL")
+  DROID_EFFORT=$(droid_effort_value "$EFFORT")
+  DROID_HOOK_COMMAND=
+  [ "$KIND" = secondmate ] || DROID_HOOK_COMMAND="touch '$TURNEND'"
+  DROID_SETTINGS_TMP=$(mktemp "$STATE/.${ID}.droid-settings.XXXXXXXXXXXX")
+  if jq -n \
+    --arg model "$DROID_MODEL" \
+    --arg effort "$DROID_EFFORT" \
+    --arg hook_command "$DROID_HOOK_COMMAND" '
+      (if $model == "" and $effort == "" then {}
+       else {sessionDefaultSettings:
+         ((if $model == "" then {} else {model: $model} end) +
+          (if $effort == "" then {} else {reasoningEffort: $effort} end))}
+       end) +
+      (if $hook_command == "" then {}
+       else {hooks: {Stop: [{hooks: [{type: "command", command: $hook_command}]}]}}
+       end)
+    ' > "$DROID_SETTINGS_TMP" \
+    && jq -e 'type == "object"' "$DROID_SETTINGS_TMP" >/dev/null; then
+    DROID_SETTINGS_PATH="$STATE/$ID.droid-settings.json"
+    if ln "$DROID_SETTINGS_TMP" "$DROID_SETTINGS_PATH" 2>/dev/null; then
+      rm -f "$DROID_SETTINGS_TMP"
+      DROID_SETTINGS_CLEANUP=$DROID_SETTINGS_PATH
+    else
+      rm -f "$DROID_SETTINGS_TMP"
+      echo "error: droid runtime settings already exist for task '$ID'" >&2
+      exit 1
+    fi
+  else
+    rm -f "$DROID_SETTINGS_TMP"
+    echo "error: failed to build droid runtime settings" >&2
+    exit 1
+  fi
+fi
+
+real_path_or_raw() {  # <path>
+  local path=$1 real
+  if real=$(cd "$path" 2>/dev/null && pwd -P); then
+    printf '%s\n' "$real"
+  else
+    printf '%s\n' "$path"
+  fi
+}
+
 # Session-provider container-ensure + task creation. tmux stays exactly as P1
 # left it (same session-name / new-window sequence, see bin/backends/tmux.sh);
 # a herdr spawn goes through the version-gated, workspace-per-HOME,
@@ -658,10 +770,7 @@ validate_spawn_worktree() {  # <source> <inspect-target>
   if ! wt_real=$(cd "$WT" 2>/dev/null && pwd -P); then
     wt_real=
   fi
-  proj_real=
-  if ! proj_real=$(cd "$PROJ_ABS" 2>/dev/null && pwd -P); then
-    proj_real=
-  fi
+  proj_real=$PROJ_ABS_REAL
   wt_top=$(git -C "$WT" rev-parse --show-toplevel 2>/dev/null || true)
   wt_top_real=
   if ! wt_top_real=$(cd "$wt_top" 2>/dev/null && pwd -P); then
@@ -678,7 +787,14 @@ case "$BACKEND" in
   tmux)
     SES=$(fm_backend_tmux_container_ensure)
     T="$SES:$W"
-    fm_backend_tmux_create_task "$SES" "$W" "$PROJ_ABS" || exit 1
+    # #134 robustness (tmux): fm_backend_tmux_create_task captures a stable window
+    # id and pins the window name (automatic-rename/allow-rename off) so a captain's
+    # non-default tmux config cannot rename the window away from fm-<id> once
+    # treehouse cd's into the worktree. WT_TARGET carries that stable id for the
+    # rename-critical worktree-detection steps below; the persisted window= handle
+    # stays $T (the name form), which is safe now that rename is disabled.
+    WID=$(fm_backend_tmux_create_task "$SES" "$W" "$PROJ_ABS") || exit 1
+    WT_TARGET="$WID"
     ;;
   herdr)
     # fm_backend_herdr_workspace_label resolves the target workspace from
@@ -767,6 +883,12 @@ EOF
     T="$ORCA_TERMINAL"
     ;;
 esac
+# #134 robustness: only tmux needs a worktree-detection target distinct from $T -
+# its rename-safe stable window id, set as WT_TARGET=$WID in the tmux branch above.
+# Every other backend addresses its pane/surface by the id already in $T, so default
+# WT_TARGET to $T for them (and for any future backend) - the shared treehouse-get +
+# worktree-detection steps below must never reference an unbound WT_TARGET under set -u.
+: "${WT_TARGET:=$T}"
 spawn_send_text_line() {  # <target> <text>
   case "$BACKEND" in
     tmux) fm_backend_tmux_send_text_line "$1" "$2" ;;
@@ -803,12 +925,19 @@ spawn_send_key() {  # <target> <key>
   esac
 }
 if [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
-  spawn_send_text_line "$T" 'treehouse get'
+  spawn_send_text_line "$WT_TARGET" 'treehouse get'
 
   # Wait for the treehouse subshell: the pane's cwd moves from the project to the worktree.
+  # Target the stable window id, not the name: if the name is ever lost (e.g. an
+  # automatic-rename slips through), display-message -t <bad-name> falls back to the
+  # active client's window, which would misread firstmate's OWN pane path as the
+  # worktree and tangle a hook into the primary checkout. The window id never lies.
+  # Compare against PROJ_ABS_REAL (physical), not PROJ_ABS: a symlinked project
+  # prefix would otherwise make the pane's OS-level cwd read differ from
+  # PROJ_ABS on the very first poll, before the pane has actually moved.
   for _ in $(seq 1 60); do
-    p=$(spawn_current_path "$T" || true)
-    if [ -n "$p" ] && [ "$p" != "$PROJ_ABS" ]; then
+    p=$(spawn_current_path "$WT_TARGET" || true)
+    if [ -n "$p" ] && [ "$(real_path_or_raw "$p")" != "$PROJ_ABS_REAL" ]; then
       WT="$p"
       break
     fi
@@ -822,20 +951,21 @@ if [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   validate_spawn_worktree "treehouse get" "$T"
 fi
 
-# Per-task temp root: /tmp/fm-<home-tag>/<id>/ with Go's build temp nested at gotmp/. Go won't
-# create GOTMPDIR, so mkdir before it is used; fm-teardown removes the whole root.
-# Nested (not a bare gotmp path) so other per-task temp can live alongside
-# later, and teardown cleans one deterministic path. GOTMPDIR (not TMPDIR) is the
-# targeted knob: TMPDIR is too broad (affects every program's temp, not just Go's).
-TASK_TMP="/tmp/fm-$(fm_backend_hometag)/$ID"
+# Per-task temp root: /tmp/fm-<home-tag>/<id>/ with Go's build temp nested at
+# gotmp/. The home tag prevents two isolated firstmate homes that reuse a task id
+# from sharing a temp tree. Go will not create GOTMPDIR, so create it before use;
+# fm-teardown validates and removes the recorded root. GOTMPDIR (not TMPDIR) is
+# the targeted knob because TMPDIR would affect every child program.
+TASK_HOME=$FM_HOME
+if [ -z "$FM_HOME_WAS_SET" ] && [ -n "${FM_STATE_OVERRIDE:-}" ] && [ "$(basename "$STATE")" = state ]; then
+  TASK_HOME=$(cd "$(dirname "$STATE")" 2>/dev/null && pwd -P) || TASK_HOME=$(dirname "$STATE")
+fi
+TASK_TMP="/tmp/fm-$(FM_HOME="$TASK_HOME" fm_backend_hometag)/$ID"
 mkdir -p "$TASK_TMP/gotmp"
 
 # Per-harness turn-end hook: a file that touches state/<id>.turn-ended when the
 # agent finishes a turn. Worktree-resident hooks are kept out of git's view so
 # they never block teardown's dirty check or leak into a commit.
-mkdir -p "$STATE"
-STATE_REAL=$(cd "$STATE" && pwd -P)
-TURNEND="$STATE_REAL/$ID.turn-ended"
 exclude_path() {
   local rel=$1 EXCL
   EXCL=$(git -C "$WT" rev-parse --git-path info/exclude 2>/dev/null || true)
@@ -879,16 +1009,7 @@ export default function (pi: any) {
 EOF
       ;;
     droid*)
-      # droid: turn-end via a claude-style Stop hook carried in a process-only
-      # --settings file (see launch_template). Written to state/, OUTSIDE the
-      # worktree like pi's extension, so it never dirties the worktree or trips a
-      # gate. droid's Stop hook fires when it finishes responding (and NOT on a
-      # user interrupt), touching the turn-end file the watcher polls. The file
-      # merges on top of the user's global ~/.factory settings for this process
-      # only. Cleaned up by fm-teardown.
-      cat > "$STATE/$ID.droid-settings.json" <<EOF
-{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"touch '$TURNEND'"}]}]}}
-EOF
+      # The droid settings file is assembled below for crews and secondmates.
       ;;
     codex*)
       # codex: turn-end rides the launch command via -c notify=[...] and __TURNEND__.
@@ -1002,20 +1123,25 @@ META_WINDOW=$T
     echo "projects=$SECONDMATE_PROJECTS"
   fi
 } > "$STATE/$ID.meta"
+DROID_SETTINGS_CLEANUP=
 [ "$BACKEND" = orca ] && ORCA_ABORT_CLEANUP=0
 
 sq_brief=$(shell_quote "$BRIEF")
 sq_turnend=$(shell_quote "$TURNEND")
 sq_piext=$(shell_quote "$STATE/$ID.pi-ext.ts")
-sq_droidsettings=$(shell_quote "$STATE/$ID.droid-settings.json")
+sq_piturnend=$(shell_quote "$PROJ_ABS/.pi/extensions/fm-primary-turnend-guard.ts")
+sq_piwatch=$(shell_quote "$PROJ_ABS/.pi/extensions/fm-primary-pi-watch.ts")
 MODELFLAG=$(model_flag_for_harness "$HARNESS" "$MODEL")
 EFFORTFLAG=$(effort_flag_for_harness "$HARNESS" "$EFFORT")
 LAUNCH=${LAUNCH//__MODELFLAG__/$MODELFLAG}
 LAUNCH=${LAUNCH//__EFFORTFLAG__/$EFFORTFLAG}
+sq_droidsettings=$(shell_quote "$STATE/$ID.droid-settings.json")
 LAUNCH=${LAUNCH//__BRIEF__/$sq_brief}
 LAUNCH=${LAUNCH//__TURNEND__/$sq_turnend}
 LAUNCH=${LAUNCH//__PIEXT__/$sq_piext}
 LAUNCH=${LAUNCH//__DROIDSETTINGS__/$sq_droidsettings}
+LAUNCH=${LAUNCH//__PITURNEND__/$sq_piturnend}
+LAUNCH=${LAUNCH//__PIWATCH__/$sq_piwatch}
 if [ "$KIND" = secondmate ]; then
   sq_home=$(shell_quote "$PROJ_ABS")
   LAUNCH="FM_ROOT_OVERRIDE= FM_STATE_OVERRIDE= FM_DATA_OVERRIDE= FM_PROJECTS_OVERRIDE= FM_CONFIG_OVERRIDE= FM_HOME=$sq_home $LAUNCH"

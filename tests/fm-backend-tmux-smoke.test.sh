@@ -48,6 +48,11 @@ TARGET="$SESSION:$WINDOW"
 
 tmux new-session -d -s "$SESSION" -x 200 -y 50 \
   || fail "real tmux: new-session failed"
+# Keep the smoke commands deterministic when the host's login shell is fish or
+# another non-POSIX shell. The adapter under test creates the next window using
+# this private server's default shell.
+tmux set-option -t "$SESSION" -g default-shell "$(command -v bash)" \
+  || fail "real tmux: could not pin the private server to bash"
 fm_backend_tmux_create_task "$SESSION" "$WINDOW" "$HOME" \
   || fail "fm_backend_tmux_create_task failed to create the task window"
 tmux list-windows -t "$SESSION" -F '#{window_name}' | grep -qx "$WINDOW" \

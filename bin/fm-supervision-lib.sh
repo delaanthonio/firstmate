@@ -64,20 +64,6 @@ fm_supervision_unhealthy() {
   [ "$FM_SUP_IN_FLIGHT" -gt 0 ] && [ "$FM_SUP_WATCHER_FRESH" = false ]
 }
 
-# fm_supervision_is_primary_checkout <root> <state-dir>
-# True only for the primary firstmate checkout. False in secondmate homes, linked
-# crewmate/scout worktrees, unrelated dirs, or homes without an active state dir.
-fm_supervision_is_primary_checkout() {
-  local root=$1 state=$2 git_dir git_common_dir
-  [ -f "$root/.fm-secondmate-home" ] && return 1
-  git_dir=$(git -C "$root" rev-parse --git-dir 2>/dev/null) || return 1
-  git_common_dir=$(git -C "$root" rev-parse --git-common-dir 2>/dev/null) || return 1
-  [ "$git_dir" = "$git_common_dir" ] || return 1
-  [ -f "$root/AGENTS.md" ] || return 1
-  [ -d "$root/bin" ] || return 1
-  [ -d "$state" ] || return 1
-}
-
 fm_supervision_path_age() {
   local path=$1 m
   m=$(fm_sup_stat_mtime "$path") || { echo 999999; return; }

@@ -187,6 +187,19 @@ LIVE_AFTER_KILL=$(fm_backend_zellij_cli "$SESSION" action list-panes --json 2>/d
 fm_backend_zellij_kill "$TARGET" || fail "kill on an already-dead target must stay best-effort (never fail)"
 pass "real zellij: kill removes the pane+tab and is idempotent/best-effort"
 
+# A task spawn always runs container_ensure before create_task. Exercise that
+# lifecycle boundary explicitly: a headless zellij session can disappear once
+# its useful tabs are gone, and create_task deliberately refuses to invent a
+# missing session. Deleting this isolated test session makes the recovery case
+# deterministic; container_ensure's server_ensure poll is bounded to 10s.
+if fm_backend_zellij_session_exists "$SESSION"; then
+  zellij_safe_delete "$SESSION" || fail "could not remove the isolated session before recovery"
+fi
+RECOVERED_CONTAINER=$(fm_backend_zellij_container_ensure) || fail "container_ensure did not recover the missing isolated session"
+[ "$RECOVERED_CONTAINER" = "$SESSION" ] \
+  || fail "recovered container should keep the isolated session name, got '$RECOVERED_CONTAINER'"
+pass "real zellij: container_ensure recovers a missing session before the next task"
+
 # --- list_live (name-based recovery discovery) --------------------------------
 
 LABEL2="fm-smoke2"
