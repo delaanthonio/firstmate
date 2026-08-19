@@ -95,7 +95,8 @@ state/               volatile runtime signals; gitignored
   <id>.status        appended by crewmates: "<state>: <note>" wake-event lines, not current-state truth
   <id>.turn-ended    touched by turn-end hooks
   <id>.grok-turnend-token   firstmate-owned grok hook registry token for the task; removed by teardown
-  <id>.pi-ext.ts / <id>.droid-settings.json  optional per-harness turn-end hook files written by fm-spawn
+  <id>.pi-ext.ts   optional Pi turn-end extension written by fm-spawn
+  <id>.droid-settings.json  per-task Droid runtime settings written by fm-spawn; carries optional model/effort launch-profile pins for every template-backed Droid launch, plus the turn-end hook for crewmates
   <id>.meta          written by fm-spawn: window=, worktree=, project=, harness=, model=, effort=, kind=, mode=, yolo=, tasktmp=; kind=secondmate also records home= and projects=; a non-default runtime backend records further backend-specific fields (docs/configuration.md "Runtime backend"; bin/fm-backend.sh, section 8); fm-pr-check, including through fm-pr-merge, appends pr= and GitHub's pr_head= when available; fm-x-link appends x_request=, x_request_ts=, x_followups=, and optional x_platform=/x_reply_max_chars= for an X-mode-originated task (section 14)
   <id>.check.sh      optional slow poll you write per task (e.g. merged-PR check)
   x-watch.check.sh   generated X-mode relay poll shim; present only when opted in (section 14)
@@ -214,7 +215,7 @@ Validate every selected harness name against the verified adapter list above.
 If a dispatch rule or default names an unverified harness, ignore that profile, fall back to the next valid source, and note the problem when it affects the dispatch.
 The shell scripts never parse or match the natural-language rules; firstmate does the matching and passes only concrete flags to `fm-spawn`.
 
-Per-harness model/effort flags: `harness-adapters` (loaded before every spawn per section 4's closing trigger).
+Per-harness model/effort launch paths: `harness-adapters` (loaded before every spawn per section 4's closing trigger).
 
 Secondmates can run on a different harness than crewmates.
 `config/secondmate-harness` (local, gitignored) is the harness the primary uses to launch SECONDMATE agents; resolve it with `bin/fm-harness.sh secondmate`, which follows the fallback chain `config/secondmate-harness` -> `config/crew-harness` -> your own harness.
