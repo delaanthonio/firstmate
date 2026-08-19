@@ -146,6 +146,15 @@ die() {  # <message>
   exit 1
 }
 
+control_effort_valid() {
+  case "$1" in
+    low|medium|high|xhigh|max|dynamic) return 0 ;;
+  esac
+  return 1
+}
+
+CONTROL_EFFORT_VALUES="low, medium, high, xhigh, max, dynamic"
+
 CONTROL_LOCK=
 CONTROL_LOCK_HELD=0
 RELAUNCH_ACTIVE=0
@@ -239,10 +248,9 @@ fi
 [ "$HARNESS_SET" = 0 ] || [ -n "$NEW_HARNESS" ] || die "--harness requires a non-empty value"
 [ "$MODEL_SET" = 0 ] || [ -n "$NEW_MODEL" ] || die "--model requires a non-empty value"
 [ "$EFFORT_SET" = 0 ] || [ -n "$NEW_EFFORT" ] || die "--effort requires a non-empty value"
-case "$NEW_EFFORT" in
-  ''|low|medium|high|xhigh|max) ;;
-  *) die "--effort must be one of low, medium, high, xhigh, max" ;;
-esac
+if [ -n "$NEW_EFFORT" ] && ! control_effort_valid "$NEW_EFFORT"; then
+  die "--effort must be one of $CONTROL_EFFORT_VALUES"
+fi
 
 # --- exact task-id resolution ----------------------------------------------
 
@@ -622,13 +630,10 @@ resolve_relaunch_profile() {
     CONFIG_HARNESS=$("$SCRIPT_DIR/fm-harness.sh" secondmate 2>/dev/null || true)
     CONFIG_MODEL=$("$SCRIPT_DIR/fm-harness.sh" secondmate-model 2>/dev/null || true)
     CONFIG_EFFORT=$("$SCRIPT_DIR/fm-harness.sh" secondmate-effort 2>/dev/null || true)
-    case "$CONFIG_EFFORT" in
-      ''|low|medium|high|xhigh|max) ;;
-      *)
-        echo "warning: config/secondmate-harness effort token '$CONFIG_EFFORT' is not one of low, medium, high, xhigh, max; ignoring" >&2
-        CONFIG_EFFORT=
-        ;;
-    esac
+    if [ -n "$CONFIG_EFFORT" ] && ! control_effort_valid "$CONFIG_EFFORT"; then
+      echo "warning: config/secondmate-harness effort token '$CONFIG_EFFORT' is not one of $CONTROL_EFFORT_VALUES; ignoring" >&2
+      CONFIG_EFFORT=
+    fi
   fi
   if [ "$HARNESS_SET" = 1 ]; then
     fm_control_harness_supported "$NEW_HARNESS" \

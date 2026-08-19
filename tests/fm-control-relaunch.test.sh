@@ -519,7 +519,7 @@ test_same_harness_relaunch_keeps_the_profile_axes() {
   pass "fm-control relaunch: a same-harness relaunch keeps the profile axes it was running with"
 }
 
-test_same_droid_relaunch_replaces_runtime_settings() {
+test_same_droid_relaunch_preserves_explicit_dynamic_effort() {
   local dir out rc settings
   dir=$(new_case droid-settings rl35)
   add_ship_task "$dir" rl35 droid
@@ -528,11 +528,27 @@ test_same_droid_relaunch_replaces_runtime_settings() {
   settings="$dir/home/state/rl35.droid-settings.json"
   printf '%s\n' '{"retired":true}' > "$settings"
 
-  out=$(run_control "$dir" rl35 relaunch --note "continue with fresh settings"); rc=$?
-  expect_code 0 "$rc" "same-Droid relaunch should replace prior runtime settings"$'\n'"$out"
-  jq -e '.retired == null and .hooks.Stop[0].hooks[0].type == "command"' "$settings" >/dev/null \
-    || fail "same-Droid relaunch did not publish replacement runtime settings"
-  pass "fm-control relaunch: Droid runtime settings follow the replacement incarnation"
+  out=$(run_control "$dir" rl35 relaunch --effort dynamic --note "continue with fresh settings"); rc=$?
+  expect_code 0 "$rc" "same-Droid relaunch should accept explicit dynamic effort"$'\n'"$out"
+  [ "$(meta_field "$dir" rl35 effort)" = dynamic ] \
+    || fail "same-Droid relaunch did not record explicit dynamic effort"
+  jq -e '.retired == null and .sessionDefaultSettings.reasoningEffort == "dynamic" and .hooks.Stop[0].hooks[0].type == "command"' "$settings" >/dev/null \
+    || fail "same-Droid relaunch did not publish dynamic effort in replacement runtime settings"
+  pass "fm-control relaunch: Droid accepts and preserves explicit dynamic effort"
+}
+
+test_relaunch_refuses_invalid_explicit_effort_before_stop() {
+  local dir out rc
+  dir=$(new_case invalid-explicit-effort rl36)
+  add_ship_task "$dir" rl36 droid
+  printf 'droid' > "$dir/fake/command"
+
+  out=$(run_control "$dir" rl36 relaunch --effort impossible --note "must refuse"); rc=$?
+  expect_code 1 "$rc" "invalid explicit effort should refuse"
+  assert_contains "$out" "--effort must be one of low, medium, high, xhigh, max, dynamic" \
+    "invalid explicit effort should report the centralized vocabulary"
+  [ "$(cat "$dir/fake/command")" = droid ] || fail "invalid explicit effort stopped the running agent"
+  pass "fm-control relaunch: invalid explicit effort refuses before stop"
 }
 
 test_explicit_model_wins_over_the_recorded_one() {
@@ -619,11 +635,11 @@ test_turnend_auth_paths_are_owned_by_the_control_adapter() {
 }
 
 test_secondmate_relaunch_picks_up_the_configured_harness_pin() {
-  local dir home out rc
+  local dir home out rc settings
   dir=$(new_case smpin sm3)
   home="$dir/home"
   mkdir -p "$home/config"
-  printf 'codex some-model high\n' > "$home/config/secondmate-harness"
+  printf 'droid default dynamic\n' > "$home/config/secondmate-harness"
   mkdir -p "$home/data/sm3"
   printf '# secondmate brief\n' > "$home/data/sm3/brief.md"
   fm_git_worktree "$dir/proj" "$dir/smhome" sm-branch
@@ -645,17 +661,20 @@ test_secondmate_relaunch_picks_up_the_configured_harness_pin() {
   } > "$home/state/sm3.meta"
   printf '%s\n' "fm-sm3" > "$dir/fake/windows"
   printf '%s' "$dir/smhome" > "$dir/fake/cwd"
-  printf 'codex' > "$dir/fake/becomes"
+  printf 'droid' > "$dir/fake/becomes"
   out=$(run_control "$dir" sm3 relaunch); rc=$?
   expect_code 0 "$rc" "a configured secondmate harness should relaunch"$'\n'"$out"
-  [ "$(journal_field "$dir" sm3 to_harness)" = codex ] \
+  [ "$(journal_field "$dir" sm3 to_harness)" = droid ] \
     || fail "a secondmate relaunch should pick up the configured harness pin, got '$(journal_field "$dir" sm3 to_harness)'"
-  [ "$(journal_field "$dir" sm3 to_model)" = some-model ] \
+  [ "$(journal_field "$dir" sm3 to_model)" = default ] \
     || fail "the configured model token should come with the pin"
-  [ "$(journal_field "$dir" sm3 to_effort)" = high ] \
+  [ "$(journal_field "$dir" sm3 to_effort)" = dynamic ] \
     || fail "the configured effort token should come with the pin"
-  assert_not_contains "$out" "not a verified harness" "codex is a verified harness"
-  pass "fm-control relaunch: a secondmate relaunch re-resolves its durable configured harness pin"
+  settings="$home/state/sm3.droid-settings.json"
+  jq -e '.sessionDefaultSettings == {"reasoningEffort":"dynamic"} and .hooks == null' "$settings" >/dev/null \
+    || fail "configured Droid secondmate relaunch did not preserve dynamic effort in runtime settings"
+  assert_not_contains "$out" "not a verified harness" "droid is a verified harness"
+  pass "fm-control relaunch: a Droid secondmate preserves its configured dynamic effort"
 }
 
 test_secondmate_relaunch_ignores_invalid_configured_effort_before_stop() {
@@ -1339,7 +1358,8 @@ test_harness_switch_does_not_carry_the_old_profile_axes
 test_harness_switch_resolves_a_prefixed_recorded_harness
 test_prefixed_recorded_harness_requires_explicit_replacement
 test_same_harness_relaunch_keeps_the_profile_axes
-test_same_droid_relaunch_replaces_runtime_settings
+test_same_droid_relaunch_preserves_explicit_dynamic_effort
+test_relaunch_refuses_invalid_explicit_effort_before_stop
 test_explicit_model_wins_over_the_recorded_one
 test_relaunch_onto_an_unverified_harness_is_refused
 test_prior_harness_turnend_registry_entry_is_cleared
