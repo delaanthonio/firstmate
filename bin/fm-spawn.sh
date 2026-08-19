@@ -259,6 +259,8 @@ SUB_HOME_MARKER=".fm-secondmate-home"
 . "$SCRIPT_DIR/fm-cursor-lib.sh"
 # shellcheck source=bin/fm-pr-lib.sh
 . "$SCRIPT_DIR/fm-pr-lib.sh"
+# shellcheck source=bin/fm-profile-lib.sh
+. "$SCRIPT_DIR/fm-profile-lib.sh"
 # shellcheck source=bin/fm-trace-context-lib.sh
 . "$SCRIPT_DIR/fm-trace-context-lib.sh"
 # shellcheck source=bin/fm-remote-readiness-lib.sh
@@ -348,10 +350,10 @@ if [ "$TRACEPARENT_SET" -eq 1 ]; then
     exit 1
   }
 fi
-case "$EFFORT" in
-  ''|low|medium|high|xhigh|max|dynamic) ;;
-  *) echo "error: --effort must be one of low, medium, high, xhigh, max, dynamic" >&2; exit 1 ;;
-esac
+if [ -n "$EFFORT" ] && ! fm_profile_effort_valid "$EFFORT"; then
+  echo "error: --effort must be one of $FM_PROFILE_EFFORT_VALUES" >&2
+  exit 1
+fi
 
 # --relaunch reuses an existing task's endpoint, worktree, project, and kind,
 # so every axis this block resolves for a fresh spawn instead comes from that
@@ -475,15 +477,12 @@ spawn_remote_secondmate() {
       return 1
       ;;
   esac
-  case "$effort" in
-    -|low|medium|high|xhigh|max) ;;
-    *)
+  if [ "$effort" != - ] && ! fm_profile_effort_valid "$effort"; then
     fm_lock_release "$registry_lock" || true
     fm_lock_release "$SPAWN_TASK_LOCK" || true
-      echo "error: invalid configured remote secondmate effort: $effort" >&2
-      return 1
-      ;;
-  esac
+    echo "error: invalid configured remote secondmate effort: $effort" >&2
+    return 1
+  fi
   meta="$STATE/$id.meta"
   if [ -e "$meta" ] || [ -L "$meta" ]; then
     if [ ! -f "$meta" ] || [ -L "$meta" ] \
@@ -1305,10 +1304,11 @@ if [ "$KIND" = secondmate ] && [ -z "$ARG3" ]; then
   if [ "$EFFORT_SET" -eq 0 ]; then
     SM_EFFORT=$("$SCRIPT_DIR/fm-harness.sh" secondmate-effort)
     if [ -n "$SM_EFFORT" ]; then
-      case "$SM_EFFORT" in
-        low|medium|high|xhigh|max|dynamic) EFFORT=$SM_EFFORT ;;
-        *) echo "warning: config/secondmate-harness effort token '$SM_EFFORT' is not one of low, medium, high, xhigh, max, dynamic; ignoring" >&2 ;;
-      esac
+      if fm_profile_effort_valid "$SM_EFFORT"; then
+        EFFORT=$SM_EFFORT
+      else
+        echo "warning: config/secondmate-harness effort token '$SM_EFFORT' is not one of $FM_PROFILE_EFFORT_VALUES; ignoring" >&2
+      fi
     fi
   fi
 fi

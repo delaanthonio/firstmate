@@ -132,6 +132,8 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 . "$SCRIPT_DIR/fm-control-lib.sh"
 # shellcheck source=bin/fm-pr-lib.sh
 . "$SCRIPT_DIR/fm-pr-lib.sh"
+# shellcheck source=bin/fm-profile-lib.sh
+. "$SCRIPT_DIR/fm-profile-lib.sh"
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 
@@ -145,15 +147,6 @@ die() {  # <message>
   echo "error: $1" >&2
   exit 1
 }
-
-control_effort_valid() {
-  case "$1" in
-    low|medium|high|xhigh|max|dynamic) return 0 ;;
-  esac
-  return 1
-}
-
-CONTROL_EFFORT_VALUES="low, medium, high, xhigh, max, dynamic"
 
 CONTROL_LOCK=
 CONTROL_LOCK_HELD=0
@@ -248,8 +241,8 @@ fi
 [ "$HARNESS_SET" = 0 ] || [ -n "$NEW_HARNESS" ] || die "--harness requires a non-empty value"
 [ "$MODEL_SET" = 0 ] || [ -n "$NEW_MODEL" ] || die "--model requires a non-empty value"
 [ "$EFFORT_SET" = 0 ] || [ -n "$NEW_EFFORT" ] || die "--effort requires a non-empty value"
-if [ -n "$NEW_EFFORT" ] && ! control_effort_valid "$NEW_EFFORT"; then
-  die "--effort must be one of $CONTROL_EFFORT_VALUES"
+if [ -n "$NEW_EFFORT" ] && ! fm_profile_effort_valid "$NEW_EFFORT"; then
+  die "--effort must be one of $FM_PROFILE_EFFORT_VALUES"
 fi
 
 # --- exact task-id resolution ----------------------------------------------
@@ -630,8 +623,8 @@ resolve_relaunch_profile() {
     CONFIG_HARNESS=$("$SCRIPT_DIR/fm-harness.sh" secondmate 2>/dev/null || true)
     CONFIG_MODEL=$("$SCRIPT_DIR/fm-harness.sh" secondmate-model 2>/dev/null || true)
     CONFIG_EFFORT=$("$SCRIPT_DIR/fm-harness.sh" secondmate-effort 2>/dev/null || true)
-    if [ -n "$CONFIG_EFFORT" ] && ! control_effort_valid "$CONFIG_EFFORT"; then
-      echo "warning: config/secondmate-harness effort token '$CONFIG_EFFORT' is not one of $CONTROL_EFFORT_VALUES; ignoring" >&2
+    if [ -n "$CONFIG_EFFORT" ] && ! fm_profile_effort_valid "$CONFIG_EFFORT"; then
+      echo "warning: config/secondmate-harness effort token '$CONFIG_EFFORT' is not one of $FM_PROFILE_EFFORT_VALUES; ignoring" >&2
       CONFIG_EFFORT=
     fi
   fi
