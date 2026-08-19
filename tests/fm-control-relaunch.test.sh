@@ -519,6 +519,22 @@ test_same_harness_relaunch_keeps_the_profile_axes() {
   pass "fm-control relaunch: a same-harness relaunch keeps the profile axes it was running with"
 }
 
+test_same_droid_relaunch_replaces_runtime_settings() {
+  local dir out rc settings
+  dir=$(new_case droid-settings rl35)
+  add_ship_task "$dir" rl35 droid
+  printf 'droid' > "$dir/fake/command"
+  printf 'droid' > "$dir/fake/becomes"
+  settings="$dir/home/state/rl35.droid-settings.json"
+  printf '%s\n' '{"retired":true}' > "$settings"
+
+  out=$(run_control "$dir" rl35 relaunch --note "continue with fresh settings"); rc=$?
+  expect_code 0 "$rc" "same-Droid relaunch should replace prior runtime settings"$'\n'"$out"
+  jq -e '.retired == null and .hooks.Stop[0].hooks[0].type == "command"' "$settings" >/dev/null \
+    || fail "same-Droid relaunch did not publish replacement runtime settings"
+  pass "fm-control relaunch: Droid runtime settings follow the replacement incarnation"
+}
+
 test_explicit_model_wins_over_the_recorded_one() {
   local dir out rc
   dir=$(new_case explicit rl7)
@@ -1323,6 +1339,7 @@ test_harness_switch_does_not_carry_the_old_profile_axes
 test_harness_switch_resolves_a_prefixed_recorded_harness
 test_prefixed_recorded_harness_requires_explicit_replacement
 test_same_harness_relaunch_keeps_the_profile_axes
+test_same_droid_relaunch_replaces_runtime_settings
 test_explicit_model_wins_over_the_recorded_one
 test_relaunch_onto_an_unverified_harness_is_refused
 test_prior_harness_turnend_registry_entry_is_cleared

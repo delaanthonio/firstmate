@@ -826,6 +826,24 @@ test_droid_threads_custom_model_and_dynamic_effort_through_settings() {
   pass "droid receives custom model and dynamic effort through settings alongside its Stop hook"
 }
 
+test_droid_stop_hook_quotes_apostrophe_paths() {
+  local rec id out status settings cmd turnend
+  id=profile-droid-quote-z20a
+  rec=$(make_spawn_case "profile-droid-quote's" droid "$id")
+  read_case_record "$rec"
+
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --harness droid)
+  status=$?
+  expect_code 0 "$status" "droid spawn under an apostrophe path should succeed"
+  settings="$HOME_DIR/state/$id.droid-settings.json"
+  turnend="$(cd "$HOME_DIR/state" && pwd -P)/$id.turn-ended"
+  cmd=$(jq -r '.hooks.Stop[0].hooks[0].command' "$settings")
+  bash -c "$cmd" || fail "Droid Stop hook was not executable under an apostrophe path"
+  [ -e "$turnend" ] || fail "Droid Stop hook did not touch the exact apostrophe-bearing path"
+  pass "droid shell-quotes apostrophe-bearing Stop hook paths"
+}
+
 test_droid_requires_jq_before_allocating_backend() {
   local rec id out status
   id=profile-droid-no-jq-z21
@@ -889,6 +907,29 @@ test_droid_settings_refuse_duplicate_id_without_overwrite() {
   [ ! -s "$LAUNCH_LOG" ] || fail "duplicate droid spawn allocated or launched a backend"
   [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "duplicate droid spawn wrote task metadata"
   pass "droid settings publication refuses duplicate task ids without overwriting live settings"
+}
+
+test_droid_settings_refuse_directory_symlink_collision() {
+  local rec id out status settings collision_dir leftovers
+  id=profile-droid-symlink-z23a
+  rec=$(make_spawn_case profile-droid-symlink droid "$id")
+  read_case_record "$rec"
+  settings="$HOME_DIR/state/$id.droid-settings.json"
+  collision_dir="$HOME_DIR/state/$id.settings-collision"
+  mkdir -p "$collision_dir"
+  ln -s "$collision_dir" "$settings"
+
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --harness droid --backend tmux)
+  status=$?
+  [ "$status" -ne 0 ] || fail "directory-symlink droid settings collision should fail"
+  assert_contains "$out" "error: droid runtime settings already exist for task '$id'" \
+    "directory-symlink collision did not report the protected settings path"
+  [ -L "$settings" ] || fail "directory-symlink collision replaced the existing path"
+  leftovers=$(find "$collision_dir" -mindepth 1 -print)
+  [ -z "$leftovers" ] || fail "directory-symlink collision created an orphaned link: $leftovers"
+  [ ! -s "$LAUNCH_LOG" ] || fail "directory-symlink collision allocated or launched a backend"
+  pass "droid settings publication refuses directory symlink collisions"
 }
 
 test_droid_settings_cleanup_after_backend_failure() {
@@ -1063,9 +1104,11 @@ test_pi_signed_threads_shared_pi_profile_and_preserves_identity
 test_pi_signed_missing_binary_refuses_before_endpoint_or_metadata
 test_pi_signed_persistent_secondmate_uses_pi_extensions_and_identity
 test_droid_threads_custom_model_and_dynamic_effort_through_settings
+test_droid_stop_hook_quotes_apostrophe_paths
 test_droid_requires_jq_before_allocating_backend
 test_droid_settings_failure_precedes_backend_allocation
 test_droid_settings_refuse_duplicate_id_without_overwrite
+test_droid_settings_refuse_directory_symlink_collision
 test_droid_settings_cleanup_after_backend_failure
 test_droid_settings_survive_launch_failure_after_metadata_commit
 test_batch_forwards_shared_profile_flags

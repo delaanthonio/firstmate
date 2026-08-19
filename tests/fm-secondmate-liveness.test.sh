@@ -429,6 +429,7 @@ test_sweep_respawns_authoritatively_missing_droid_secondmate() {
   w=$(new_world sweep-missing-droid)
   printf '%s\n' droid > "$w/home/config/secondmate-harness"
   add_sm_home "$w" sm1 firstmate:fm-sm1 droid
+  printf '%s\n' '{"retired":true}' > "$w/home/state/sm1.droid-settings.json"
   fb=$(make_toolchain "$w"); tmuxfb=$(make_liveness_tmux "$w")
   log="$w/calls.log"; : > "$log"
 
@@ -438,6 +439,8 @@ test_sweep_respawns_authoritatively_missing_droid_secondmate() {
     "a recorded Droid secondmate should be verified for recovery"
   assert_contains "$(cat "$log")" "new-window" \
     "an authoritatively missing Droid secondmate should be relaunched"
+  jq -e '.retired == null and .hooks == null' "$w/home/state/sm1.droid-settings.json" >/dev/null \
+    || fail "Droid secondmate recovery did not replace prior runtime settings"
   assert_not_contains "$(cat "$log")" "kill-window" \
     "an absent Droid window should not need a destructive pre-kill"
   pass "sweep: an authoritatively missing Droid secondmate window is relaunched"

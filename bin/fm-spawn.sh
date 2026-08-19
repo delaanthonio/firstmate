@@ -652,6 +652,9 @@ ORCA_ABORT_CLEANUP=0
 ORCA_WORKTREE_ID=
 ORCA_TERMINAL=
 DROID_SETTINGS_CLEANUP=
+DROID_SETTINGS_TMP=
+DROID_SETTINGS_PATH=
+DROID_SETTINGS_STAGED=0
 HERDR_PROJECTION_ABORT_CLEANUP=0
 HERDR_PROJECTION_ABORT_SESSION=
 HERDR_PROJECTION_ABORT_TASK_PANE=
@@ -699,6 +702,10 @@ spawn_abort_cleanup() {
   if [ -n "$DROID_SETTINGS_CLEANUP" ]; then
     rm -f "$DROID_SETTINGS_CLEANUP" || true
     DROID_SETTINGS_CLEANUP=
+  fi
+  if [ -n "$DROID_SETTINGS_TMP" ]; then
+    rm -f "$DROID_SETTINGS_TMP" || true
+    DROID_SETTINGS_TMP=
   fi
   if [ "$RELAUNCH_REPLACEMENT_PENDING" = 1 ] \
      && [ "$SPAWN_META_PUBLISH_STARTED" = 1 ] \
@@ -1080,6 +1087,16 @@ shell_quote() {
   printf "'"
   printf '%s' "$1" | sed "s/'/'\\\\''/g"
   printf "'"
+}
+
+publish_file_no_clobber() {
+  local source=$1 destination=$2
+  if ln -T -- "$source" "$destination" 2>/dev/null \
+     || ln -h -- "$source" "$destination" 2>/dev/null; then
+    rm -f "$source"
+    return 0
+  fi
+  return 1
 }
 
 resolve_pi_executable() {
@@ -1744,7 +1761,7 @@ if [ "$DROID_TEMPLATE" -eq 1 ]; then
   DROID_MODEL=$(droid_model_reference "$MODEL")
   DROID_EFFORT=$(droid_effort_value "$EFFORT")
   DROID_HOOK_COMMAND=
-  [ "$KIND" = secondmate ] || DROID_HOOK_COMMAND="touch '$TURNEND'"
+  [ "$KIND" = secondmate ] || DROID_HOOK_COMMAND="touch $(shell_quote "$TURNEND")"
   DROID_SETTINGS_TMP=$(mktemp "$STATE/.${ID}.droid-settings.XXXXXXXXXXXX")
   if jq -n \
     --arg model "$DROID_MODEL" \
@@ -1761,16 +1778,21 @@ if [ "$DROID_TEMPLATE" -eq 1 ]; then
     ' > "$DROID_SETTINGS_TMP" \
     && jq -e 'type == "object"' "$DROID_SETTINGS_TMP" >/dev/null; then
     DROID_SETTINGS_PATH="$STATE/$ID.droid-settings.json"
-    if ln "$DROID_SETTINGS_TMP" "$DROID_SETTINGS_PATH" 2>/dev/null; then
-      rm -f "$DROID_SETTINGS_TMP"
+    if [ "$RELAUNCH" -eq 1 ] \
+       || { [ "$KIND" = secondmate ] && { [ -e "$DROID_SETTINGS_PATH" ] || [ -L "$DROID_SETTINGS_PATH" ]; }; }; then
+      DROID_SETTINGS_STAGED=1
+    elif publish_file_no_clobber "$DROID_SETTINGS_TMP" "$DROID_SETTINGS_PATH"; then
+      DROID_SETTINGS_TMP=
       DROID_SETTINGS_CLEANUP=$DROID_SETTINGS_PATH
     else
       rm -f "$DROID_SETTINGS_TMP"
+      DROID_SETTINGS_TMP=
       echo "error: droid runtime settings already exist for task '$ID'" >&2
       exit 1
     fi
   else
     rm -f "$DROID_SETTINGS_TMP"
+    DROID_SETTINGS_TMP=
     echo "error: failed to build droid runtime settings" >&2
     exit 1
   fi
@@ -2384,6 +2406,22 @@ if [ "$RELAUNCH" -eq 1 ]; then
   RELAUNCH_REPLACEMENT_HARNESS=$HARNESS
   RELAUNCH_REPLACEMENT_STATE=$STATE_REAL
   RELAUNCH_REPLACEMENT_WT=$WT
+fi
+if [ "$DROID_SETTINGS_STAGED" -eq 1 ]; then
+  if [ "$RELAUNCH" -ne 1 ]; then
+    clear_relaunch_harness_wiring droid "$WT" "$STATE_REAL" "$ID" || {
+      echo "error: could not retire prior droid wiring for task $ID; refusing to arm the replacement" >&2
+      exit 1
+    }
+  fi
+  if publish_file_no_clobber "$DROID_SETTINGS_TMP" "$DROID_SETTINGS_PATH"; then
+    DROID_SETTINGS_TMP=
+    DROID_SETTINGS_CLEANUP=$DROID_SETTINGS_PATH
+    DROID_SETTINGS_STAGED=0
+  else
+    echo "error: droid runtime settings already exist for task '$ID'" >&2
+    exit 1
+  fi
 fi
 if [ "$KIND" != secondmate ]; then
   # Arm the semantic busy-state contract (bin/fm-busy-lib.sh) for every
