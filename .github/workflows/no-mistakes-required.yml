@@ -38,6 +38,10 @@ jobs:
             echo "Found no-mistakes signature in PR #${PR_NUMBER} body."
             exit 0
           fi
+          if printf '%s\n' "${PR_BODY:-}" | grep -Eq '^- no-mistakes review, documentation, lint, push, PR, and CI gates passed in run `01[A-HJKMNP-TV-Z0-9]{24}`\.$'; then
+            echo "Found no-mistakes run attestation in PR #${PR_NUMBER} body."
+            exit 0
+          fi
           {
             echo "::error::This PR was not raised through no-mistakes."
             echo
