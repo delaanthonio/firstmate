@@ -124,7 +124,7 @@ test_bootstrap_line() {
 # The generated ship brief must carry the isolation assertion AHEAD of the
 # `git checkout -b` step, so the crewmate verifies its worktree before branching.
 test_brief_assertion_precedes_branch() {
-  local home brief iso br
+  local home brief iso br mode id
   home="$TMP_ROOT/brief-home"
   mkdir -p "$home/data"
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" tangle-brief-cc3 alpha >/dev/null 2>&1
@@ -138,12 +138,28 @@ test_brief_assertion_precedes_branch() {
     "brief must not present git-dir/common-dir as decisive"
   assert_no_grep "they are identical in the primary checkout" "$brief" \
     "brief must not claim the primary checkout has identical git dirs"
+  assert_grep 'Before reporting done, make the change beautiful' "$brief" \
+    "ship brief is missing the code-quality pass"
+  assert_grep 'keep comments and docstrings evergreen' "$brief" \
+    "ship brief is missing the evergreen-documentation standard"
+  assert_grep "first \`no-mistakes axi run\` for a branch needs \`--intent \"<summary>\"\`" "$brief" \
+    "ship brief is missing the first-run intent hint"
   iso=$(grep -n 'launched in primary checkout, not an isolated worktree' "$brief" | head -1 | cut -d: -f1)
   br=$(grep -n 'git checkout -b fm/' "$brief" | head -1 | cut -d: -f1)
   if [ -z "$iso" ] || [ -z "$br" ]; then
     fail "brief missing assertion ($iso) or branch step ($br)"
   fi
   [ "$iso" -lt "$br" ] || fail "isolation assertion (line $iso) must precede the branch step (line $br)"
+
+  for mode in direct-PR local-only; do
+    id="quality-${mode}-dd4"
+    printf -- '- alpha [%s] - test project (added 2026-07-11)\n' "$mode" > "$home/data/projects.md"
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" alpha >/dev/null 2>&1
+    assert_grep 'Before reporting done, make the change beautiful' "$home/data/$id/brief.md" \
+      "$mode ship brief is missing the code-quality pass"
+    assert_no_grep "first \`no-mistakes axi run\`" "$home/data/$id/brief.md" \
+      "$mode ship brief must not include no-mistakes first-run guidance"
+  done
   pass "fm-brief: ship brief asserts worktree isolation before the branch step"
 }
 
@@ -162,9 +178,20 @@ case "$*" in
   *"#{pane_current_path}"*) printf '%s\n' "${FM_FAKE_PANE_PATH:-}"; exit 0 ;;
 esac
 case "${1:-}" in
-  display-message) printf 'firstmate\n'; exit 0 ;;
-  list-windows) exit 0 ;;
-  has-session|new-session|new-window|send-keys) exit 0 ;;
+  display-message) printf '%s\n' "${FM_FAKE_SESSION:-firstmate}"; exit 0 ;;
+  list-windows|new-window)
+    expected="${FM_FAKE_SESSION:-firstmate}:"
+    while [ "$#" -gt 0 ]; do
+      if [ "$1" = -t ]; then
+        [ "${2:-}" = "$expected" ] || { printf 'wrong tmux target: %s (expected %s)\n' "${2:-}" "$expected" >&2; exit 64; }
+        exit 0
+      fi
+      shift
+    done
+    printf 'tmux target missing\n' >&2
+    exit 64
+    ;;
+  has-session|new-session|send-keys) exit 0 ;;
 esac
 exit 0
 SH
@@ -174,13 +201,13 @@ SH
 }
 
 run_spawn() {
-  local home=$1 id=$2 proj=$3 pane=$4 fakebin=$5
+  local home=$1 id=$2 proj=$3 pane=$4 fakebin=$5 session=${6:-firstmate}
   mkdir -p "$home/data/$id"
   printf 'brief\n' > "$home/data/$id/brief.md"
   FM_ROOT_OVERRIDE='' FM_HOME="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
     FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
-    FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$pane" TMUX="fake,1,0" \
+    FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$pane" FM_FAKE_SESSION="$session" TMUX="fake,1,0" \
     PATH="$fakebin:$PATH" \
     "$ROOT/bin/fm-spawn.sh" "$id" "$proj" codex 2>&1
 }
@@ -240,7 +267,7 @@ case "$*" in
   *"#{pane_current_path}"*) printf '%s\n' "${FM_FAKE_PANE_PATH:-}"; exit 0 ;;
 esac
 case "${1:-}" in
-  display-message) printf 'firstmate\n'; exit 0 ;;
+  display-message) printf '%s\n' "${FM_FAKE_SESSION:-firstmate}"; exit 0 ;;
   new-window) printf '%s\n' "@spawnwid"; exit 0 ;;
   list-windows) exit 0 ;;
   has-session|new-session|send-keys|set-window-option) exit 0 ;;
@@ -253,20 +280,20 @@ SH
 }
 
 run_spawn_record() {
-  local home=$1 id=$2 proj=$3 pane=$4 fakebin=$5 rec=$6
+  local home=$1 id=$2 proj=$3 pane=$4 fakebin=$5 rec=$6 session=$7
   mkdir -p "$home/data/$id"
   printf 'brief\n' > "$home/data/$id/brief.md"
   FM_ROOT_OVERRIDE='' FM_HOME="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
     FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
-    FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$pane" TMUX="fake,1,0" \
+    FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$pane" FM_FAKE_SESSION="$session" TMUX="fake,1,0" \
     FM_TMUX_REC="$rec" \
     PATH="$fakebin:$PATH" \
     "$ROOT/bin/fm-spawn.sh" "$id" "$proj" codex 2>&1
 }
 
 test_spawn_tmux_window_construction() {
-  local home proj fakebin rec wt out status
+  local home proj fakebin rec wt out status session id
   home="$TMP_ROOT/spawn-rec-home"
   mkdir -p "$home/data"
   proj=$(make_repo "$TMP_ROOT/spawn-rec-proj")
@@ -276,15 +303,19 @@ test_spawn_tmux_window_construction() {
   wt="$TMP_ROOT/spawn-rec-wt"
   git -C "$proj" worktree add -q --detach "$wt" >/dev/null 2>&1
 
-  out=$(run_spawn_record "$home" rec-win-gg7 "$proj" "$wt" "$fakebin" "$rec"); status=$?
-  expect_code 0 "$status" "spawn into a genuine worktree should succeed"
-  assert_contains "$out" "spawned rec-win-gg7" "recording spawn did not report success"
-
-  # Bug 1 fix: append-form window creation (trailing colon on the session target).
-  assert_grep "new-window -dP -F #{window_id} -t firstmate: -n fm-rec-win-gg7" "$rec" \
-    "new-window must append at the session (trailing colon) and capture the window id"
-  assert_no_grep "new-window -dP -F #{window_id} -t firstmate -n" "$rec" \
-    "new-window must not target the bare session name (collides under base-index 1)"
+  # Bug 1 fix: numeric and named sessions both use explicit session targets.
+  for session in 2 named-session; do
+    id="rec-${session}-gg7"
+    out=$(run_spawn_record "$home" "$id" "$proj" "$wt" "$fakebin" "$rec" "$session"); status=$?
+    expect_code 0 "$status" "spawn in tmux session '$session' should succeed"
+    assert_contains "$out" "spawned $id" "recording spawn did not report success"
+    assert_grep "list-windows -t $session:" "$rec" \
+      "duplicate check must explicitly target tmux session '$session'"
+    assert_grep "new-window -dP -F #{window_id} -t $session: -n fm-$id" "$rec" \
+      "new-window must append within tmux session '$session' and capture the window id"
+    assert_no_grep "new-window -dP -F #{window_id} -t $session -n" "$rec" \
+      "new-window must not target bare tmux session '$session'"
+  done
 
   # Bug 2 fix (a): pin the window name against automatic-rename / allow-rename.
   assert_grep "set-window-option -t @spawnwid automatic-rename off" "$rec" \
@@ -298,7 +329,7 @@ test_spawn_tmux_window_construction() {
   assert_grep "display-message -p -t @spawnwid #{pane_current_path}" "$rec" \
     "the worktree wait loop must query the stable window id, not the name"
 
-  pass "fm-spawn: appends windows by session-colon, pins the name, and targets the window id"
+  pass "fm-spawn: explicitly targets numeric and named sessions, pins names, and uses window ids"
 }
 
 test_lib_classification
