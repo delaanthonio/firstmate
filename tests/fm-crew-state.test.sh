@@ -159,9 +159,9 @@ arm_idle_record() {  # <state-dir> <id>
 record_run_times() {  # <case-dir> <terminal-at> <updated-at>
   local dir=$1 terminal_at=$2 updated_at=$3 db="$1/nmhome/state.sqlite"
   mkdir -p "$dir/nmhome"
-  sqlite3 "$db" 'CREATE TABLE runs (id TEXT PRIMARY KEY, updated_at INTEGER NOT NULL);'
+  sqlite3 "$db" 'CREATE TABLE runs (id TEXT PRIMARY KEY, terminal_head_verified_at INTEGER, updated_at INTEGER NOT NULL);'
   sqlite3 "$db" 'CREATE TABLE step_results (run_id TEXT, status TEXT, completed_at INTEGER);'
-  sqlite3 "$db" "INSERT INTO runs VALUES ('01RUN', $updated_at);"
+  sqlite3 "$db" "INSERT INTO runs VALUES ('01RUN', $terminal_at, $updated_at);"
   sqlite3 "$db" "INSERT INTO step_results VALUES ('01RUN', 'failed', $terminal_at);"
 }
 
@@ -736,6 +736,39 @@ test_equal_second_declared_pause_then_terminal_failure() {
   assert_contains "$out" "state: failed" "a failed run newer than the declared pause -> failed"
   assert_contains "$out" "source: run-step" "the newer failed run remains authoritative"
   pass "an equal-second failed run newer than its declared pause is not absorbed"
+}
+
+test_unmarked_pause_after_terminal_failure() {
+  reset_fakes
+  local d; d=$(new_case unmarked-failed-then-paused)
+  make_repo_on_branch "$d/wt" fm/feat-unmarked-failed-pause
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/unmarked-failed-pause.meta" "window=fm:fm-unmarked-failed-pause" "worktree=$d/wt" "kind=ship"
+  printf 'paused: waiting for the upstream release after validation failed\n' > "$d/state/unmarked-failed-pause.status"
+  record_run_times "$d" 1700000000 1700000100
+  sqlite3 "$d/nmhome/state.sqlite" "UPDATE runs SET terminal_head_verified_at = NULL WHERE id = '01RUN';"
+  set_mtime "$d/state/unmarked-failed-pause.status" 1700000010
+  FM_FAKE_AXI_STATUS="$(run_failed fm/feat-unmarked-failed-pause)"
+  local out; out=$(run_crew_state "$d" unmarked-failed-pause)
+  assert_contains "$out" "state: paused" "an unmarked pause newer than the failed run -> paused"
+  assert_contains "$out" "source: status-log" "the compatible unmarked pause becomes authoritative"
+  pass "an existing unmarked pause after a failed run remains authoritative"
+}
+
+test_unmarked_pause_before_terminal_failure() {
+  reset_fakes
+  local d; d=$(new_case unmarked-paused-then-failed)
+  make_repo_on_branch "$d/wt" fm/feat-unmarked-pause-failed
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/unmarked-pause-failed.meta" "window=fm:fm-unmarked-pause-failed" "worktree=$d/wt" "kind=ship"
+  printf 'paused: waiting for the upstream release before validation restarted\n' > "$d/state/unmarked-pause-failed.status"
+  record_run_times "$d" 1700000010 1700000100
+  set_mtime "$d/state/unmarked-pause-failed.status" 1700000000
+  FM_FAKE_AXI_STATUS="$(run_failed fm/feat-unmarked-pause-failed)"
+  local out; out=$(run_crew_state "$d" unmarked-pause-failed)
+  assert_contains "$out" "state: failed" "a failed run newer than an unmarked pause -> failed"
+  assert_contains "$out" "source: run-step" "the newer failure remains authoritative over the unmarked pause"
+  pass "an unmarked pause older than a failed run does not absorb it"
 }
 
 # (e) cross-branch attribution: `axi status` returns ANOTHER branch's run (the
@@ -1433,6 +1466,8 @@ test_terminal_passed
 test_terminal_failed
 test_equal_second_terminal_failed_then_declared_pause
 test_equal_second_declared_pause_then_terminal_failure
+test_unmarked_pause_after_terminal_failure
+test_unmarked_pause_before_terminal_failure
 test_cross_branch_attribution_via_runs_list
 test_cross_branch_attribution_picks_most_recent_row
 test_coarse_run_does_not_probe_other_branch_ci_log_for_ready_status
