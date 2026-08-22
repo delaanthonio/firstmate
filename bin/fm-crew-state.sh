@@ -430,7 +430,11 @@ nm_terminal_completed_at() {
 }
 
 status_log_mtime() {
-  stat -f %m "$LOG" 2>/dev/null || stat -c %Y "$LOG" 2>/dev/null
+  if [ "$(uname -s 2>/dev/null || true)" = Darwin ]; then
+    stat -f %m "$LOG" 2>/dev/null
+  else
+    stat -c %Y "$LOG" 2>/dev/null
+  fi
 }
 
 unmarked_pause_follows_terminal_run() {

@@ -126,6 +126,27 @@ SH
   printf '%s\n' "$fb"
 }
 
+make_linux_stat_fakes() {  # <dir>
+  local fb="$1/fakebin"
+  cat > "$fb/uname" <<'SH'
+#!/usr/bin/env bash
+printf 'Linux\n'
+SH
+  cat > "$fb/stat" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = -c ] && [ "${2:-}" = %Y ]; then
+  perl -e 'print((stat $ARGV[0])[9], "\n")' "$3"
+  exit
+fi
+if [ "${1:-}" = -f ]; then
+  printf 'GNU stat filesystem output, not an epoch\n'
+  exit
+fi
+exit 2
+SH
+  chmod +x "$fb/uname" "$fb/stat"
+}
+
 make_no_timeout_toolbin() {  # <dir> -> echoes toolbin path
   local dir=$1 tb="$1/notimeoutbin" tool real
   mkdir -p "$tb"
@@ -776,6 +797,7 @@ test_unmarked_pause_after_terminal_failure() {
   local d; d=$(new_case unmarked-failed-then-paused)
   make_repo_on_branch "$d/wt" fm/feat-unmarked-failed-pause
   make_fakebin "$d" >/dev/null
+  make_linux_stat_fakes "$d"
   fm_write_meta "$d/state/unmarked-failed-pause.meta" "window=fm:fm-unmarked-failed-pause" "worktree=$d/wt" "kind=ship"
   printf 'paused: waiting for the upstream release after validation failed\n' > "$d/state/unmarked-failed-pause.status"
   record_run_times "$d" 1700000000 1700000100
@@ -785,7 +807,7 @@ test_unmarked_pause_after_terminal_failure() {
   local out; out=$(run_crew_state "$d" unmarked-failed-pause)
   assert_contains "$out" "state: paused" "an unmarked pause newer than the failed run -> paused"
   assert_contains "$out" "source: status-log" "the compatible unmarked pause becomes authoritative"
-  pass "an existing unmarked pause after a failed run remains authoritative"
+  pass "an existing unmarked pause after a failed run remains authoritative with GNU stat"
 }
 
 test_unmarked_pause_before_terminal_failure() {
