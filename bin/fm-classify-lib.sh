@@ -1093,8 +1093,9 @@ signal_reason_is_actionable() {  # <file> ...
 #             (e.g. waiting on CI);
 #   paused  - the crew's authoritative current state is a declared external-wait
 #             pause (paused:), which is EXPECTED to idle;
-#   none    - neither, so the wake must surface (a stopped/finished/parked/failed/
-#             torn-down/unknown crew, or an unreadable verdict).
+#   terminal:<state> - a done, failed, parked, or blocked authoritative state;
+#   none    - neither, so the wake must surface (a stopped/torn-down/unknown crew,
+#             or an unreadable verdict).
 # One fm-crew-state.sh read serves BOTH absorb reasons at once. Reading the state
 # authoritatively (not the status log) is what keeps run-step precedence: a crew
 # that appended paused: but then STARTED a run reports working, never paused.
@@ -1112,7 +1113,7 @@ crew_state_class() {  # <id>
     src=${line#*source: }; src=${src%% *}
     case "$src" in run-step|pane) printf 'working'; return ;; esac
   fi
-  case "$state" in parked|done|blocked|failed) printf 'terminal'; return ;; esac
+  case "$state" in parked|done|blocked|failed) printf 'terminal:%s' "$state"; return ;; esac
   printf 'none'
 }
 

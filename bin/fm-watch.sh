@@ -333,12 +333,16 @@ busy_turn_over_age() {  # <task>
 # timer would. A .paused-resurfaced-<key> throttle marker records the last
 # re-surface epoch so, once past the window, it fires once per window rather than
 # every poll. Advances the stale suppressor to <hash> and flags the key paused.
-handle_paused_stale() {  # <window> <task> <hash>
-  local win=$1 task=$2 h=$3 key statusf mtime age rf rf_age reason
+handle_paused_stale() {  # <window> <task> <hash> [terminal]
+  local win=$1 task=$2 h=$3 mode=${4:-paused} key statusf mtime age rf rf_age reason
   key=$(printf '%s' "$win" | tr ':/.' '___')
   printf '%s' "$h" > "$STATE/.stale-$key"
   : > "$STATE/.paused-$key"
   rm -f "$STATE/.stale-since-$key" "$STATE/.wedge-escalations-$key"
+  if [ "$mode" = terminal ]; then
+    triage_log "absorbed stale (authoritative terminal state already surfaced): $win"
+    return
+  fi
   statusf="$STATE/$task.status"
   mtime=$(stat_mtime "$statusf")
   case "$mtime" in ''|*[!0-9]*) mtime=$(date +%s) ;; esac
@@ -386,25 +390,14 @@ pause_state_class() {  # <window> <task>
     crew_absorb_class "$task"
     return
   fi
-  if [ -e "$STATE/.paused-$key" ] && [ -e "$STATE/.paused-resurfaced-$key" ] \
-    && [ "$(age_of "$recheck_file")" -lt "$STALE_ESCALATE_SECS" ]; then
-    if [ "$(window_kind "$win")" != secondmate ]; then
-      agent_alive=$(fm_backend_agent_alive "$(window_backend "$win")" "$win" 2>/dev/null) || agent_alive=unknown
-      if [ "$agent_alive" != dead ]; then
-        rm -f "$recheck_file"
-        printf 'none'
-        return
-      fi
-    fi
-    printf 'paused'
-    return
-  fi
   class=$(crew_state_class "$task")
-  if [ "$class" = working ] || [ "$class" = terminal ]; then
-    rm -f "$recheck_file"
-    printf '%s' "$class"
-    return
-  fi
+  case "$class" in
+    working|terminal:*)
+      [ "$class" = working ] && rm -f "$recheck_file"
+      printf '%s' "$class"
+      return
+      ;;
+  esac
   if [ "$(window_kind "$win")" != secondmate ]; then
     agent_alive=$(fm_backend_agent_alive "$(window_backend "$win")" "$win" 2>/dev/null) || agent_alive=unknown
     if [ "$agent_alive" != dead ]; then
@@ -421,8 +414,8 @@ pause_state_class() {  # <window> <task>
   printf '%s' "$class"
 }
 
-surface_nonterminal_stale() {  # <window> <hash>
-  local win=$1 h=$2 key task last
+surface_nonterminal_stale() {  # <window> <hash> [terminal-receipt]
+  local win=$1 h=$2 receipt=${3:-} key task last
   key=$(printf '%s' "$win" | tr ':/.' '___')
   fm_wake_append stale "$win" "stale: $win" || exit 1
   printf '%s' "$h" > "$STATE/.stale-$key"
@@ -431,7 +424,11 @@ surface_nonterminal_stale() {  # <window> <hash>
   last=$(last_status_line "$STATE/$task.status")
   if status_is_paused_or_captain_held "$last"; then
     : > "$STATE/.paused-$key"
-    date +%s > "$STATE/.paused-rechecked-$key"
+    if [ -n "$receipt" ]; then
+      printf '%s' "$receipt" > "$STATE/.paused-rechecked-$key"
+    else
+      date +%s > "$STATE/.paused-rechecked-$key"
+    fi
     date +%s > "$STATE/.paused-resurfaced-$key"
   else
     rm -f "$STATE/.paused-$key" "$STATE/.paused-rechecked-$key" "$STATE/.paused-resurfaced-$key"
@@ -1123,12 +1120,20 @@ EOF
           else
             task=$(window_to_task "$w" "$STATE")
             if [ -e "$pf" ] || status_is_paused_or_captain_held "$(last_status_line "$STATE/$task.status")"; then
-              case "$(pause_state_class "$w" "$task")" in
+              pause_class=$(pause_state_class "$w" "$task")
+              case "$pause_class" in
                 paused)  handle_paused_stale "$w" "$task" "$h" ;;
                 working) clear_pause_state "$w"
                          printf '%s' "$h" > "$sf"
                          wedge_timer_check "$w" "$ssf" "non-terminal stale (provably working after a declared pause)" "$ewf"
                          triage_log "absorbed non-terminal stale (provably working): $w" ;;
+                terminal:*)
+                         if [ "$(cat "$STATE/.paused-rechecked-$key" 2>/dev/null || true)" = "$pause_class" ]; then
+                           handle_paused_stale "$w" "$task" "$h" terminal
+                         else
+                           clear_pause_state "$w"
+                           surface_nonterminal_stale "$w" "$h" "$pause_class"
+                         fi ;;
                 *)       if [ -e "$STATE/.paused-resurfaced-$key" ]; then
                            handle_paused_stale "$w" "$task" "$h"
                          else

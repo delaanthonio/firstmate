@@ -846,6 +846,8 @@ test_unchanged_hash_terminal_run_newer_than_pause_surfaces_once() {
   printf '%s' "$pane_hash" > "$state/.stale-$key"
   printf '1\n' > "$state/.count-$key"
   : > "$state/.paused-$key"
+  date +%s > "$state/.paused-rechecked-$key"
+  date +%s > "$state/.paused-resurfaced-$key"
 
   PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
     FM_FAKE_TMUX_CURRENT_COMMAND=zsh FM_FAKE_CREW_STATE='state: failed · source: run-step · validation failed' \
@@ -854,7 +856,8 @@ test_unchanged_hash_terminal_run_newer_than_pause_surfaces_once() {
   pid=$!
   wait_for_exit "$pid" 40 || fail "unchanged pane hash absorbed a terminal run newer than the pause"
   grep -Fx "stale: $window" "$out" >/dev/null || fail "newer terminal run did not surface through unchanged-hash pause reconciliation"
-  [ -e "$state/.paused-resurfaced-$key" ] || fail "terminal surface did not record repeat suppression"
+  [ "$(cat "$state/.paused-rechecked-$key" 2>/dev/null || true)" = 'terminal:failed' ] \
+    || fail "terminal surface did not bind repeat suppression to the failed state"
   FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null || fail "drain after unchanged-hash terminal stale failed"
   grep "$(printf '\tstale\t')" "$drain_out" | grep -F "$window" >/dev/null \
     || fail "unchanged-hash terminal stale was not queued"
