@@ -771,6 +771,22 @@ test_unmarked_pause_before_terminal_failure() {
   pass "an unmarked pause older than a failed run does not absorb it"
 }
 
+test_unmarked_pause_ambiguous_same_second_surfaces_failure() {
+  reset_fakes
+  local d; d=$(new_case unmarked-ambiguous-order)
+  make_repo_on_branch "$d/wt" fm/feat-unmarked-ambiguous
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/unmarked-ambiguous.meta" "window=fm:fm-unmarked-ambiguous" "worktree=$d/wt" "kind=ship"
+  printf 'paused: waiting for upstream with legacy ordering evidence\n' > "$d/state/unmarked-ambiguous.status"
+  record_run_times "$d" 1700000000 1700000100
+  set_mtime "$d/state/unmarked-ambiguous.status" 1700000000
+  FM_FAKE_AXI_STATUS="$(run_failed fm/feat-unmarked-ambiguous)"
+  local out; out=$(run_crew_state "$d" unmarked-ambiguous)
+  assert_contains "$out" "state: failed" "an ambiguous same-second unmarked pause must surface the failure"
+  assert_contains "$out" "source: run-step" "ambiguous legacy ordering remains terminal-authoritative"
+  pass "an ambiguous same-second unmarked pause fails safe to the terminal run"
+}
+
 # (e) cross-branch attribution: `axi status` returns ANOTHER branch's run (the
 # routine case once more than one crew validates the same underlying repo
 # concurrently - they share ONE no-mistakes repo registration), so the helper
@@ -1468,6 +1484,7 @@ test_equal_second_terminal_failed_then_declared_pause
 test_equal_second_declared_pause_then_terminal_failure
 test_unmarked_pause_after_terminal_failure
 test_unmarked_pause_before_terminal_failure
+test_unmarked_pause_ambiguous_same_second_surfaces_failure
 test_cross_branch_attribution_via_runs_list
 test_cross_branch_attribution_picks_most_recent_row
 test_coarse_run_does_not_probe_other_branch_ci_log_for_ready_status
