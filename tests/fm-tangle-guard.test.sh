@@ -18,17 +18,18 @@ set -u
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-# shellcheck source=bin/fm-tangle-lib.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-tangle-lib.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-tangle-guard)
 fm_git_identity fmtest fmtest@example.invalid
 
-# A fresh git repo on `main` with one commit. Echoes its path.
+# A fresh git repo on `main` with one commit and a local origin. Echoes its path.
 make_repo() {
   local dir=$1
   git init -q -b main "$dir"
   git -C "$dir" commit -q --allow-empty -m init
+  fm_git_add_origin "$dir" "$dir.origin.git"
   printf '%s\n' "$dir"
 }
 
@@ -127,7 +128,7 @@ test_brief_assertion_precedes_branch() {
   local home brief iso br mode id
   home="$TMP_ROOT/brief-home"
   mkdir -p "$home/data"
-  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" tangle-brief-cc3 alpha >/dev/null 2>&1
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" tangle-brief-cc3 alpha --mode no-mistakes >/dev/null 2>&1
   brief="$home/data/tangle-brief-cc3/brief.md"
   assert_present "$brief" "brief was not scaffolded"
   assert_grep "blocked: launched in primary checkout, not an isolated worktree" "$brief" \
@@ -142,8 +143,8 @@ test_brief_assertion_precedes_branch() {
     "ship brief is missing the code-quality pass"
   assert_grep 'keep comments and docstrings evergreen' "$brief" \
     "ship brief is missing the evergreen-documentation standard"
-  assert_grep "first \`no-mistakes axi run\` for a branch needs \`--intent \"<summary>\"\`" "$brief" \
-    "ship brief is missing the first-run intent hint"
+  assert_grep "make \`--intent\` preserve all relevant content from this brief" "$brief" \
+    "ship brief is missing the no-mistakes intent contract"
   iso=$(grep -n 'launched in primary checkout, not an isolated worktree' "$brief" | head -1 | cut -d: -f1)
   br=$(grep -n 'git checkout -b fm/' "$brief" | head -1 | cut -d: -f1)
   if [ -z "$iso" ] || [ -z "$br" ]; then
@@ -153,12 +154,11 @@ test_brief_assertion_precedes_branch() {
 
   for mode in direct-PR local-only; do
     id="quality-${mode}-dd4"
-    printf -- '- alpha [%s] - test project (added 2026-07-11)\n' "$mode" > "$home/data/projects.md"
-    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" alpha >/dev/null 2>&1
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" alpha --mode "$mode" >/dev/null 2>&1
     assert_grep 'Before reporting done, make the change beautiful' "$home/data/$id/brief.md" \
       "$mode ship brief is missing the code-quality pass"
-    assert_no_grep "first \`no-mistakes axi run\`" "$home/data/$id/brief.md" \
-      "$mode ship brief must not include no-mistakes first-run guidance"
+    assert_no_grep "make \`--intent\` preserve all relevant content from this brief" "$home/data/$id/brief.md" \
+      "$mode ship brief must not include the no-mistakes intent contract"
   done
   pass "fm-brief: ship brief asserts worktree isolation before the branch step"
 }
@@ -209,7 +209,7 @@ run_spawn() {
     FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
     FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$pane" FM_FAKE_SESSION="$session" TMUX="fake,1,0" \
     PATH="$fakebin:$PATH" \
-    "$ROOT/bin/fm-spawn.sh" "$id" "$proj" codex 2>&1
+    "$ROOT/bin/fm-spawn.sh" "$id" "$proj" codex --mode no-mistakes --yolo off 2>&1
 }
 
 test_spawn_isolation_abort() {
@@ -289,7 +289,7 @@ run_spawn_record() {
     FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$pane" FM_FAKE_SESSION="$session" TMUX="fake,1,0" \
     FM_TMUX_REC="$rec" \
     PATH="$fakebin:$PATH" \
-    "$ROOT/bin/fm-spawn.sh" "$id" "$proj" codex 2>&1
+    "$ROOT/bin/fm-spawn.sh" "$id" "$proj" codex --mode no-mistakes --yolo off 2>&1
 }
 
 test_spawn_tmux_window_construction() {
