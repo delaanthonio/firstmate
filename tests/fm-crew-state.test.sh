@@ -140,7 +140,7 @@ make_no_timeout_toolbin() {  # <dir> -> echoes toolbin path
 # Run the helper for one case dir. FM_FAKE_* env (run output, busy flag) are read
 # from the caller's environment by the fakes above.
 run_crew_state() {  # <case-dir> <id>
-  PATH="$1/fakebin:$PATH" FM_STATE_OVERRIDE="$1/state" "$CREW_STATE" "$2"
+  PATH="$1/fakebin:$PATH" NM_HOME="$1/nmhome" FM_STATE_OVERRIDE="$1/state" "$CREW_STATE" "$2"
 }
 
 new_case() {  # <name> -> echoes case dir with an empty state/
@@ -154,6 +154,17 @@ arm_idle_record() {  # <state-dir> <id>
   gen=$("$ROOT/bin/fm-busy-event.sh" arm "$state" "$id")
   "$ROOT/bin/fm-busy-event.sh" apply "$state" "$id" idle --gen "$gen" \
     --source claude-hook --event stop
+}
+
+record_run_terminal() {  # <case-dir> <updated-at>
+  local dir=$1 updated_at=$2 db="$1/nmhome/state.sqlite"
+  mkdir -p "$dir/nmhome"
+  sqlite3 "$db" 'CREATE TABLE runs (id TEXT PRIMARY KEY, updated_at INTEGER NOT NULL);'
+  sqlite3 "$db" "INSERT INTO runs (id, updated_at) VALUES ('01RUN', $updated_at);"
+}
+
+set_mtime() {  # <path> <epoch>
+  perl -e 'utime $ARGV[1], $ARGV[1], $ARGV[0] or die "utime: $!\n"' "$1" "$2"
 }
 
 # Clear the fake-driver vars and (re-)mark them exported, so the per-test plain
@@ -691,12 +702,30 @@ test_terminal_failed_then_declared_pause() {
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-failed-pause.meta" "window=fm:fm-feat-failed-pause" "worktree=$d/wt" "kind=ship"
   printf 'paused: waiting for the upstream release after validation failed\n' > "$d/state/feat-failed-pause.status"
+  record_run_terminal "$d" 1700000000
+  set_mtime "$d/state/feat-failed-pause.status" 1700000010
   FM_FAKE_AXI_STATUS="$(run_failed fm/feat-failed-pause)"
   local out; out=$(run_crew_state "$d" feat-failed-pause)
   assert_contains "$out" "state: paused" "a declared pause newer than the failed run -> paused"
   assert_contains "$out" "source: status-log" "the newer pause becomes the current source"
   assert_contains "$out" "waiting for the upstream release" "the pause reason is preserved"
   pass "a declared pause after a failed validation run becomes authoritative"
+}
+
+test_declared_pause_then_terminal_failure() {
+  reset_fakes
+  local d; d=$(new_case paused-then-failed)
+  make_repo_on_branch "$d/wt" fm/feat-pause-failed
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-pause-failed.meta" "window=fm:fm-feat-pause-failed" "worktree=$d/wt" "kind=ship"
+  printf 'paused: waiting for the upstream release before validation restarted\n' > "$d/state/feat-pause-failed.status"
+  record_run_terminal "$d" 1700000010
+  set_mtime "$d/state/feat-pause-failed.status" 1700000000
+  FM_FAKE_AXI_STATUS="$(run_failed fm/feat-pause-failed)"
+  local out; out=$(run_crew_state "$d" feat-pause-failed)
+  assert_contains "$out" "state: failed" "a failed run newer than the declared pause -> failed"
+  assert_contains "$out" "source: run-step" "the newer failed run remains authoritative"
+  pass "a failed validation run newer than a declared pause is not absorbed"
 }
 
 # (e) cross-branch attribution: `axi status` returns ANOTHER branch's run (the
@@ -1393,6 +1422,7 @@ test_top_level_fixing_done_log_stays_working
 test_terminal_passed
 test_terminal_failed
 test_terminal_failed_then_declared_pause
+test_declared_pause_then_terminal_failure
 test_cross_branch_attribution_via_runs_list
 test_cross_branch_attribution_picks_most_recent_row
 test_coarse_run_does_not_probe_other_branch_ci_log_for_ready_status
