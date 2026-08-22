@@ -126,6 +126,27 @@ SH
   printf '%s\n' "$fb"
 }
 
+make_linux_stat_fakes() {  # <dir>
+  local fb="$1/fakebin"
+  cat > "$fb/uname" <<'SH'
+#!/usr/bin/env bash
+printf 'Linux\n'
+SH
+  cat > "$fb/stat" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = -c ] && [ "${2:-}" = %Y ]; then
+  perl -e 'print((stat $ARGV[0])[9], "\n")' "$3"
+  exit
+fi
+if [ "${1:-}" = -f ]; then
+  printf 'GNU stat filesystem output, not an epoch\n'
+  exit
+fi
+exit 2
+SH
+  chmod +x "$fb/uname" "$fb/stat"
+}
+
 make_no_timeout_toolbin() {  # <dir> -> echoes toolbin path
   local dir=$1 tb="$1/notimeoutbin" tool real
   mkdir -p "$tb"
@@ -140,7 +161,7 @@ make_no_timeout_toolbin() {  # <dir> -> echoes toolbin path
 # Run the helper for one case dir. FM_FAKE_* env (run output, busy flag) are read
 # from the caller's environment by the fakes above.
 run_crew_state() {  # <case-dir> <id>
-  PATH="$1/fakebin:$PATH" FM_STATE_OVERRIDE="$1/state" "$CREW_STATE" "$2"
+  PATH="$1/fakebin:$PATH" NM_HOME="$1/nmhome" FM_STATE_OVERRIDE="$1/state" "$CREW_STATE" "$2"
 }
 
 new_case() {  # <name> -> echoes case dir with an empty state/
@@ -154,6 +175,23 @@ arm_idle_record() {  # <state-dir> <id>
   gen=$("$ROOT/bin/fm-busy-event.sh" arm "$state" "$id")
   "$ROOT/bin/fm-busy-event.sh" apply "$state" "$id" idle --gen "$gen" \
     --source claude-hook --event stop
+}
+
+record_run_times() {  # <case-dir> <terminal-at> <updated-at>
+  local dir=$1 terminal_at=$2 updated_at=$3 db="$1/nmhome/state.sqlite"
+  mkdir -p "$dir/nmhome"
+  sqlite3 "$db" 'CREATE TABLE runs (id TEXT PRIMARY KEY, terminal_head_verified_at INTEGER, updated_at INTEGER NOT NULL);'
+  sqlite3 "$db" 'CREATE TABLE step_results (run_id TEXT, status TEXT, completed_at INTEGER);'
+  sqlite3 "$db" "INSERT INTO runs VALUES ('01RUN', $terminal_at, $updated_at);"
+  sqlite3 "$db" "INSERT INTO step_results VALUES ('01RUN', 'failed', $terminal_at);"
+}
+
+set_mtime() {  # <path> <epoch>
+  perl -e 'utime $ARGV[1], $ARGV[1], $ARGV[0] or die "utime: $!\n"' "$1" "$2"
+}
+
+mtime_seconds() {  # <path>
+  perl -e 'print((stat $ARGV[0])[9])' "$1"
 }
 
 # Clear the fake-driver vars and (re-)mark them exported, so the per-test plain
@@ -275,6 +313,19 @@ run:
   pr: "https://github.com/o/r/pull/1"
   findings: none
 outcome: passed
+EOF
+}
+
+run_checks_passed() {  # <branch>
+  cat <<EOF
+run:
+  id: "01RUN"
+  branch: $1
+  status: completed
+  head: "${FM_FAKE_RUN_HEAD:-abc1234}"
+  pr: "https://github.com/o/r/pull/1"
+  findings: none
+outcome: checks-passed
 EOF
 }
 
@@ -478,6 +529,7 @@ EOF
   local out; out=$(run_crew_state "$d" feat-cigreen)
   assert_contains "$out" "state: done" "green ci-monitor run -> done"
   assert_contains "$out" "source: run-step" "green ci-monitor -> run-step source"
+  assert_contains "$out" "event: run:01RUN:ci:checks-green" "green ci-monitor identifies its exact done transition"
   assert_contains "$out" "checks green" "green ci-monitor detail mentions checks green"
   assert_not_contains "$out" "state: working" "green ci-monitor must not read as still validating"
   pass "ci-monitoring run with checks already green surfaces done"
@@ -668,6 +720,7 @@ test_terminal_passed() {
   local out; out=$(run_crew_state "$d" feat-d)
   assert_contains "$out" "state: done" "passed run -> done"
   assert_contains "$out" "source: run-step" "passed -> run-step source"
+  assert_contains "$out" "event: run:01RUN:outcome:passed" "passed run exposes its terminal event identity"
   pass "terminal passed run is authoritative"
 }
 
@@ -681,7 +734,112 @@ test_terminal_failed() {
   local out; out=$(run_crew_state "$d" feat-e)
   assert_contains "$out" "state: failed" "failed run -> failed"
   assert_contains "$out" "source: run-step" "failed -> run-step source"
+  assert_contains "$out" "event: run:01RUN:outcome:failed" "failed run exposes its terminal event identity"
   pass "terminal failed run is authoritative"
+}
+
+test_same_run_done_transitions_have_distinct_events() {
+  reset_fakes
+  local d checks_out passed_out
+  d=$(new_case distinct-done-events)
+  make_repo_on_branch "$d/wt" fm/feat-done-events
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/done-events.meta" "window=fm:fm-done-events" "worktree=$d/wt" "kind=ship"
+  FM_FAKE_AXI_STATUS="$(run_checks_passed fm/feat-done-events)"
+  checks_out=$(run_crew_state "$d" done-events)
+  assert_contains "$checks_out" "event: run:01RUN:outcome:checks-passed" "checks-passed exposes its exact done transition"
+  FM_FAKE_AXI_STATUS="$(run_passed fm/feat-done-events)"
+  passed_out=$(run_crew_state "$d" done-events)
+  assert_contains "$passed_out" "event: run:01RUN:outcome:passed" "passed exposes its exact done transition"
+  [ "$checks_out" != "$passed_out" ] || fail "distinct done transitions emitted the same authoritative state receipt"
+  pass "same-run checks-passed and passed transitions have distinct event identities"
+}
+
+test_equal_second_terminal_failed_then_declared_pause() {
+  reset_fakes
+  local d; d=$(new_case failed-then-paused)
+  make_repo_on_branch "$d/wt" fm/feat-failed-pause
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-failed-pause.meta" "window=fm:fm-feat-failed-pause" "worktree=$d/wt" "kind=ship"
+  printf 'paused [after-run=01RUN]: waiting for the upstream release after validation failed\n' > "$d/state/feat-failed-pause.status"
+  record_run_times "$d" 1700000000 1700000010
+  set_mtime "$d/state/feat-failed-pause.status" 1700000000
+  [ "$(mtime_seconds "$d/state/feat-failed-pause.status")" = "$(sqlite3 "$d/nmhome/state.sqlite" 'SELECT completed_at FROM step_results;')" ] \
+    || fail "failure-then-pause regression did not model equal-second events"
+  FM_FAKE_AXI_STATUS="$(run_failed fm/feat-failed-pause)"
+  local out; out=$(run_crew_state "$d" feat-failed-pause)
+  assert_contains "$out" "state: paused" "a declared pause newer than the failed run -> paused"
+  assert_contains "$out" "source: status-log" "the newer pause becomes the current source"
+  assert_contains "$out" "waiting for the upstream release" "the pause reason is preserved"
+  pass "an equal-second pause after a failed run becomes authoritative despite later bookkeeping"
+}
+
+test_equal_second_declared_pause_then_terminal_failure() {
+  reset_fakes
+  local d; d=$(new_case paused-then-failed)
+  make_repo_on_branch "$d/wt" fm/feat-pause-failed
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-pause-failed.meta" "window=fm:fm-feat-pause-failed" "worktree=$d/wt" "kind=ship"
+  printf 'paused [after-run=01PRIOR]: waiting for the upstream release before validation restarted\n' > "$d/state/feat-pause-failed.status"
+  record_run_times "$d" 1700000000 1700000000
+  set_mtime "$d/state/feat-pause-failed.status" 1700000000
+  [ "$(mtime_seconds "$d/state/feat-pause-failed.status")" = "$(sqlite3 "$d/nmhome/state.sqlite" 'SELECT completed_at FROM step_results;')" ] \
+    || fail "pause-then-failure regression did not model equal-second events"
+  FM_FAKE_AXI_STATUS="$(run_failed fm/feat-pause-failed)"
+  local out; out=$(run_crew_state "$d" feat-pause-failed)
+  assert_contains "$out" "state: failed" "a failed run newer than the declared pause -> failed"
+  assert_contains "$out" "source: run-step" "the newer failed run remains authoritative"
+  pass "an equal-second failed run newer than its declared pause is not absorbed"
+}
+
+test_unmarked_pause_after_terminal_failure() {
+  reset_fakes
+  local d; d=$(new_case unmarked-failed-then-paused)
+  make_repo_on_branch "$d/wt" fm/feat-unmarked-failed-pause
+  make_fakebin "$d" >/dev/null
+  make_linux_stat_fakes "$d"
+  fm_write_meta "$d/state/unmarked-failed-pause.meta" "window=fm:fm-unmarked-failed-pause" "worktree=$d/wt" "kind=ship"
+  printf 'paused: waiting for the upstream release after validation failed\n' > "$d/state/unmarked-failed-pause.status"
+  record_run_times "$d" 1700000000 1700000100
+  sqlite3 "$d/nmhome/state.sqlite" "UPDATE runs SET terminal_head_verified_at = NULL WHERE id = '01RUN';"
+  set_mtime "$d/state/unmarked-failed-pause.status" 1700000010
+  FM_FAKE_AXI_STATUS="$(run_failed fm/feat-unmarked-failed-pause)"
+  local out; out=$(run_crew_state "$d" unmarked-failed-pause)
+  assert_contains "$out" "state: paused" "an unmarked pause newer than the failed run -> paused"
+  assert_contains "$out" "source: status-log" "the compatible unmarked pause becomes authoritative"
+  pass "an existing unmarked pause after a failed run remains authoritative with GNU stat"
+}
+
+test_unmarked_pause_before_terminal_failure() {
+  reset_fakes
+  local d; d=$(new_case unmarked-paused-then-failed)
+  make_repo_on_branch "$d/wt" fm/feat-unmarked-pause-failed
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/unmarked-pause-failed.meta" "window=fm:fm-unmarked-pause-failed" "worktree=$d/wt" "kind=ship"
+  printf 'paused: waiting for the upstream release before validation restarted\n' > "$d/state/unmarked-pause-failed.status"
+  record_run_times "$d" 1700000010 1700000100
+  set_mtime "$d/state/unmarked-pause-failed.status" 1700000000
+  FM_FAKE_AXI_STATUS="$(run_failed fm/feat-unmarked-pause-failed)"
+  local out; out=$(run_crew_state "$d" unmarked-pause-failed)
+  assert_contains "$out" "state: failed" "a failed run newer than an unmarked pause -> failed"
+  assert_contains "$out" "source: run-step" "the newer failure remains authoritative over the unmarked pause"
+  pass "an unmarked pause older than a failed run does not absorb it"
+}
+
+test_unmarked_pause_ambiguous_same_second_surfaces_failure() {
+  reset_fakes
+  local d; d=$(new_case unmarked-ambiguous-order)
+  make_repo_on_branch "$d/wt" fm/feat-unmarked-ambiguous
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/unmarked-ambiguous.meta" "window=fm:fm-unmarked-ambiguous" "worktree=$d/wt" "kind=ship"
+  printf 'paused: waiting for upstream with legacy ordering evidence\n' > "$d/state/unmarked-ambiguous.status"
+  record_run_times "$d" 1700000000 1700000100
+  set_mtime "$d/state/unmarked-ambiguous.status" 1700000000
+  FM_FAKE_AXI_STATUS="$(run_failed fm/feat-unmarked-ambiguous)"
+  local out; out=$(run_crew_state "$d" unmarked-ambiguous)
+  assert_contains "$out" "state: failed" "an ambiguous same-second unmarked pause must surface the failure"
+  assert_contains "$out" "source: run-step" "ambiguous legacy ordering remains terminal-authoritative"
+  pass "an ambiguous same-second unmarked pause fails safe to the terminal run"
 }
 
 # (e) cross-branch attribution: `axi status` returns ANOTHER branch's run (the
@@ -1377,6 +1535,12 @@ test_top_level_fixing_ci_running_after_green_stays_working
 test_top_level_fixing_done_log_stays_working
 test_terminal_passed
 test_terminal_failed
+test_same_run_done_transitions_have_distinct_events
+test_equal_second_terminal_failed_then_declared_pause
+test_equal_second_declared_pause_then_terminal_failure
+test_unmarked_pause_after_terminal_failure
+test_unmarked_pause_before_terminal_failure
+test_unmarked_pause_ambiguous_same_second_surfaces_failure
 test_cross_branch_attribution_via_runs_list
 test_cross_branch_attribution_picks_most_recent_row
 test_coarse_run_does_not_probe_other_branch_ci_log_for_ready_status
