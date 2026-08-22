@@ -1,0 +1,14 @@
+SCENARIO 1 — declared pause after failed validation; pane redraw changes hash
+authoritative_state: paused
+pane_hash_changed: yes
+watcher_result: still monitoring (no wake)
+wake_output: <none>
+bounded_pause_marker: recorded
+stale_suppressor_advanced: yes
+queued_wakes: 0
+
+SCENARIO 2 — newer terminal failure arrives behind the same pause
+authoritative_state: failed (run:02RUN:outcome:failed)
+watcher_output: stale: test:fm-paused-run-failed 
+terminal_receipt: terminal:failed:run:02RUN:outcome:failed
+persisted_wake: kind=stale target=test:fm-paused-run-failed payload=stale: test:fm-paused-run-failed
