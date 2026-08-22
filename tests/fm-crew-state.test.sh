@@ -170,7 +170,7 @@ set_mtime() {  # <path> <epoch>
 }
 
 mtime_seconds() {  # <path>
-  stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null
+  perl -e 'print((stat $ARGV[0])[9])' "$1"
 }
 
 # Clear the fake-driver vars and (re-)mark them exported, so the per-test plain
