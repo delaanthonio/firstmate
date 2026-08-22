@@ -16,7 +16,7 @@
 # fixed mapping logic, no heuristics and no LLM. Output is one stable, parseable,
 # token-tight line firstmate can read every heartbeat:
 #
-#   state: <working|parked|done|blocked|paused|failed|unknown> · source: <run-step|pane|status-log|none> · <detail> · event: <identity>
+#   state: <working|parked|done|blocked|paused|failed|unknown> · source: <run-step|pane|status-log|none> [· <detail>] [· event: <identity>]
 #
 # Logic, in order:
 #   1. Resolve worktree + backend target + kind from state/<id>.meta.
@@ -30,10 +30,11 @@
 #      diverged from it, invalidates attribution.
 #      The run-step is AUTHORITATIVE: running/fixing -> working, ci -> working,
 #      awaiting_approval/fix_review -> parked (with gate findings), terminal
-#      passed/checks-passed -> done, failed/cancelled -> failed. Two later
-#      current-state declarations can override a terminal run: a paused status
-#      bound to that exact terminal run, or an older unmarked pause provably
-#      appended after its terminal step, declares a deliberate external wait.
+#      passed/checks-passed -> done, failed/cancelled -> failed. One later
+#      current-state declaration can override a failed/cancelled run: a
+#      `<pause-verb> [after-run=<run-id>]:` status bound to that exact terminal
+#      run, or an unmarked legacy pause provably appended after its terminal
+#      step, declares an external wait.
 #      While the active step is ci, `axi status`
 #      alone cannot tell "still waiting on checks" from
 #      "checks green, waiting on merge" (see nm_ci_checks_state), so a ci-step
