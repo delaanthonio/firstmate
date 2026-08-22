@@ -671,6 +671,17 @@ test_pause_verb_override_renders_all_brief_scaffolds() {
   pass "fm-brief.sh: custom pause verb renders in every scaffold"
 }
 
+test_no_mistakes_pause_binds_terminal_run() {
+  local home brief
+  home="$TMP_ROOT/pause-terminal-run-home"
+  mkdir -p "$home/data"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" pause-terminal-run firstmate --mode no-mistakes >/dev/null 2>&1
+  brief="$home/data/pause-terminal-run/brief.md"
+  assert_grep 'paused [after-run=<terminal-run-id>]: {why}' "$brief" \
+    "no-mistakes brief did not bind a post-terminal pause to the exact run"
+  pass "fm-brief.sh: no-mistakes pauses preserve terminal-run provenance"
+}
+
 test_scout_and_secondmate_load_decision_hold_policy() {
   local home scout charter
   home="$TMP_ROOT/decision-policy-home"
@@ -728,5 +739,6 @@ test_secondmate_no_projects_charter
 test_secondmate_marked_request_reporting_contract
 test_secondmate_directory_paths_are_absolute_and_output_is_stable
 test_pause_verb_override_renders_all_brief_scaffolds
+test_no_mistakes_pause_binds_terminal_run
 test_scout_and_secondmate_load_decision_hold_policy
 test_scout_and_secondmate_scaffold

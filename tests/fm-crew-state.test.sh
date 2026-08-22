@@ -156,15 +156,21 @@ arm_idle_record() {  # <state-dir> <id>
     --source claude-hook --event stop
 }
 
-record_run_terminal() {  # <case-dir> <updated-at>
-  local dir=$1 updated_at=$2 db="$1/nmhome/state.sqlite"
+record_run_times() {  # <case-dir> <terminal-at> <updated-at>
+  local dir=$1 terminal_at=$2 updated_at=$3 db="$1/nmhome/state.sqlite"
   mkdir -p "$dir/nmhome"
   sqlite3 "$db" 'CREATE TABLE runs (id TEXT PRIMARY KEY, updated_at INTEGER NOT NULL);'
-  sqlite3 "$db" "INSERT INTO runs (id, updated_at) VALUES ('01RUN', $updated_at);"
+  sqlite3 "$db" 'CREATE TABLE step_results (run_id TEXT, status TEXT, completed_at INTEGER);'
+  sqlite3 "$db" "INSERT INTO runs VALUES ('01RUN', $updated_at);"
+  sqlite3 "$db" "INSERT INTO step_results VALUES ('01RUN', 'failed', $terminal_at);"
 }
 
 set_mtime() {  # <path> <epoch>
   perl -e 'utime $ARGV[1], $ARGV[1], $ARGV[0] or die "utime: $!\n"' "$1" "$2"
+}
+
+mtime_seconds() {  # <path>
+  stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null
 }
 
 # Clear the fake-driver vars and (re-)mark them exported, so the per-test plain
@@ -695,37 +701,41 @@ test_terminal_failed() {
   pass "terminal failed run is authoritative"
 }
 
-test_terminal_failed_then_declared_pause() {
+test_equal_second_terminal_failed_then_declared_pause() {
   reset_fakes
   local d; d=$(new_case failed-then-paused)
   make_repo_on_branch "$d/wt" fm/feat-failed-pause
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-failed-pause.meta" "window=fm:fm-feat-failed-pause" "worktree=$d/wt" "kind=ship"
-  printf 'paused: waiting for the upstream release after validation failed\n' > "$d/state/feat-failed-pause.status"
-  record_run_terminal "$d" 1700000000
-  set_mtime "$d/state/feat-failed-pause.status" 1700000010
+  printf 'paused [after-run=01RUN]: waiting for the upstream release after validation failed\n' > "$d/state/feat-failed-pause.status"
+  record_run_times "$d" 1700000000 1700000010
+  set_mtime "$d/state/feat-failed-pause.status" 1700000000
+  [ "$(mtime_seconds "$d/state/feat-failed-pause.status")" = "$(sqlite3 "$d/nmhome/state.sqlite" 'SELECT completed_at FROM step_results;')" ] \
+    || fail "failure-then-pause regression did not model equal-second events"
   FM_FAKE_AXI_STATUS="$(run_failed fm/feat-failed-pause)"
   local out; out=$(run_crew_state "$d" feat-failed-pause)
   assert_contains "$out" "state: paused" "a declared pause newer than the failed run -> paused"
   assert_contains "$out" "source: status-log" "the newer pause becomes the current source"
   assert_contains "$out" "waiting for the upstream release" "the pause reason is preserved"
-  pass "a declared pause after a failed validation run becomes authoritative"
+  pass "an equal-second pause after a failed run becomes authoritative despite later bookkeeping"
 }
 
-test_declared_pause_then_terminal_failure() {
+test_equal_second_declared_pause_then_terminal_failure() {
   reset_fakes
   local d; d=$(new_case paused-then-failed)
   make_repo_on_branch "$d/wt" fm/feat-pause-failed
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-pause-failed.meta" "window=fm:fm-feat-pause-failed" "worktree=$d/wt" "kind=ship"
-  printf 'paused: waiting for the upstream release before validation restarted\n' > "$d/state/feat-pause-failed.status"
-  record_run_terminal "$d" 1700000010
+  printf 'paused [after-run=01PRIOR]: waiting for the upstream release before validation restarted\n' > "$d/state/feat-pause-failed.status"
+  record_run_times "$d" 1700000000 1700000000
   set_mtime "$d/state/feat-pause-failed.status" 1700000000
+  [ "$(mtime_seconds "$d/state/feat-pause-failed.status")" = "$(sqlite3 "$d/nmhome/state.sqlite" 'SELECT completed_at FROM step_results;')" ] \
+    || fail "pause-then-failure regression did not model equal-second events"
   FM_FAKE_AXI_STATUS="$(run_failed fm/feat-pause-failed)"
   local out; out=$(run_crew_state "$d" feat-pause-failed)
   assert_contains "$out" "state: failed" "a failed run newer than the declared pause -> failed"
   assert_contains "$out" "source: run-step" "the newer failed run remains authoritative"
-  pass "a failed validation run newer than a declared pause is not absorbed"
+  pass "an equal-second failed run newer than its declared pause is not absorbed"
 }
 
 # (e) cross-branch attribution: `axi status` returns ANOTHER branch's run (the
@@ -1421,8 +1431,8 @@ test_top_level_fixing_ci_running_after_green_stays_working
 test_top_level_fixing_done_log_stays_working
 test_terminal_passed
 test_terminal_failed
-test_terminal_failed_then_declared_pause
-test_declared_pause_then_terminal_failure
+test_equal_second_terminal_failed_then_declared_pause
+test_equal_second_declared_pause_then_terminal_failure
 test_cross_branch_attribution_via_runs_list
 test_cross_branch_attribution_picks_most_recent_row
 test_coarse_run_does_not_probe_other_branch_ci_log_for_ready_status

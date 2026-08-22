@@ -32,8 +32,8 @@
 #      awaiting_approval/fix_review -> parked (with gate findings), terminal
 #      passed/checks-passed -> done, failed/cancelled -> failed. Two later
 #      current-state declarations can override a terminal run: a paused status
-#      recorded after the matching run's durable terminal update declares a
-#      deliberate external wait. While the active step is ci, `axi status`
+#      bound to that exact terminal run declares a deliberate external wait.
+#      While the active step is ci, `axi status`
 #      alone cannot tell "still waiting on checks" from
 #      "checks green, waiting on merge" (see nm_ci_checks_state), so a ci-step
 #      log-tail check overrides working -> done once checks read green.
@@ -139,10 +139,6 @@ map_log_state() {  # <line>
 
 LOG_LINE=$(log_last_line || true)
 LOG_VERB=$(status_line_verb "$LOG_LINE")
-
-path_mtime() {  # <path>
-  stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null
-}
 
 # pane_readable is consulted ONLY in the no-run fallback below. The run-step path
 # stays authoritative regardless of pane liveness - judge by the run-step, not the
@@ -380,26 +376,22 @@ nm_run_head_matches_worktree() {
   fm_nm_head_matches_worktree "$WT" "$run_head"
 }
 
-nm_terminal_updated_at() {
-  local run_id nm_home db updated_at
-  run_id=$(strip_quotes "$(nm_field id)")
+pause_terminal_run_id() {
+  local prefix run_id
+  prefix=${1%%:*}
+  case "$prefix" in *\[after-run=*\]*) ;; *) return 1 ;; esac
+  run_id=${prefix#*\[after-run=}
+  run_id=${run_id%%\]*}
   case "$run_id" in ''|*[!A-Za-z0-9_-]*) return 1 ;; esac
-  nm_home=${NM_HOME:-${HOME:-}/.no-mistakes}
-  [ -n "$nm_home" ] || return 1
-  db="$nm_home/state.sqlite"
-  [ -r "$db" ] || return 1
-  command -v sqlite3 >/dev/null 2>&1 || return 1
-  updated_at=$(sqlite3 -readonly "$db" "SELECT updated_at FROM runs WHERE id = '$run_id' LIMIT 1;" 2>/dev/null) || return 1
-  case "$updated_at" in ''|*[!0-9]*) return 1 ;; esac
-  printf '%s' "$updated_at"
+  printf '%s' "$run_id"
 }
 
-pause_follows_terminal_run() {
-  local pause_at terminal_at
+pause_binds_terminal_run() {
+  local pause_run_id run_id
   [ "$RUN_SOURCE" = full ] || return 1
-  pause_at=$(path_mtime "$LOG") || return 1
-  terminal_at=$(nm_terminal_updated_at) || return 1
-  [ "$pause_at" -gt "$terminal_at" ]
+  pause_run_id=$(pause_terminal_run_id "$LOG_LINE") || return 1
+  run_id=$(strip_quotes "$(nm_field id)")
+  [ -n "$run_id" ] && [ "$pause_run_id" = "$run_id" ]
 }
 
 # Coarse runs-list rows are "<status> <branch> <short-sha> ...". 0 if the short
@@ -542,12 +534,11 @@ if [ "$HAVE_RUN" = 1 ]; then
   fi
 
   # A failed/cancelled run remains authoritative unless the worker's newest
-  # append-only status event is a declared pause whose file mtime is strictly
-  # newer than the matching run's durable terminal update. This is the one
-  # intentional terminal-run override: the worker is now deliberately waiting
-  # on a known external condition, so stale supervision uses the bounded pause
-  # cadence instead of repeatedly resurfacing the historical run failure.
-  if [ "$RUN_STATE" = failed ] && status_is_paused "$LOG_LINE" && pause_follows_terminal_run; then
+  # append-only status event is a declared pause bound to that exact terminal
+  # run. This is the one intentional terminal-run override: the worker is now
+  # deliberately waiting on a known external condition, so stale supervision
+  # uses the bounded pause cadence instead of resurfacing historical failure.
+  if [ "$RUN_STATE" = failed ] && status_is_paused "$LOG_LINE" && pause_binds_terminal_run; then
     emit paused status-log "$(status_line_note "$LOG_LINE")${SEP}terminal run superseded by declared pause"
   fi
 
