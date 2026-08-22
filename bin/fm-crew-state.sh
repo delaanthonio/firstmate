@@ -16,7 +16,7 @@
 # fixed mapping logic, no heuristics and no LLM. Output is one stable, parseable,
 # token-tight line firstmate can read every heartbeat:
 #
-#   state: <working|parked|done|blocked|paused|failed|unknown> · source: <run-step|pane|status-log|none> · <detail>
+#   state: <working|parked|done|blocked|paused|failed|unknown> · source: <run-step|pane|status-log|none> · <detail> · event: <identity>
 #
 # Logic, in order:
 #   1. Resolve worktree + backend target + kind from state/<id>.meta.
@@ -85,12 +85,22 @@ FM_CREW_STATE_RUNS_LIMIT=${FM_CREW_STATE_RUNS_LIMIT:-200}
 case "$FM_CREW_STATE_RUNS_LIMIT" in ''|*[!0-9]*) FM_CREW_STATE_RUNS_LIMIT=200 ;; esac
 SEP=' · '
 
-# Emit the one canonical line and exit 0. Detail is optional.
-emit() {  # <state> <source> [detail]
+# Emit the one canonical line and exit 0. Detail and event identity are optional.
+emit() {  # <state> <source> [detail] [event]
   local line="state: $1${SEP}source: $2"
   [ -n "${3:-}" ] && line="$line${SEP}$3"
+  [ -n "${4:-}" ] && line="$line${SEP}event: $4"
   printf '%s\n' "$line"
   exit 0
+}
+
+run_event_identity() {  # <transition>
+  local transition=$1 run_id
+  [ "$RUN_SOURCE" = full ] || return 1
+  run_id=$(strip_quotes "$(nm_field id)")
+  [ -n "$run_id" ] && [ -n "$transition" ] || return 1
+  case "$run_id:$transition" in *[!A-Za-z0-9_.:-]*) return 1 ;; esac
+  printf 'run:%s:%s' "$run_id" "$transition"
 }
 
 # --- meta resolution --------------------------------------------------------
@@ -484,6 +494,7 @@ fi
 if [ "$HAVE_RUN" = 1 ]; then
   RUN_STATE=working
   RUN_DETAIL=""
+  RUN_EVENT=""
   CI_STEP_STATUS=""
   CI_LOG_STATE=""
   RUN_STATUS=""
@@ -513,10 +524,10 @@ if [ "$HAVE_RUN" = 1 ]; then
 
     if [ -n "$outcome" ]; then
       case "$outcome" in
-        passed)        RUN_STATE="done"; RUN_DETAIL="run passed: PR merged/closed" ;;
-        checks-passed) RUN_STATE="done"; RUN_DETAIL="checks green: PR ready for review" ;;
-        failed)        RUN_STATE=failed; RUN_DETAIL="run failed" ;;
-        cancelled)     RUN_STATE=failed; RUN_DETAIL="run cancelled" ;;
+        passed)        RUN_STATE="done"; RUN_DETAIL="run passed: PR merged/closed"; RUN_EVENT=$(run_event_identity "outcome:$outcome" || true) ;;
+        checks-passed) RUN_STATE="done"; RUN_DETAIL="checks green: PR ready for review"; RUN_EVENT=$(run_event_identity "outcome:$outcome" || true) ;;
+        failed)        RUN_STATE=failed; RUN_DETAIL="run failed"; RUN_EVENT=$(run_event_identity "outcome:$outcome" || true) ;;
+        cancelled)     RUN_STATE=failed; RUN_DETAIL="run cancelled"; RUN_EVENT=$(run_event_identity "outcome:$outcome" || true) ;;
         *)             RUN_STATE=unknown; RUN_DETAIL="outcome: $outcome" ;;
       esac
     elif [ -n "$awaiting" ] || [ "$status" = awaiting_approval ] || [ "$status" = fix_review ] || [ -n "$gate_status" ] || [ "$has_gate" = 1 ]; then
@@ -529,6 +540,7 @@ if [ "$HAVE_RUN" = 1 ]; then
       [ -n "$gate" ] || gate=gate
       RUN_STATE=parked
       RUN_DETAIL="parked at $gate"
+      RUN_EVENT=$(run_event_identity "gate:$status" || true)
       fcount=$(nm_gate_findings_count)
       [ -n "$fcount" ] && RUN_DETAIL="$RUN_DETAIL: $fcount finding(s)"
       if printf '%s\n' "$RUN_OUT" | grep -q 'ask-user'; then
@@ -538,9 +550,9 @@ if [ "$HAVE_RUN" = 1 ]; then
       case "$status" in
         ci)             RUN_STATE=working; RUN_DETAIL="ci running" ;;
         running|fixing) RUN_STATE=working; RUN_DETAIL="validating ($status)" ;;
-        completed)      RUN_STATE="done"; RUN_DETAIL="run completed" ;;
-        failed)         RUN_STATE=failed;  RUN_DETAIL="run failed" ;;
-        cancelled)      RUN_STATE=failed;  RUN_DETAIL="run cancelled" ;;
+        completed)      RUN_STATE="done"; RUN_DETAIL="run completed"; RUN_EVENT=$(run_event_identity "status:$status" || true) ;;
+        failed)         RUN_STATE=failed;  RUN_DETAIL="run failed"; RUN_EVENT=$(run_event_identity "status:$status" || true) ;;
+        cancelled)      RUN_STATE=failed;  RUN_DETAIL="run cancelled"; RUN_EVENT=$(run_event_identity "status:$status" || true) ;;
         "")             RUN_STATE=working; RUN_DETAIL="run active" ;;
         *)              RUN_STATE=working; RUN_DETAIL="run active ($status)" ;;
       esac
@@ -552,6 +564,7 @@ if [ "$HAVE_RUN" = 1 ]; then
             if [ "$CI_LOG_STATE" = green ]; then
               RUN_STATE="done"
               RUN_DETAIL="checks green: PR ready for review (still monitoring for merge/close)"
+              RUN_EVENT=$(run_event_identity "ci:checks-green" || true)
             fi
             ;;
           fixing)
@@ -575,7 +588,8 @@ if [ "$HAVE_RUN" = 1 ]; then
       CI_LOG_STATE=not-ready
     fi
     if [ "$CI_LOG_STATE" != not-ready ]; then
-      emit "done" status-log "$(status_line_note "$LOG_LINE")${SEP}run still monitoring PR"
+      RUN_EVENT=$(run_event_identity "status-log:ci-ready" || true)
+      emit "done" status-log "$(status_line_note "$LOG_LINE")${SEP}run still monitoring PR" "$RUN_EVENT"
     fi
   fi
 
@@ -603,7 +617,7 @@ if [ "$HAVE_RUN" = 1 ]; then
       ;;
   esac
 
-  emit "$RUN_STATE" run-step "$RUN_DETAIL"
+  emit "$RUN_STATE" run-step "$RUN_DETAIL" "$RUN_EVENT"
 fi
 
 # --- fallback: no run attributed to this crew ------------------------------

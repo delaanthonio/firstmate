@@ -295,6 +295,19 @@ outcome: passed
 EOF
 }
 
+run_checks_passed() {  # <branch>
+  cat <<EOF
+run:
+  id: "01RUN"
+  branch: $1
+  status: completed
+  head: "${FM_FAKE_RUN_HEAD:-abc1234}"
+  pr: "https://github.com/o/r/pull/1"
+  findings: none
+outcome: checks-passed
+EOF
+}
+
 run_failed() {  # <branch>
   cat <<EOF
 run:
@@ -495,6 +508,7 @@ EOF
   local out; out=$(run_crew_state "$d" feat-cigreen)
   assert_contains "$out" "state: done" "green ci-monitor run -> done"
   assert_contains "$out" "source: run-step" "green ci-monitor -> run-step source"
+  assert_contains "$out" "event: run:01RUN:ci:checks-green" "green ci-monitor identifies its exact done transition"
   assert_contains "$out" "checks green" "green ci-monitor detail mentions checks green"
   assert_not_contains "$out" "state: working" "green ci-monitor must not read as still validating"
   pass "ci-monitoring run with checks already green surfaces done"
@@ -685,6 +699,7 @@ test_terminal_passed() {
   local out; out=$(run_crew_state "$d" feat-d)
   assert_contains "$out" "state: done" "passed run -> done"
   assert_contains "$out" "source: run-step" "passed -> run-step source"
+  assert_contains "$out" "event: run:01RUN:outcome:passed" "passed run exposes its terminal event identity"
   pass "terminal passed run is authoritative"
 }
 
@@ -698,7 +713,25 @@ test_terminal_failed() {
   local out; out=$(run_crew_state "$d" feat-e)
   assert_contains "$out" "state: failed" "failed run -> failed"
   assert_contains "$out" "source: run-step" "failed -> run-step source"
+  assert_contains "$out" "event: run:01RUN:outcome:failed" "failed run exposes its terminal event identity"
   pass "terminal failed run is authoritative"
+}
+
+test_same_run_done_transitions_have_distinct_events() {
+  reset_fakes
+  local d checks_out passed_out
+  d=$(new_case distinct-done-events)
+  make_repo_on_branch "$d/wt" fm/feat-done-events
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/done-events.meta" "window=fm:fm-done-events" "worktree=$d/wt" "kind=ship"
+  FM_FAKE_AXI_STATUS="$(run_checks_passed fm/feat-done-events)"
+  checks_out=$(run_crew_state "$d" done-events)
+  assert_contains "$checks_out" "event: run:01RUN:outcome:checks-passed" "checks-passed exposes its exact done transition"
+  FM_FAKE_AXI_STATUS="$(run_passed fm/feat-done-events)"
+  passed_out=$(run_crew_state "$d" done-events)
+  assert_contains "$passed_out" "event: run:01RUN:outcome:passed" "passed exposes its exact done transition"
+  [ "$checks_out" != "$passed_out" ] || fail "distinct done transitions emitted the same authoritative state receipt"
+  pass "same-run checks-passed and passed transitions have distinct event identities"
 }
 
 test_equal_second_terminal_failed_then_declared_pause() {
@@ -1480,6 +1513,7 @@ test_top_level_fixing_ci_running_after_green_stays_working
 test_top_level_fixing_done_log_stays_working
 test_terminal_passed
 test_terminal_failed
+test_same_run_done_transitions_have_distinct_events
 test_equal_second_terminal_failed_then_declared_pause
 test_equal_second_declared_pause_then_terminal_failure
 test_unmarked_pause_after_terminal_failure

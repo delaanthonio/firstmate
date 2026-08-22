@@ -850,13 +850,13 @@ test_unchanged_hash_terminal_run_newer_than_pause_surfaces_once() {
   date +%s > "$state/.paused-resurfaced-$key"
 
   PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
-    FM_FAKE_TMUX_CURRENT_COMMAND=zsh FM_FAKE_CREW_STATE='state: failed · source: run-step · validation failed' \
+    FM_FAKE_TMUX_CURRENT_COMMAND=zsh FM_FAKE_CREW_STATE='state: failed · source: run-step · validation failed · event: run:01RUN:outcome:failed' \
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_PAUSE_RESURFACE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
   wait_for_exit "$pid" 40 || fail "unchanged pane hash absorbed a terminal run newer than the pause"
   grep -Fx "stale: $window" "$out" >/dev/null || fail "newer terminal run did not surface through unchanged-hash pause reconciliation"
-  [ "$(cat "$state/.paused-rechecked-$key" 2>/dev/null || true)" = 'terminal:failed' ] \
+  [ "$(cat "$state/.paused-rechecked-$key" 2>/dev/null || true)" = 'terminal:failed:run:01RUN:outcome:failed' ] \
     || fail "terminal surface did not bind repeat suppression to the failed state"
   FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null || fail "drain after unchanged-hash terminal stale failed"
   grep "$(printf '\tstale\t')" "$drain_out" | grep -F "$window" >/dev/null \
@@ -865,7 +865,7 @@ test_unchanged_hash_terminal_run_newer_than_pause_surfaces_once() {
 
   : > "$out"
   PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
-    FM_FAKE_TMUX_CURRENT_COMMAND=zsh FM_FAKE_CREW_STATE='state: failed · source: run-step · validation failed' \
+    FM_FAKE_TMUX_CURRENT_COMMAND=zsh FM_FAKE_CREW_STATE='state: failed · source: run-step · validation failed · event: run:01RUN:outcome:failed' \
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_PAUSE_RESURFACE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
@@ -875,7 +875,59 @@ test_unchanged_hash_terminal_run_newer_than_pause_surfaces_once() {
   [ ! -s "$out" ] || { reap "$pid"; fail "already-surfaced terminal state printed another wake: $(cat "$out")"; }
   [ ! -s "$state/.wake-queue" ] || { reap "$pid"; fail "already-surfaced terminal state enqueued another wake"; }
   reap "$pid"
-  pass "an unchanged hash surfaces a newer terminal run once behind an earlier pause"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the exact terminal repeat suppression"
+
+  : > "$out"
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_FAKE_TMUX_CURRENT_COMMAND=zsh FM_FAKE_CREW_STATE='state: failed · source: run-step · validation failed · event: run:02RUN:outcome:failed' \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_PAUSE_RESURFACE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" 40 || fail "a second failed run with the same state label was absorbed"
+  grep -Fx "stale: $window" "$out" >/dev/null || fail "a distinct same-label failure did not surface"
+  [ "$(cat "$state/.paused-rechecked-$key" 2>/dev/null || true)" = 'terminal:failed:run:02RUN:outcome:failed' ] \
+    || fail "second failure did not replace the exact terminal receipt"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null || fail "drain after second same-label failure failed"
+  pass "an unchanged hash suppresses only the exact failed run already surfaced"
+}
+
+test_same_run_later_done_transition_surfaces() {
+  local dir state fakebin out drain_out capture_file window key pane_hash sig pid
+  dir=$(make_case same-run-later-done-transition); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; drain_out="$dir/drain.out"; capture_file="$dir/pane.txt"
+  window="test:fm-paused-run-done"
+  printf 'idle after terminal run transition\n' > "$capture_file"
+  printf 'window=%s\nkind=ship\n' "$window" > "$state/paused-run-done.meta"
+  printf 'paused: waiting for upstream\n' > "$state/paused-run-done.status"
+  sig=$(seen_sig "$state/paused-run-done.status"); printf '%s' "$sig" > "$state/.seen-paused-run-done_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  pane_hash=$(hash_text "idle after terminal run transition")
+  printf '%s' "$pane_hash" > "$state/.hash-$key"
+  printf '%s' "$pane_hash" > "$state/.stale-$key"
+  printf '1\n' > "$state/.count-$key"
+  : > "$state/.paused-$key"
+
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_FAKE_TMUX_CURRENT_COMMAND=zsh FM_FAKE_CREW_STATE='state: done · source: run-step · checks green · event: run:03RUN:outcome:checks-passed' \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_PAUSE_RESURFACE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" 80 || fail "checks-passed transition behind a pause did not surface: $(cat "$out")"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null || fail "drain after checks-passed transition failed"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the checks-passed surface"
+
+  : > "$out"
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_FAKE_TMUX_CURRENT_COMMAND=zsh FM_FAKE_CREW_STATE='state: done · source: run-step · run passed · event: run:03RUN:outcome:passed' \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_PAUSE_RESURFACE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" 80 || fail "later passed transition with the same done label was absorbed: $(cat "$out")"
+  grep -Fx "stale: $window" "$out" >/dev/null || fail "later same-label done transition did not surface"
+  [ "$(cat "$state/.paused-rechecked-$key" 2>/dev/null || true)" = 'terminal:done:run:03RUN:outcome:passed' ] \
+    || fail "later done transition did not replace the exact terminal receipt"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null || fail "drain after later done transition failed"
+  pass "distinct done transitions from one run surface independently"
 }
 
 # A captain-held crew can leave a stable backend endpoint after its agent exits.
@@ -2063,6 +2115,7 @@ test_nonterminal_stale_paused_absorbed_then_resurfaced
 test_declared_pause_absorbs_hash_churn
 test_terminal_status_newer_than_pause_still_surfaces
 test_unchanged_hash_terminal_run_newer_than_pause_surfaces_once
+test_same_run_later_done_transition_surfaces
 test_exited_declared_pause_is_bounded_but_live_gate_surfaces
 test_secondmate_paused_resurfaces_in_normal_mode
 test_secondmate_nonpaused_stale_remains_suppressed

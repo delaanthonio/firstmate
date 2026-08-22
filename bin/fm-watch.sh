@@ -1127,13 +1127,16 @@ EOF
                          printf '%s' "$h" > "$sf"
                          wedge_timer_check "$w" "$ssf" "non-terminal stale (provably working after a declared pause)" "$ewf"
                          triage_log "absorbed non-terminal stale (provably working): $w" ;;
-                terminal:*)
+                terminal:*:*)
                          if [ "$(cat "$STATE/.paused-rechecked-$key" 2>/dev/null || true)" = "$pause_class" ]; then
                            handle_paused_stale "$w" "$task" "$h" terminal
                          else
                            clear_pause_state "$w"
                            surface_nonterminal_stale "$w" "$h" "$pause_class"
                          fi ;;
+                terminal:*)
+                         clear_pause_state "$w"
+                         surface_nonterminal_stale "$w" "$h" ;;
                 *)       if [ -e "$STATE/.paused-resurfaced-$key" ]; then
                            handle_paused_stale "$w" "$task" "$h"
                          else
