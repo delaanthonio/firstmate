@@ -891,6 +891,51 @@ test_unchanged_hash_terminal_run_newer_than_pause_surfaces_once() {
   pass "an unchanged hash suppresses only the exact failed run already surfaced"
 }
 
+test_changed_hash_terminal_event_surfaces_once() {
+  local dir state fakebin out drain_out capture_file window key pane_hash sig pid
+  dir=$(make_case changed-hash-terminal-once); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; drain_out="$dir/drain.out"; capture_file="$dir/pane.txt"
+  window="test:fm-paused-changed-terminal"
+  printf 'idle after changed-hash terminal failure\n' > "$capture_file"
+  printf 'window=%s\nkind=ship\n' "$window" > "$state/paused-changed-terminal.meta"
+  printf 'paused: waiting for upstream\n' > "$state/paused-changed-terminal.status"
+  sig=$(seen_sig "$state/paused-changed-terminal.status"); printf '%s' "$sig" > "$state/.seen-paused-changed-terminal_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  pane_hash=$(hash_text "idle after changed-hash terminal failure")
+  printf '%s' "$pane_hash" > "$state/.hash-$key"
+  printf '%s' "$(hash_text "prior idle redraw")" > "$state/.stale-$key"
+  printf '1\n' > "$state/.count-$key"
+  : > "$state/.paused-$key"
+  date +%s > "$state/.paused-rechecked-$key"
+  date +%s > "$state/.paused-resurfaced-$key"
+
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_FAKE_TMUX_CURRENT_COMMAND=zsh FM_FAKE_CREW_STATE='state: failed · source: run-step · validation failed · event: run:04RUN:outcome:failed' \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_PAUSE_RESURFACE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" 80 || fail "changed-hash terminal event did not surface: $(cat "$out")"
+  grep -Fx "stale: $window" "$out" >/dev/null || fail "changed-hash terminal event omitted its wake"
+  [ "$(cat "$state/.paused-rechecked-$key" 2>/dev/null || true)" = 'terminal:failed:run:04RUN:outcome:failed' ] \
+    || fail "changed-hash surface did not persist the exact terminal receipt"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null || fail "drain after changed-hash terminal event failed"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the changed-hash terminal surface"
+
+  : > "$out"
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_FAKE_TMUX_CURRENT_COMMAND=zsh FM_FAKE_CREW_STATE='state: failed · source: run-step · validation failed · event: run:04RUN:outcome:failed' \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_PAUSE_RESURFACE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  if ! wait_live "$pid" 30; then
+    reap "$pid"; fail "changed-hash terminal event replayed on the identical next cycle: $(cat "$out")"
+  fi
+  [ ! -s "$out" ] || { reap "$pid"; fail "identical changed-hash terminal event printed another wake: $(cat "$out")"; }
+  [ ! -s "$state/.wake-queue" ] || { reap "$pid"; fail "identical changed-hash terminal event enqueued another wake"; }
+  reap "$pid"
+  pass "a changed-hash terminal event surfaces exactly once"
+}
+
 test_same_run_later_done_transition_surfaces() {
   local dir state fakebin out drain_out capture_file window key pane_hash sig pid
   dir=$(make_case same-run-later-done-transition); state="$dir/state"; fakebin="$dir/fakebin"
@@ -2115,6 +2160,7 @@ test_nonterminal_stale_paused_absorbed_then_resurfaced
 test_declared_pause_absorbs_hash_churn
 test_terminal_status_newer_than_pause_still_surfaces
 test_unchanged_hash_terminal_run_newer_than_pause_surfaces_once
+test_changed_hash_terminal_event_surfaces_once
 test_same_run_later_done_transition_surfaces
 test_exited_declared_pause_is_bounded_but_live_gate_surfaces
 test_secondmate_paused_resurfaces_in_normal_mode

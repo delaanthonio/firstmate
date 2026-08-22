@@ -1103,7 +1103,8 @@ EOF
           #     wait out the timer.
           if [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ]; then
             task=$(window_to_task "$w" "$STATE")
-            case "$(pause_state_class "$w" "$task")" in
+            pause_class=$(pause_state_class "$w" "$task")
+            case "$pause_class" in
               working)
                 clear_pause_tracking "$w"
                 printf '%s' "$h" > "$sf"
@@ -1112,6 +1113,9 @@ EOF
                 ;;
               paused)
                 handle_paused_stale "$w" "$task" "$h"
+                ;;
+              terminal:*:*)
+                surface_nonterminal_stale "$w" "$h" "$pause_class"
                 ;;
               *)
                 surface_nonterminal_stale "$w" "$h"
