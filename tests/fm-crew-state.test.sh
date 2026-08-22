@@ -684,6 +684,21 @@ test_terminal_failed() {
   pass "terminal failed run is authoritative"
 }
 
+test_terminal_failed_then_declared_pause() {
+  reset_fakes
+  local d; d=$(new_case failed-then-paused)
+  make_repo_on_branch "$d/wt" fm/feat-failed-pause
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-failed-pause.meta" "window=fm:fm-feat-failed-pause" "worktree=$d/wt" "kind=ship"
+  printf 'paused: waiting for the upstream release after validation failed\n' > "$d/state/feat-failed-pause.status"
+  FM_FAKE_AXI_STATUS="$(run_failed fm/feat-failed-pause)"
+  local out; out=$(run_crew_state "$d" feat-failed-pause)
+  assert_contains "$out" "state: paused" "a declared pause newer than the failed run -> paused"
+  assert_contains "$out" "source: status-log" "the newer pause becomes the current source"
+  assert_contains "$out" "waiting for the upstream release" "the pause reason is preserved"
+  pass "a declared pause after a failed validation run becomes authoritative"
+}
+
 # (e) cross-branch attribution: `axi status` returns ANOTHER branch's run (the
 # routine case once more than one crew validates the same underlying repo
 # concurrently - they share ONE no-mistakes repo registration), so the helper
@@ -1377,6 +1392,7 @@ test_top_level_fixing_ci_running_after_green_stays_working
 test_top_level_fixing_done_log_stays_working
 test_terminal_passed
 test_terminal_failed
+test_terminal_failed_then_declared_pause
 test_cross_branch_attribution_via_runs_list
 test_cross_branch_attribution_picks_most_recent_row
 test_coarse_run_does_not_probe_other_branch_ci_log_for_ready_status

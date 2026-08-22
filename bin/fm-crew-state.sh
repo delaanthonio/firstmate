@@ -30,11 +30,12 @@
 #      diverged from it, invalidates attribution.
 #      The run-step is AUTHORITATIVE: running/fixing -> working, ci -> working,
 #      awaiting_approval/fix_review -> parked (with gate findings), terminal
-#      passed/checks-passed -> done, failed/cancelled -> failed. EXCEPT: while
-#      the active step is ci, `axi status` alone cannot tell "still waiting on
-#      checks" from "checks green, waiting on merge" (see nm_ci_checks_state) -
-#      a ci-step log-tail check overrides working -> done once checks read
-#      green, so a green PR is never silently read as still-validating.
+#      passed/checks-passed -> done, failed/cancelled -> failed. Two later
+#      current-state declarations can override a terminal run: a post-failure
+#      paused status records a deliberate external wait, and while the active
+#      step is ci, `axi status` alone cannot tell "still waiting on checks" from
+#      "checks green, waiting on merge" (see nm_ci_checks_state), so a ci-step
+#      log-tail check overrides working -> done once checks read green.
 #   3. Reconcile the status log: if its last line says needs-decision/blocked but
 #      the run-step shows the run moved on, the log is deterministically stale and
 #      is flagged superseded. A genuinely parked run plus a needs-decision log
@@ -511,6 +512,18 @@ if [ "$HAVE_RUN" = 1 ]; then
     if [ "$CI_LOG_STATE" != not-ready ]; then
       emit "done" status-log "$(status_line_note "$LOG_LINE")${SEP}run still monitoring PR"
     fi
+  fi
+
+  # A failed/cancelled run remains authoritative unless the worker's newest
+  # append-only status event is a declared pause recorded after handling that
+  # terminal result. This is the one intentional terminal-run override: the
+  # worker is now deliberately waiting on a known external condition, so stale
+  # supervision must use the bounded pause cadence instead of repeatedly
+  # resurfacing the historical run failure. Any later done, failed,
+  # needs-decision, or blocked event becomes LOG_VERB and therefore keeps its
+  # ordinary captain-relevant behavior instead of being hidden by the pause.
+  if [ "$RUN_STATE" = failed ] && status_is_paused "$LOG_LINE"; then
+    emit paused status-log "$(status_line_note "$LOG_LINE")${SEP}terminal run superseded by declared pause"
   fi
 
   # Reconcile the status log. A needs-decision/blocked log line that the run-step
