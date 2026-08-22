@@ -1101,7 +1101,7 @@ signal_reason_is_actionable() {  # <file> ...
 # NOT a pure read: fm-crew-state.sh may make a bounded no-mistakes call, so callers
 # run it only on no-verb signal and first-sighting stale paths, never every wake.
 # FM_CREW_STATE_BIN lets tests stub the verdict.
-crew_absorb_class() {  # <id>
+crew_state_class() {  # <id>
   local id=$1 line state src
   [ -n "$id" ] || { printf 'none'; return; }
   line=$("$FM_CREW_STATE_BIN" "$id" 2>/dev/null) || true
@@ -1112,7 +1112,14 @@ crew_absorb_class() {  # <id>
     src=${line#*source: }; src=${src%% *}
     case "$src" in run-step|pane) printf 'working'; return ;; esac
   fi
+  case "$state" in parked|done|blocked|failed) printf 'terminal'; return ;; esac
   printf 'none'
+}
+
+crew_absorb_class() {  # <id>
+  local class
+  class=$(crew_state_class "$1")
+  case "$class" in working|paused) printf '%s' "$class" ;; *) printf 'none' ;; esac
 }
 
 # 0 if crew <id> shows POSITIVE evidence it is still working (crew_absorb_class

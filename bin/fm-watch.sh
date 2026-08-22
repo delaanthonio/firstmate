@@ -386,7 +386,8 @@ pause_state_class() {  # <window> <task>
     crew_absorb_class "$task"
     return
   fi
-  if [ -e "$STATE/.paused-$key" ] && [ "$(age_of "$recheck_file")" -lt "$STALE_ESCALATE_SECS" ]; then
+  if [ -e "$STATE/.paused-$key" ] && [ -e "$STATE/.paused-resurfaced-$key" ] \
+    && [ "$(age_of "$recheck_file")" -lt "$STALE_ESCALATE_SECS" ]; then
     if [ "$(window_kind "$win")" != secondmate ]; then
       agent_alive=$(fm_backend_agent_alive "$(window_backend "$win")" "$win" 2>/dev/null) || agent_alive=unknown
       if [ "$agent_alive" != dead ]; then
@@ -398,10 +399,10 @@ pause_state_class() {  # <window> <task>
     printf 'paused'
     return
   fi
-  class=$(crew_absorb_class "$task")
-  if [ "$class" = working ]; then
+  class=$(crew_state_class "$task")
+  if [ "$class" = working ] || [ "$class" = terminal ]; then
     rm -f "$recheck_file"
-    printf 'working'
+    printf '%s' "$class"
     return
   fi
   if [ "$(window_kind "$win")" != secondmate ]; then
@@ -1128,7 +1129,12 @@ EOF
                          printf '%s' "$h" > "$sf"
                          wedge_timer_check "$w" "$ssf" "non-terminal stale (provably working after a declared pause)" "$ewf"
                          triage_log "absorbed non-terminal stale (provably working): $w" ;;
-                *)       handle_paused_stale "$w" "$task" "$h" ;;
+                *)       if [ -e "$STATE/.paused-resurfaced-$key" ]; then
+                           handle_paused_stale "$w" "$task" "$h"
+                         else
+                           clear_pause_state "$w"
+                           surface_nonterminal_stale "$w" "$h"
+                         fi ;;
               esac
             else
               wedge_timer_check "$w" "$ssf" "non-terminal stale" "$ewf"

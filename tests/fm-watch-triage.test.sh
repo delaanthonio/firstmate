@@ -831,6 +831,50 @@ test_terminal_status_newer_than_pause_still_surfaces() {
   pass "a terminal status newer than a declared pause still surfaces"
 }
 
+test_unchanged_hash_terminal_run_newer_than_pause_surfaces_once() {
+  local dir state fakebin out drain_out capture_file window key pane_hash sig pid
+  dir=$(make_case unchanged-hash-terminal-newer-than-pause); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; drain_out="$dir/drain.out"; capture_file="$dir/pane.txt"
+  window="test:fm-paused-run-failed"
+  printf 'idle after terminal run failure\n' > "$capture_file"
+  printf 'window=%s\nkind=ship\n' "$window" > "$state/paused-run-failed.meta"
+  printf 'paused: waiting for upstream\n' > "$state/paused-run-failed.status"
+  sig=$(seen_sig "$state/paused-run-failed.status"); printf '%s' "$sig" > "$state/.seen-paused-run-failed_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  pane_hash=$(hash_text "idle after terminal run failure")
+  printf '%s' "$pane_hash" > "$state/.hash-$key"
+  printf '%s' "$pane_hash" > "$state/.stale-$key"
+  printf '1\n' > "$state/.count-$key"
+  : > "$state/.paused-$key"
+
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_FAKE_TMUX_CURRENT_COMMAND=zsh FM_FAKE_CREW_STATE='state: failed · source: run-step · validation failed' \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_PAUSE_RESURFACE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" 40 || fail "unchanged pane hash absorbed a terminal run newer than the pause"
+  grep -Fx "stale: $window" "$out" >/dev/null || fail "newer terminal run did not surface through unchanged-hash pause reconciliation"
+  [ -e "$state/.paused-resurfaced-$key" ] || fail "terminal surface did not record repeat suppression"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null || fail "drain after unchanged-hash terminal stale failed"
+  grep "$(printf '\tstale\t')" "$drain_out" | grep -F "$window" >/dev/null \
+    || fail "unchanged-hash terminal stale was not queued"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the unchanged-hash terminal surface"
+
+  : > "$out"
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_FAKE_TMUX_CURRENT_COMMAND=zsh FM_FAKE_CREW_STATE='state: failed · source: run-step · validation failed' \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_PAUSE_RESURFACE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  if ! wait_live "$pid" 30; then
+    reap "$pid"; fail "already-surfaced terminal state replayed on the unchanged pane hash: $(cat "$out")"
+  fi
+  [ ! -s "$out" ] || { reap "$pid"; fail "already-surfaced terminal state printed another wake: $(cat "$out")"; }
+  [ ! -s "$state/.wake-queue" ] || { reap "$pid"; fail "already-surfaced terminal state enqueued another wake"; }
+  reap "$pid"
+  pass "an unchanged hash surfaces a newer terminal run once behind an earlier pause"
+}
+
 # A captain-held crew can leave a stable backend endpoint after its agent exits.
 # fm-crew-state then authoritatively reports stopped rather than paused, but the
 # confirmed-dead agent plus the declared wait or captain-held transfer must retain
@@ -2015,6 +2059,7 @@ test_nonterminal_stale_not_working_surfaced
 test_nonterminal_stale_paused_absorbed_then_resurfaced
 test_declared_pause_absorbs_hash_churn
 test_terminal_status_newer_than_pause_still_surfaces
+test_unchanged_hash_terminal_run_newer_than_pause_surfaces_once
 test_exited_declared_pause_is_bounded_but_live_gate_surfaces
 test_secondmate_paused_resurfaces_in_normal_mode
 test_secondmate_nonpaused_stale_remains_suppressed
