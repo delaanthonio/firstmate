@@ -693,6 +693,15 @@ if [ "${FM_ARM_READY_FD:-}" = 4 ]; then
 fi
 confirm_grace_used=0
 while :; do
+  now=$(date +%s)
+  if [ "$now" -ge "$deadline" ]; then
+    if [ "$confirm_grace_used" -eq 0 ] && fm_pid_alive "$child"; then
+      confirm_grace_used=1
+      deadline=$((now + ARM_CONFIRM_LIVE_GRACE))
+    else
+      break
+    fi
+  fi
   if healthy_watcher; then
     if [ "$HEALTHY_PID" = "$child" ]; then
       cycle_refresh_lock_before
@@ -714,10 +723,30 @@ while :; do
       owned_child_finished "$rc"
       exit $?
     fi
-    # Another watcher won the singleton; our child stood down.
-    wait "$child"
-    rc=$?
-    owned_child_finished "$rc"
+    if ! stop_owned_child_bounded; then
+      print_watch_output "$child_out"
+      rc=$OWNED_CHILD_RC
+      cleanup_child
+      cycle_log_append "$rc" "$(cycle_signal_name "$rc")" startup-race-retirement-failed "attached:$HEALTHY_PID"
+      echo "watcher: FAILED - competing watcher won but owned child could not be retired"
+      exit 1
+    fi
+    rc=$OWNED_CHILD_RC
+    if ! healthy_watcher; then
+      print_watch_output "$child_out"
+      cleanup_child
+      cycle_log_append "$rc" "$(cycle_signal_name "$rc")" startup-race-winner-lost none
+      echo "watcher: FAILED - competing watcher disappeared during bounded child retirement"
+      exit 1
+    fi
+    cycle_log_append "$rc" "$(cycle_signal_name "$rc")" startup-race-lost "attached:$HEALTHY_PID"
+    print_watch_output "$child_out"
+    rm -f "$child_out" 2>/dev/null || true
+    child_out=
+    cycle_mark_predecessor_successor "attached:$HEALTHY_PID"
+    report_attached
+    cycle_begin "$HEALTHY_PID" attached "$HEALTHY_IDENTITY"
+    attach_and_wait "$HEALTHY_PID"
     exit $?
   fi
   if [ "$child_done" -eq 0 ] && ! fm_pid_alive "$child"; then
@@ -726,15 +755,6 @@ while :; do
     child_done=1
     owned_child_finished "$rc"
     exit $?
-  fi
-  now=$(date +%s)
-  if [ "$now" -ge "$deadline" ]; then
-    if [ "$confirm_grace_used" -eq 0 ] && fm_pid_alive "$child"; then
-      confirm_grace_used=1
-      deadline=$((now + ARM_CONFIRM_LIVE_GRACE))
-    else
-      break
-    fi
   fi
   sleep 0.2
 done

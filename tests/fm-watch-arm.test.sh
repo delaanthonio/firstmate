@@ -456,6 +456,63 @@ test_live_child_gets_one_bounded_confirmation_grace() {
   pass "watch-arm: a live slow-starting child receives one bounded grace window and confirms"
 }
 
+test_confirmation_rejects_health_after_grace_deadline() {
+  local dir out watcher_pid watcher_state i
+  dir=$(make_confirmation_fixture confirm-expired-grace-health)
+  printf '0\n' > "$dir/config/arm-confirm-timeout"
+  out="$dir/arm.out"
+  start_confirmation_arm "$dir" "$out" 2
+  wait_for_watcher_launch "$dir" || fail "expired-grace fixture did not launch its watcher"
+  watcher_pid=$(cat "$dir/watcher.pid")
+  advance_confirmation_clock "$dir" 1
+  kill -STOP "$ARM_PID" 2>/dev/null || fail "could not suspend confirmation arm during grace"
+  i=0
+  watcher_state=
+  while [ "$i" -lt 50 ]; do
+    watcher_state=$(ps -p "$ARM_PID" -o stat= 2>/dev/null | tr -d ' ' || true)
+    case "$watcher_state" in T*) break ;; esac
+    sleep 0.02
+    i=$((i + 1))
+  done
+  case "$watcher_state" in
+    T*) ;;
+    *) fail "confirmation arm did not enter the stopped state: $watcher_state" ;;
+  esac
+  printf '7\n' > "$dir/now"
+  wait_for_file_text "$dir/state/.watch.lock/pid" "$watcher_pid" \
+    || fail "expired-grace watcher did not become healthy while its arm was suspended"
+  kill -CONT "$ARM_PID" 2>/dev/null || fail "could not resume confirmation arm after grace"
+  assert_single_confirmation_failure "$ARM_PID" "$out" "expired-grace confirmation arm"
+  ! is_live_non_zombie "$watcher_pid" || fail "watcher accepted after the grace deadline survived cleanup"
+  pass "watch-arm: health appearing after the grace deadline is refused"
+}
+
+test_startup_race_boundedly_retires_owned_child() {
+  local dir out child_pid winner_pid
+  dir=$(make_confirmation_fixture confirm-competing-winner)
+  out="$dir/arm.out"
+  start_confirmation_arm "$dir" "$out" never '' 1
+  wait_for_watcher_launch "$dir" || fail "competing-winner fixture did not launch its watcher"
+  child_pid=$(cat "$dir/watcher.pid")
+  FM_HOME="$dir" FM_TEST_WATCHER_LOG="$dir/winner.log" \
+    FM_TEST_WATCHER_PID_FILE="$dir/winner.pid" FM_TEST_WATCHER_TERM_RESISTANT=0 \
+    FM_TEST_WATCHER_READY_DELAY=0 "$dir/bin/fm-watch.sh" > "$dir/winner.out" 2>&1 &
+  winner_pid=$!
+  wait_for_file_text "$dir/state/.watch.lock/pid" "$winner_pid" \
+    || fail "competing watcher fixture did not publish a healthy lock: $(cat "$dir/winner.out")"
+  wait_for_file_text "$out" "watcher: attached pid=$winner_pid" \
+    || fail "arm did not boundedly retire its child and attach to the competing watcher: $(cat "$out")"
+  ! is_live_non_zombie "$child_pid" || fail "owned child survived bounded startup-race retirement"
+  is_live_non_zombie "$ARM_PID" || fail "arm exited instead of attaching to the competing watcher"
+  [ "$(grep -c '^watcher: FAILED' "$out" 2>/dev/null || true)" -eq 0 ] \
+    || fail "successful startup-race retirement emitted a failure: $(cat "$out")"
+  kill -TERM "$ARM_PID" 2>/dev/null || fail "could not stop competing-winner arm fixture"
+  wait "$ARM_PID" 2>/dev/null || true
+  kill -TERM "$winner_pid" 2>/dev/null || true
+  wait "$winner_pid" 2>/dev/null || true
+  pass "watch-arm: a startup-race winner is attached after bounded child retirement"
+}
+
 test_attached_arm_reports_the_delivered_wake() {
   local dir state fakebin out armout status
   dir=$(make_case attached-delivered-wake)
@@ -1105,6 +1162,8 @@ test_confirmation_timeout_raw_length_is_bounded
 test_confirmation_timeout_reaps_term_resistant_child
 test_confirmation_timeout_reaps_stopped_child
 test_live_child_gets_one_bounded_confirmation_grace
+test_confirmation_rejects_health_after_grace_deadline
+test_startup_race_boundedly_retires_owned_child
 test_attached_arm_reports_the_delivered_wake
 test_attached_arm_reports_the_delivered_wake_after_drain
 test_attached_arm_still_fails_on_a_wake_it_did_not_deliver
