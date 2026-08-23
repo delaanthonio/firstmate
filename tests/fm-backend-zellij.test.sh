@@ -1333,7 +1333,8 @@ test_forced_secondmate_teardown_kills_zellij_children_with_child_home_tag() {
   token=fmz-44444444444444444444444444444444
   mkdir -p "$state" "$data" "$config" "$home/state" "$home/data" "$home/config" "$home/projects" "$project" "$dir/responses" "${socket%/*}" "${socket%/*}/.firstmate-incarnations"
   python3 -c 'import socket,sys,time; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(); time.sleep(30)' "$socket" &
-  server_pid=$!
+  jobs -p %% > "$dir/server.pid"
+  read -r server_pid < "$dir/server.pid"
   for _ in 1 2 3 4 5 6 7 8 9 10; do
     [ -S "$socket" ] && break
     sleep 0.1

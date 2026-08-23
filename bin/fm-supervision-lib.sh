@@ -145,8 +145,8 @@ fm_supervision_log_check_failure() {  # <script> <status> <stderr-file>
 fm_supervision_run_due_checks() {
   local state=$1 interval=$2 timeout_s=$3 log_errors=${4:-false}
   local last_check="$state/.last-check" lock="$state/.last-check.lock" c out err_file out_file
-  local root=${FM_ROOT:-} home=${FM_HOME:-} id= is_pr_poll provider url host path number custom_snapshot
-  local rejected_checks= matched_check=0 actionable_script= actionable_output= actionable_id= actionable_is_pr=0
+  local root=${FM_ROOT:-} home=${FM_HOME:-} id='' is_pr_poll provider url host path number custom_snapshot
+  local rejected_checks='' matched_check=0 actionable_script='' actionable_output='' actionable_id='' actionable_is_pr=0
   local old_queue=${FM_WAKE_QUEUE-} old_queue_lock=${FM_WAKE_QUEUE_LOCK-} had_queue=0 had_queue_lock=0 append_rc
   FM_SUP_CHECK_REASON=
   FM_SUP_CHECK_SCRIPT=
