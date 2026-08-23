@@ -575,6 +575,24 @@ test_target_ready_refuses_ambiguous_legacy_root_tag() {
   pass "fm_backend_cmux_target_ready: refuses ambiguous legacy root-tagged workspaces"
 }
 
+test_target_ready_recovers_current_title_across_windows() {
+  local dir fb title
+  dir="$TMP_ROOT/ready-current-title-other-window"; mkdir -p "$dir/responses"
+  title=$(cmux_expected_scoped_title fm-label)
+  cmux_workspace_list_response "$dir" 1 "dddddddd-3333-3333-3333-333333333333" "other"
+  cmux_windows_response "$dir" 2 "e1111111-0000-0000-0000-000000000000" 1 "e2222222-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 3 "aaaaaaaa-0000-0000-0000-000000000000" "$title"
+  cmux_workspace_list_response "$dir" 4 "dddddddd-3333-3333-3333-333333333333" "other"
+  cmux_panes_response "$dir" 5 "bbbbbbbb-1111-1111-1111-111111111111"
+  fb=$(make_cmux_fakebin "$dir")
+  PATH="$fb:$PATH" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
+    bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_target_ready "ffffffff-4444-4444-4444-444444444444:eeeeeeee-5555-5555-5555-555555555555" fm-label' "$ROOT"
+  expect_code 0 $? "target_ready should recover a current title from a non-current window"
+  assert_contains "$(cat "$dir/log")" $'\x1f''--window'$'\x1f''e1111111-0000-0000-0000-000000000000' \
+    "target_ready did not scan the task's non-current window"
+  pass "fm_backend_cmux_target_ready: recovers current titles across windows"
+}
+
 test_capture_trims_locally() {
   local dir fb out
   dir="$TMP_ROOT/capture"; mkdir -p "$dir/responses"
@@ -644,8 +662,9 @@ test_send_key_recovers_stale_target_by_label() {
   dir="$TMP_ROOT/sendkey-stale-target"; mkdir -p "$dir/responses"
   title=$(cmux_expected_scoped_title fm-label)
   cmux_workspace_list_response "$dir" 1 "cccccccc-2222-2222-2222-222222222222" "$title"
-  cmux_workspace_list_response "$dir" 2 "cccccccc-2222-2222-2222-222222222222" "$title"
-  cmux_panes_response "$dir" 3 "dddddddd-3333-3333-3333-333333333333"
+  cmux_windows_response "$dir" 2 "eeeeeeee-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 3 "cccccccc-2222-2222-2222-222222222222" "$title"
+  cmux_panes_response "$dir" 4 "dddddddd-3333-3333-3333-333333333333"
   fb=$(make_cmux_fakebin "$dir")
   PATH="$fb:$PATH" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
     bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_send_key "aaaaaaaa-0000-0000-0000-000000000000:bbbbbbbb-1111-1111-1111-111111111111" Enter fm-label' "$ROOT"
@@ -1076,14 +1095,15 @@ test_kill_recovers_stale_target_by_label() {
   local dir fb title
   dir="$TMP_ROOT/kill-stale-target"; mkdir -p "$dir/responses"
   title=$(cmux_expected_scoped_title fm-label)
-  # target_ready label recovery: 1 workspace list (title lookup, misses stale id),
-  # 2 workspace list (id-for-label -> refreshed id), 3 list-panes (surface id).
+  # target_ready label recovery: 1 current workspace list misses the stale id,
+  # then 2 list-windows, 3 window-scoped workspace list, and 4 list-panes.
   cmux_workspace_list_response "$dir" 1 "cccccccc-2222-2222-2222-222222222222" "$title"
-  cmux_workspace_list_response "$dir" 2 "cccccccc-2222-2222-2222-222222222222" "$title"
-  cmux_panes_response "$dir" 3 "dddddddd-3333-3333-3333-333333333333"
-  # window_of_workspace on the REFRESHED id: 4 list-windows (not last), 5 workspace list --window.
-  cmux_windows_response "$dir" 4 "eeeeeeee-0000-0000-0000-000000000000" 2
-  cmux_workspace_list_response "$dir" 5 "cccccccc-2222-2222-2222-222222222222" "$title" "ffffffff-0000-0000-0000-000000000000" "other"
+  cmux_windows_response "$dir" 2 "eeeeeeee-0000-0000-0000-000000000000" 2
+  cmux_workspace_list_response "$dir" 3 "cccccccc-2222-2222-2222-222222222222" "$title" "ffffffff-0000-0000-0000-000000000000" "other"
+  cmux_panes_response "$dir" 4 "dddddddd-3333-3333-3333-333333333333"
+  # window_of_workspace on the refreshed id: 5 list-windows, 6 workspace list.
+  cmux_windows_response "$dir" 5 "eeeeeeee-0000-0000-0000-000000000000" 2
+  cmux_workspace_list_response "$dir" 6 "cccccccc-2222-2222-2222-222222222222" "$title" "ffffffff-0000-0000-0000-000000000000" "other"
   fb=$(make_cmux_fakebin "$dir")
   PATH="$fb:$PATH" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
     bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_kill "aaaaaaaa-0000-0000-0000-000000000000:bbbbbbbb-1111-1111-1111-111111111111" "" fm-label' "$ROOT"
@@ -1169,6 +1189,7 @@ test_target_ready_checks_expected_label
 test_target_ready_rejects_label_mismatch
 test_target_ready_accepts_unique_legacy_root_tag
 test_target_ready_refuses_ambiguous_legacy_root_tag
+test_target_ready_recovers_current_title_across_windows
 test_capture_trims_locally
 test_capture_fails_when_read_screen_fails_empty
 test_capture_fails_when_target_not_ready

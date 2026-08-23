@@ -204,6 +204,20 @@ test_merged_pr_retirement_waits_for_durable_wake() {
   pass "fm_supervision_run_due_checks: merged PR retirement follows durable wake append"
 }
 
+test_rejected_check_append_failure_keeps_cadence_due() {
+  local state="$TMP_ROOT/rejected-wake-failure/state" rc
+  mkdir -p "$state"
+  use_state_home "$state"
+  touch "$state/rogue.check.sh"
+  (
+    fm_wake_append() { return 1; }
+    fm_supervision_run_due_checks "$state" 300 5 false
+  ); rc=$?
+  expect_code 2 "$rc" "failed rejection wake append should return 2"
+  assert_absent "$state/.last-check" "failed rejection wake append should leave the standing check immediately due"
+  pass "fm_supervision_run_due_checks: rejected checks advance cadence after durable wake"
+}
+
 test_due_check_appends_wake_and_stamps_schedule
 test_not_due_check_does_not_run_again
 test_missing_and_silent_checks_do_not_queue
@@ -212,3 +226,4 @@ test_timeout_check_fails_open_and_stamps_schedule
 test_concurrent_runner_lock_prevents_double_run
 test_unauthenticated_check_is_rejected_without_execution
 test_merged_pr_retirement_waits_for_durable_wake
+test_rejected_check_append_failure_keeps_cadence_due

@@ -261,7 +261,7 @@ fm_supervision_run_due_checks() {
     if [ "$had_queue" -eq 1 ]; then FM_WAKE_QUEUE=$old_queue; else unset FM_WAKE_QUEUE; fi
     if [ "$had_queue_lock" -eq 1 ]; then FM_WAKE_QUEUE_LOCK=$old_queue_lock; else unset FM_WAKE_QUEUE_LOCK; fi
     rm -f "$err_file" "$out_file"
-    touch "$last_check"
+    [ "$append_rc" -ne 0 ] || touch "$last_check"
     fm_lock_release "$lock"
     [ "$append_rc" -eq 0 ] || return 2
     return 0

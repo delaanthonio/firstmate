@@ -345,7 +345,7 @@ fm_backend_cmux_workspace_id_for_label() {  # <label>
     | jq -r --arg want "$label" '.workspaces[]? | select(.title == $want) | .id' 2>/dev/null | head -1
 }
 
-fm_backend_cmux_unique_workspace_id_for_label() {  # <label>
+fm_backend_cmux_workspace_ids_for_label() {  # <label>
   local label=$1 wins window_ids wid wss ids matches=
   wins=$(fm_backend_cmux_cli list-windows --json --id-format uuids 2>/dev/null) || return 1
   window_ids=$(printf '%s' "$wins" | jq -er '.[]? | .id' 2>/dev/null) || return 1
@@ -358,6 +358,12 @@ fm_backend_cmux_unique_workspace_id_for_label() {  # <label>
     [ -z "$ids" ] || matches="$matches${matches:+
 }$ids"
   done <<< "$window_ids"
+  printf '%s\n' "$matches"
+}
+
+fm_backend_cmux_unique_workspace_id_for_label() {  # <label>
+  local label=$1 matches
+  matches=$(fm_backend_cmux_workspace_ids_for_label "$label") || return 1
   [ "$(printf '%s\n' "$matches" | sed '/^$/d' | wc -l | tr -d ' ')" = 1 ] || return 1
   printf '%s\n' "$matches"
 }
@@ -435,7 +441,7 @@ fm_backend_cmux_surface_exists() {  # <workspace_id> <surface_id>
 # header for the fresh-surface pitfall this avoids). When the caller knows
 # the owning firstmate task label, refresh stale workspace/surface ids by label.
 fm_backend_cmux_target_ready() {  # <target> [expected-label]
-  local expected_label=${2:-} expected_title legacy_title title wsid sfid
+  local expected_label=${2:-} expected_title legacy_title title wsid sfid matches match_count
   fm_backend_cmux_parse_target "$1" || return 1
   if [ -n "$expected_label" ]; then
     expected_title=$(fm_backend_cmux_scoped_title "$expected_label")
@@ -451,11 +457,16 @@ fm_backend_cmux_target_ready() {  # <target> [expected-label]
     elif [ -n "$title" ]; then
       return 1
     else
-      wsid=$(fm_backend_cmux_workspace_id_for_label "$expected_title")
-      if [ -z "$wsid" ] && [ "$legacy_title" != "$expected_title" ]; then
-        wsid=$(fm_backend_cmux_unique_workspace_id_for_label "$legacy_title") || return 1
-      fi
-      [ -n "$wsid" ] || return 1
+      matches=$(fm_backend_cmux_workspace_ids_for_label "$expected_title") || return 1
+      match_count=$(printf '%s\n' "$matches" | sed '/^$/d' | wc -l | tr -d ' ')
+      case "$match_count" in
+        0)
+          [ "$legacy_title" != "$expected_title" ] || return 1
+          wsid=$(fm_backend_cmux_unique_workspace_id_for_label "$legacy_title") || return 1
+          ;;
+        1) wsid=$matches ;;
+        *) return 1 ;;
+      esac
     fi
     sfid=$(fm_backend_cmux_surface_id_for_workspace "$wsid")
     [ -n "$sfid" ] || return 1
