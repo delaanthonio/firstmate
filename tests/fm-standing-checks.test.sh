@@ -6,10 +6,31 @@ set -u
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # shellcheck source=bin/fm-wake-lib.sh
 . "$ROOT/bin/fm-wake-lib.sh"
+# shellcheck source=bin/fm-x-lib.sh
+. "$ROOT/bin/fm-x-lib.sh"
+# shellcheck source=bin/fm-pr-lib.sh
+. "$ROOT/bin/fm-pr-lib.sh"
+# shellcheck source=bin/fm-check-lib.sh
+. "$ROOT/bin/fm-check-lib.sh"
 # shellcheck source=bin/fm-supervision-lib.sh
 . "$ROOT/bin/fm-supervision-lib.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-standing-checks)
+FM_ROOT=$ROOT
+
+register_check() {
+  local script=$1 state id hash
+  state=${script%/*}
+  id=$(basename "$script" .check.sh)
+  chmod 700 "$script"
+  hash=$(fm_custom_check_sha256 "$script") || fail "could not hash custom check fixture"
+  printf 'fm-custom-check-v1\n%s\n' "$hash" > "$state/$id.check-trust"
+  chmod 600 "$state/$id.check-trust"
+}
+
+use_state_home() {
+  FM_HOME=${1%/state}
+}
 
 counting_check() {
   local script=$1 count_file=$2 output=${3:-ready}
@@ -19,13 +40,14 @@ n=\$(( \$(cat "$count_file" 2>/dev/null || echo 0) + 1 ))
 printf '%s\n' "\$n" > "$count_file"
 printf '%s\n' "$output"
 SH
-  chmod +x "$script"
+  register_check "$script"
 }
 
 test_due_check_appends_wake_and_stamps_schedule() {
   local state="$TMP_ROOT/due/state" count rc queue
   mkdir -p "$state"
   count="$state/count"
+  use_state_home "$state"
   counting_check "$state/task.check.sh" "$count" "merged"
   fm_supervision_run_due_checks "$state" 300 5 false; rc=$?
   expect_code 0 "$rc" "due actionable check should return 0"
@@ -40,6 +62,7 @@ test_not_due_check_does_not_run_again() {
   local state="$TMP_ROOT/not-due/state" count rc
   mkdir -p "$state"
   count="$state/count"
+  use_state_home "$state"
   counting_check "$state/task.check.sh" "$count" "ready"
   fm_supervision_run_due_checks "$state" 300 5 false >/dev/null || fail "first due run should be actionable"
   fm_supervision_run_due_checks "$state" 300 5 false; rc=$?
@@ -51,6 +74,7 @@ test_not_due_check_does_not_run_again() {
 test_missing_and_silent_checks_do_not_queue() {
   local missing="$TMP_ROOT/missing/state" silent="$TMP_ROOT/silent/state" rc
   mkdir -p "$missing" "$silent"
+  use_state_home "$missing"
   fm_supervision_run_due_checks "$missing" 300 5 false; rc=$?
   expect_code 1 "$rc" "missing checks should be a no-op"
   assert_absent "$missing/.wake-queue" "missing checks should not create a wake queue"
@@ -58,7 +82,8 @@ test_missing_and_silent_checks_do_not_queue() {
 #!/usr/bin/env bash
 exit 0
 SH
-  chmod +x "$silent/quiet.check.sh"
+  register_check "$silent/quiet.check.sh"
+  use_state_home "$silent"
   fm_supervision_run_due_checks "$silent" 300 5 false; rc=$?
   expect_code 1 "$rc" "silent check should not be actionable"
   assert_absent "$silent/.wake-queue" "silent check should not queue a wake"
@@ -69,12 +94,13 @@ SH
 test_erroring_check_fails_open_and_logs_when_requested() {
   local state="$TMP_ROOT/error/state" out rc
   mkdir -p "$state"
+  use_state_home "$state"
   cat > "$state/fail.check.sh" <<'SH'
 #!/usr/bin/env bash
 echo "bad credentials" >&2
 exit 7
 SH
-  chmod +x "$state/fail.check.sh"
+  register_check "$state/fail.check.sh"
   out=$(fm_supervision_run_due_checks "$state" 300 5 true 2>&1); rc=$?
   expect_code 1 "$rc" "erroring check should fail open"
   assert_contains "$out" "failed open" "erroring check should log fail-open context"
@@ -85,12 +111,13 @@ SH
 test_timeout_check_fails_open_and_stamps_schedule() {
   local state="$TMP_ROOT/timeout/state" start elapsed out rc
   mkdir -p "$state"
+  use_state_home "$state"
   cat > "$state/slow.check.sh" <<'SH'
 #!/usr/bin/env bash
 sleep 5
 printf 'late\n'
 SH
-  chmod +x "$state/slow.check.sh"
+  register_check "$state/slow.check.sh"
   start=$SECONDS
   out=$(fm_supervision_run_due_checks "$state" 300 1 true 2>&1); rc=$?
   elapsed=$((SECONDS - start))
@@ -103,16 +130,47 @@ SH
 }
 
 test_concurrent_runner_lock_prevents_double_run() {
-  local state="$TMP_ROOT/locked/state" count rc
+  local state="$TMP_ROOT/locked/state" count rc holder owner lock
   mkdir -p "$state"
   count="$state/count"
+  use_state_home "$state"
   counting_check "$state/task.check.sh" "$count" "ready"
-  fm_lock_try_acquire "$state/.last-check.lock" || fail "test should acquire check lock"
+  lock="$state/.last-check.lock"
+  owner=$(mktemp -d "$state/.last-check.lock.owner.XXXXXX") || fail "could not create lock owner fixture"
+  sleep 10 &
+  holder=$!
+  printf '%s\n' "$holder" > "$owner/pid"
+  ln -s "$owner" "$lock" || fail "could not publish lock fixture"
   fm_supervision_run_due_checks "$state" 300 5 false; rc=$?
-  fm_lock_release "$state/.last-check.lock"
+  kill "$holder" 2>/dev/null || true
+  wait "$holder" 2>/dev/null || true
+  rm -f "$lock"
+  rm -f "$owner/pid"
+  rmdir "$owner"
   expect_code 1 "$rc" "held check lock should make runner skip"
   assert_absent "$count" "held check lock should prevent the check from running"
   pass "fm_supervision_run_due_checks: held lock prevents concurrent check execution"
+}
+
+test_unauthenticated_check_is_rejected_without_execution() {
+  local state="$TMP_ROOT/rejected/state" count rc
+  mkdir -p "$state"
+  use_state_home "$state"
+  count="$state/count"
+  cat > "$state/rogue.check.sh" <<SH
+#!/usr/bin/env bash
+printf '1\n' > "$count"
+printf 'forged wake\n'
+SH
+  chmod 700 "$state/rogue.check.sh"
+  fm_supervision_run_due_checks "$state" 300 5 false; rc=$?
+  expect_code 0 "$rc" "rejected unauthenticated check should create an actionable wake"
+  assert_absent "$count" "unauthenticated custom check must never execute"
+  assert_contains "$FM_SUP_CHECK_OUTPUT" "rejected unauthenticated state checks" \
+    "rejected check should surface an authentication wake"
+  assert_grep "rejected unauthenticated state checks" "$state/.wake-queue" \
+    "authentication rejection should be durably queued"
+  pass "fm_supervision_run_due_checks: unauthenticated custom checks are rejected without execution"
 }
 
 test_due_check_appends_wake_and_stamps_schedule
@@ -121,3 +179,4 @@ test_missing_and_silent_checks_do_not_queue
 test_erroring_check_fails_open_and_logs_when_requested
 test_timeout_check_fails_open_and_stamps_schedule
 test_concurrent_runner_lock_prevents_double_run
+test_unauthenticated_check_is_rejected_without_execution
