@@ -185,8 +185,12 @@ test_leading_dangling_check_does_not_hide_valid_due_check() {
   [ "$(cat "$count")" = 1 ] || fail "leading dangling entry prevented the valid due check from executing"
   assert_contains "$FM_SUP_CHECK_OUTPUT" "ready" \
     "valid due check output was lost after classifying a leading dangling entry"
+  assert_contains "$FM_SUP_CHECK_OUTPUT" "rejected unauthenticated state checks: $state/aaa.check.sh" \
+    "leading dangling entry was not reported with the valid due check"
   assert_grep "check: $state/zzz.check.sh: ready" "$state/.wake-queue" \
     "valid due check wake was not durably queued after a leading dangling entry"
+  assert_grep "rejected unauthenticated state checks: $state/aaa.check.sh" "$state/.wake-queue" \
+    "leading dangling entry was not durably reported with the valid due check"
   pass "fm_supervision_run_due_checks: dangling entries do not hide valid due checks"
 }
 

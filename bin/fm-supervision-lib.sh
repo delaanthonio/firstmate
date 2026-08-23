@@ -226,7 +226,11 @@ fm_supervision_run_due_checks() {
       FM_SUP_CHECK_SCRIPT=$c
       # shellcheck disable=SC2034 # Read by callers after this function returns 0.
       FM_SUP_CHECK_OUTPUT=$out
-      FM_SUP_CHECK_REASON="check: $c: $out"
+      if [ -n "$rejected_checks" ]; then
+        FM_SUP_CHECK_OUTPUT="$FM_SUP_CHECK_OUTPUT
+rejected unauthenticated state checks:$rejected_checks"
+      fi
+      FM_SUP_CHECK_REASON="check: $c: $FM_SUP_CHECK_OUTPUT"
       fm_custom_check_snapshot_cleanup
       [ "${FM_WAKE_QUEUE+x}" ] && had_queue=1
       [ "${FM_WAKE_QUEUE_LOCK+x}" ] && had_queue_lock=1
