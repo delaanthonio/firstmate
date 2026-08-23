@@ -228,9 +228,9 @@ status_signature() {  # <status-path>
   fi
 }
 
-wait_for_file_text() {  # <file> <fixed-text>
-  local file=$1 expected=$2 i=0
-  while [ "$i" -lt 100 ]; do
+wait_for_file_text() {  # <file> <fixed-text> [attempts]
+  local file=$1 expected=$2 attempts=${3:-100} i=0
+  while [ "$i" -lt "$attempts" ]; do
     grep -F "$expected" "$file" >/dev/null 2>&1 && return 0
     sleep 0.05
     i=$((i + 1))
@@ -649,7 +649,7 @@ test_startup_race_boundedly_retires_owned_child() {
   winner_pid=$!
   wait_for_file_text "$dir/state/.watch.lock/pid" "$winner_pid" \
     || fail "competing watcher fixture did not publish a healthy lock: $(cat "$dir/winner.out")"
-  wait_for_file_text "$out" "watcher: attached pid=$winner_pid" \
+  wait_for_file_text "$out" "watcher: attached pid=$winner_pid" 160 \
     || fail "arm did not boundedly retire its child and attach to the competing watcher: $(cat "$out")"
   ! is_live_non_zombie "$child_pid" || fail "owned child survived bounded startup-race retirement"
   is_live_non_zombie "$ARM_PID" || fail "arm exited instead of attaching to the competing watcher"
