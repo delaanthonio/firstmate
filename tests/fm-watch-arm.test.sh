@@ -527,6 +527,50 @@ test_confirmation_grace_uses_initial_deadline() {
   pass "watch-arm: confirmation grace remains anchored to the initial deadline"
 }
 
+test_confirmation_timeout_returns_finished_actionable_wake() {
+  local dir out watcher_pid watcher_state status i
+  dir=$(make_confirmation_fixture confirm-expired-actionable)
+  printf '0\n' > "$dir/config/arm-confirm-timeout"
+  out="$dir/arm.out"
+  start_confirmation_arm "$dir" "$out" never '' 0 1
+  wait_for_watcher_launch "$dir" || fail "expired-actionable fixture did not launch its watcher"
+  watcher_pid=$(cat "$dir/watcher.pid")
+  advance_confirmation_clock "$dir" 1
+  kill -STOP "$ARM_PID" 2>/dev/null || fail "could not suspend expired-actionable confirmation arm"
+  i=0
+  watcher_state=
+  while [ "$i" -lt 50 ]; do
+    watcher_state=$(ps -p "$ARM_PID" -o stat= 2>/dev/null | tr -d ' ' || true)
+    case "$watcher_state" in T*) break ;; esac
+    sleep 0.02
+    i=$((i + 1))
+  done
+  case "$watcher_state" in
+    T*) ;;
+    *) fail "expired-actionable confirmation arm did not enter the stopped state: $watcher_state" ;;
+  esac
+  touch "$dir/actionable-trigger"
+  wait_for_file_text "$dir/actionable-ready" ready \
+    || fail "watcher did not deliver its actionable wake before confirmation expiry"
+  i=0
+  while [ "$i" -lt 50 ] && is_live_non_zombie "$watcher_pid"; do
+    sleep 0.02
+    i=$((i + 1))
+  done
+  ! is_live_non_zombie "$watcher_pid" \
+    || fail "actionable watcher did not exit before confirmation expiry"
+  printf '6\n' > "$dir/now"
+  kill -CONT "$ARM_PID" 2>/dev/null || fail "could not resume expired-actionable confirmation arm"
+  wait_for_exit "$ARM_PID" 80
+  status=$?
+  expect_code 0 "$status" "expired confirmation must return a delivered actionable wake"
+  grep -F 'signal: synthetic startup-race wake' "$out" >/dev/null \
+    || fail "expired confirmation did not return its actionable wake: $(cat "$out")"
+  ! grep -q '^watcher: FAILED' "$out" \
+    || fail "expired confirmation appended a false failure after an actionable wake: $(cat "$out")"
+  pass "watch-arm: an actionable wake wins over expired confirmation cleanup"
+}
+
 test_startup_race_boundedly_retires_owned_child() {
   local dir out child_pid winner_pid
   dir=$(make_confirmation_fixture confirm-competing-winner)
@@ -1244,6 +1288,7 @@ test_confirmation_timeout_reaps_stopped_child
 test_live_child_gets_one_bounded_confirmation_grace
 test_confirmation_rejects_health_after_grace_deadline
 test_confirmation_grace_uses_initial_deadline
+test_confirmation_timeout_returns_finished_actionable_wake
 test_startup_race_boundedly_retires_owned_child
 test_startup_race_returns_owned_actionable_wake
 test_attached_arm_reports_the_delivered_wake

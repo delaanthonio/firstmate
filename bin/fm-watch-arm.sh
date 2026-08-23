@@ -769,9 +769,19 @@ while :; do
 done
 
 trap - HUP TERM INT
+if ! fm_pid_alive "$child"; then
+  wait "$child" 2>/dev/null
+  rc=$?
+  child_done=1
+  if [ "$rc" -eq 0 ] && watch_output_has_wake "$child_out"; then
+    owned_child_finished "$rc"
+    exit $?
+  fi
+else
+  stop_owned_child_bounded || true
+  rc=$OWNED_CHILD_RC
+fi
 print_watch_output "$child_out"
-stop_owned_child_bounded || true
-rc=$OWNED_CHILD_RC
 cleanup_child
 cycle_log_append "$rc" "$(cycle_signal_name "$rc")" confirmation-timeout none
 echo "watcher: FAILED - no live watcher with a fresh beacon"
