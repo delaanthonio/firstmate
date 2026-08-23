@@ -159,6 +159,45 @@ zellij_write_legacy_owner_meta() {  # <state> <id> <tab> <pane> <spawn-epoch> <s
     "zellij_session_fingerprint=$fingerprint"
 }
 
+zellij_write_preupgrade_owner_meta() {  # <state> <id> <tab> <pane> <worktree>
+  local state=$1 id=$2 tab=$3 pane=$4 worktree=$5
+  mkdir -p "$state" "$worktree"
+  fm_write_meta "$state/$id.meta" \
+    "window=firstmate:$pane" \
+    "endpoint_task_id=$id" \
+    "backend=zellij" \
+    "zellij_session=firstmate" \
+    "zellij_tab_id=$tab" \
+    "zellij_pane_id=$pane" \
+    "worktree=$worktree"
+}
+
+make_zellij_ownership_fakebin() {  # <dir>
+  local dir=$1 fb="$1/fakebin"
+  mkdir -p "$fb"
+  cat > "$fb/lsof" <<'SH'
+#!/usr/bin/env bash
+case " $* " in
+  *" -t "*) printf '%s\n' "${FM_TEST_SERVER_PID:?}" ;;
+  *" -d cwd "*) printf 'p%s\nn%s\n' "${FM_TEST_WORKER_PID:?}" "${FM_TEST_WORKTREE:?}" ;;
+  *) exit 1 ;;
+esac
+SH
+  cat > "$fb/ps" <<'SH'
+#!/usr/bin/env bash
+case " $* " in
+  *" -axo pid= "*) printf '%s\n' "${FM_TEST_WORKER_PID:?}" ;;
+  *" -o ppid= -p ${FM_TEST_WORKER_PID:?} "*) printf '%s\n' "${FM_TEST_SERVER_PID:?}" ;;
+  *" eww -p ${FM_TEST_WORKER_PID:?} -o command= "*)
+    printf 'worker ZELLIJ_SESSION_NAME=firstmate ZELLIJ_PANE_ID=7 FM_HOME=%s marker\n' "${FM_TEST_PROCESS_HOME:?}"
+    ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$fb/lsof" "$fb/ps"
+  printf '%s\n' "$fb"
+}
+
 # --- version_check / tool_check ----------------------------------------------
 
 test_version_check_accepts_current_version() {
@@ -301,9 +340,9 @@ test_expected_label_accepts_unambiguous_untagged_legacy_tab() {
   # durable task metadata binds it to this session incarnation.
   zellij_tab_response "$dir" 2 3 fm-legacy
   fb=$(make_zellij_fakebin "$dir")
-  PATH="$fb:$PATH" FM_STATE_OVERRIDE="$state" FM_ZELLIJ_SESSION_FINGERPRINT=10:20:30 FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" \
+  PATH="$fb:$PATH" FM_STATE_OVERRIDE="$state" FM_TEST_CURRENT_FINGERPRINT=10:20:30 FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" \
     FM_ZELLIJ_SESSION_LIST="firstmate" \
-    bash -c '. "$0/bin/backends/zellij.sh"; fm_backend_zellij_send_key firstmate:7 Escape fm-legacy' "$ROOT"
+    bash -c '. "$0/bin/backends/zellij.sh"; fm_backend_zellij_session_fingerprint_matches() { [ "$2" = "$FM_TEST_CURRENT_FINGERPRINT" ]; }; fm_backend_zellij_send_key firstmate:7 Escape fm-legacy' "$ROOT"
   expect_code 0 $? "send_key should still reach a task tab spawned before home-scoping shipped, when its untagged title is unambiguous"
   assert_contains "$(cat "$dir/log")" $'\x1f''send-keys'$'\x1f''--pane-id'$'\x1f''7'$'\x1f''Esc' \
     "send_key did not send after accepting the unambiguous legacy label"
@@ -323,9 +362,9 @@ test_expected_label_refuses_ambiguous_untagged_tab() {
   # is trusted; ambiguity here must refuse loudly rather than assume ours.
   zellij_multi_tab_response "$dir" 2 3 fm-shared 9 fm-shared
   fb=$(make_zellij_fakebin "$dir")
-  PATH="$fb:$PATH" FM_STATE_OVERRIDE="$state" FM_ZELLIJ_SESSION_FINGERPRINT=10:20:30 FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" \
+  PATH="$fb:$PATH" FM_STATE_OVERRIDE="$state" FM_TEST_CURRENT_FINGERPRINT=10:20:30 FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" \
     FM_ZELLIJ_SESSION_LIST="firstmate" \
-    bash -c '. "$0/bin/backends/zellij.sh"; fm_backend_zellij_send_key firstmate:7 Escape fm-shared' "$ROOT"
+    bash -c '. "$0/bin/backends/zellij.sh"; fm_backend_zellij_session_fingerprint_matches() { [ "$2" = "$FM_TEST_CURRENT_FINGERPRINT" ]; }; fm_backend_zellij_send_key firstmate:7 Escape fm-shared' "$ROOT"
   status=$?
   [ "$status" -ne 0 ] || fail "send_key should refuse an ambiguous untagged legacy label shared by 2+ live tabs"
   assert_not_contains "$(cat "$dir/log")" $'\x1f''send-keys' \
@@ -343,8 +382,8 @@ test_expected_label_accepts_owned_legacy_root_tag() {
   zellij_pane_response "$dir" 1 7 3
   zellij_tab_response "$dir" 2 3 "$legacy_title"
   fb=$(make_zellij_fakebin "$dir")
-  PATH="$fb:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$checkout" FM_STATE_OVERRIDE="$state" FM_ZELLIJ_SESSION_FINGERPRINT=10:20:30 FM_ZELLIJ_SESSION_STARTED_AT=200 FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" \
-    FM_ZELLIJ_SESSION_LIST=firstmate bash -c '. "$0/bin/backends/zellij.sh"; fm_backend_zellij_send_key firstmate:7 Escape fm-legacy' "$ROOT"
+  PATH="$fb:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$checkout" FM_STATE_OVERRIDE="$state" FM_TEST_CURRENT_FINGERPRINT=10:20:30 FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" \
+    FM_ZELLIJ_SESSION_LIST=firstmate bash -c '. "$0/bin/backends/zellij.sh"; fm_backend_zellij_session_fingerprint_matches() { [ "$2" = "$FM_TEST_CURRENT_FINGERPRINT" ]; }; fm_backend_zellij_send_key firstmate:7 Escape fm-legacy' "$ROOT"
   expect_code 0 $? "send_key should preserve a root-tagged current-main tab with durable home ownership"
   assert_contains "$(cat "$dir/log")" $'\x1f''send-keys' \
     "send_key did not preserve an owned root-tagged current-main tab"
@@ -361,8 +400,8 @@ test_expected_label_refuses_reused_legacy_root_tag() {
   zellij_pane_response "$dir" 1 7 3
   zellij_tab_response "$dir" 2 3 "$legacy_title"
   fb=$(make_zellij_fakebin "$dir")
-  PATH="$fb:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$checkout" FM_STATE_OVERRIDE="$state" FM_ZELLIJ_SESSION_FINGERPRINT=40:50:60 FM_ZELLIJ_SESSION_STARTED_AT=100 FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" \
-    FM_ZELLIJ_SESSION_LIST=firstmate bash -c '. "$0/bin/backends/zellij.sh"; fm_backend_zellij_send_key firstmate:7 Escape fm-legacy' "$ROOT"
+  PATH="$fb:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$checkout" FM_STATE_OVERRIDE="$state" FM_TEST_CURRENT_FINGERPRINT=40:50:60 FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" \
+    FM_ZELLIJ_SESSION_LIST=firstmate bash -c '. "$0/bin/backends/zellij.sh"; fm_backend_zellij_session_fingerprint_matches() { [ "$2" = "$FM_TEST_CURRENT_FINGERPRINT" ]; }; fm_backend_zellij_send_key firstmate:7 Escape fm-legacy' "$ROOT"
   status=$?
   [ "$status" -ne 0 ] || fail "send_key should refuse a root-tagged tab whose ids were reused by a later session"
   assert_not_contains "$(cat "$dir/log")" $'\x1f''send-keys' "send_key targeted a reused root-tagged tab"
@@ -379,8 +418,8 @@ test_expected_label_refuses_ambiguous_legacy_root_tag() {
   zellij_pane_response "$dir" 1 7 3
   zellij_multi_tab_response "$dir" 2 3 "$legacy_title" 9 "$legacy_title"
   fb=$(make_zellij_fakebin "$dir")
-  PATH="$fb:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$checkout" FM_STATE_OVERRIDE="$state" FM_ZELLIJ_SESSION_FINGERPRINT=10:20:30 FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" \
-    FM_ZELLIJ_SESSION_LIST=firstmate bash -c '. "$0/bin/backends/zellij.sh"; fm_backend_zellij_send_key firstmate:7 Escape fm-legacy' "$ROOT"
+  PATH="$fb:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$checkout" FM_STATE_OVERRIDE="$state" FM_TEST_CURRENT_FINGERPRINT=10:20:30 FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" \
+    FM_ZELLIJ_SESSION_LIST=firstmate bash -c '. "$0/bin/backends/zellij.sh"; fm_backend_zellij_session_fingerprint_matches() { [ "$2" = "$FM_TEST_CURRENT_FINGERPRINT" ]; }; fm_backend_zellij_send_key firstmate:7 Escape fm-legacy' "$ROOT"
   status=$?
   [ "$status" -ne 0 ] || fail "send_key should refuse an ambiguous legacy root-tagged title"
   pass "fm_backend_zellij_tab_matches_label: refuses ambiguous legacy root-tagged tabs"
@@ -394,12 +433,53 @@ test_expected_label_refuses_reused_untagged_tab() {
   zellij_pane_response "$dir" 1 7 3
   zellij_tab_response "$dir" 2 3 fm-legacy
   fb=$(make_zellij_fakebin "$dir")
-  PATH="$fb:$PATH" FM_STATE_OVERRIDE="$state" FM_ZELLIJ_SESSION_FINGERPRINT=40:50:60 FM_ZELLIJ_SESSION_STARTED_AT=100 FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" \
-    FM_ZELLIJ_SESSION_LIST=firstmate bash -c '. "$0/bin/backends/zellij.sh"; fm_backend_zellij_send_key firstmate:7 Escape fm-legacy' "$ROOT"
+  PATH="$fb:$PATH" FM_STATE_OVERRIDE="$state" FM_TEST_CURRENT_FINGERPRINT=40:50:60 FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" \
+    FM_ZELLIJ_SESSION_LIST=firstmate bash -c '. "$0/bin/backends/zellij.sh"; fm_backend_zellij_session_fingerprint_matches() { [ "$2" = "$FM_TEST_CURRENT_FINGERPRINT" ]; }; fm_backend_zellij_send_key firstmate:7 Escape fm-legacy' "$ROOT"
   status=$?
   [ "$status" -ne 0 ] || fail "send_key should refuse a bare legacy tab whose ids were reused by a later session"
   assert_not_contains "$(cat "$dir/log")" $'\x1f''send-keys' "send_key targeted a reused bare legacy tab"
   pass "fm_backend_zellij_tab_matches_label: refuses reused bare ids from a later session"
+}
+
+test_preupgrade_metadata_migrates_only_from_owned_live_process() {
+  local dir state worktree fb token
+  dir="$TMP_ROOT/preupgrade-owned-migration"; state="$dir/state"; worktree="$dir/worktree"
+  mkdir -p "$dir/responses"
+  zellij_write_preupgrade_owner_meta "$state" legacy 3 7 "$worktree"
+  zellij_pane_response "$dir" 1 7 3
+  zellij_tab_response "$dir" 2 3 fm-legacy
+  fb=$(make_zellij_fakebin "$dir")
+  make_zellij_ownership_fakebin "$dir" >/dev/null
+  token=fmz-11111111111111111111111111111111
+  PATH="$fb:$PATH" FM_HOME="$ROOT" FM_STATE_OVERRIDE="$state" FM_TEST_SERVER_PID=100 FM_TEST_WORKER_PID=200 \
+    FM_TEST_WORKTREE="$worktree" FM_TEST_PROCESS_HOME="$ROOT" FM_TEST_FINGERPRINT="$token" \
+    FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" FM_ZELLIJ_SESSION_LIST=firstmate \
+    bash -c '. "$0/bin/backends/zellij.sh"; fm_backend_zellij_session_fingerprint() { printf "%s" "$FM_TEST_FINGERPRINT"; }; fm_backend_zellij_session_fingerprint_matches() { [ "$2" = "$FM_TEST_FINGERPRINT" ]; }; fm_backend_zellij_send_key firstmate:7 Escape fm-legacy' "$ROOT"
+  expect_code 0 $? "pre-upgrade metadata should migrate when a current-session descendant proves its home, pane, and worktree"
+  [ "$(cat "$state/legacy.zellij-session-fingerprint")" = "$token" ] \
+    || fail "pre-upgrade migration did not persist the live-session proof"
+  assert_contains "$(cat "$dir/log")" $'\x1f''send-keys' "pre-upgrade migration did not preserve the owned live tab"
+  pass "fm_backend_zellij_legacy_ownership_proven: migrates pre-upgrade metadata from owned live-process evidence"
+}
+
+test_preupgrade_metadata_refuses_foreign_reused_process() {
+  local dir state worktree foreign_home fb status
+  dir="$TMP_ROOT/preupgrade-foreign-refusal"; state="$dir/state"; worktree="$dir/worktree"; foreign_home="$dir/foreign-home"
+  mkdir -p "$dir/responses" "$foreign_home"
+  zellij_write_preupgrade_owner_meta "$state" legacy 3 7 "$worktree"
+  zellij_pane_response "$dir" 1 7 3
+  zellij_tab_response "$dir" 2 3 fm-legacy
+  fb=$(make_zellij_fakebin "$dir")
+  make_zellij_ownership_fakebin "$dir" >/dev/null
+  PATH="$fb:$PATH" FM_HOME="$ROOT" FM_STATE_OVERRIDE="$state" FM_TEST_SERVER_PID=100 FM_TEST_WORKER_PID=200 \
+    FM_TEST_WORKTREE="$worktree" FM_TEST_PROCESS_HOME="$foreign_home" \
+    FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" FM_ZELLIJ_SESSION_LIST=firstmate \
+    bash -c '. "$0/bin/backends/zellij.sh"; fm_backend_zellij_session_fingerprint() { return 99; }; fm_backend_zellij_send_key firstmate:7 Escape fm-legacy' "$ROOT"
+  status=$?
+  [ "$status" -ne 0 ] || fail "pre-upgrade metadata should refuse a reused pane owned by another home"
+  [ ! -e "$state/legacy.zellij-session-fingerprint" ] || fail "foreign reused-pane refusal persisted an ownership proof"
+  assert_not_contains "$(cat "$dir/log")" $'\x1f''send-keys' "foreign reused-pane refusal sent to the pane"
+  pass "fm_backend_zellij_legacy_ownership_proven: refuses foreign reused panes without persisting proof"
 }
 
 test_list_live_scopes_to_own_home_tag() {
@@ -1442,6 +1522,8 @@ test_expected_label_accepts_owned_legacy_root_tag
 test_expected_label_refuses_reused_legacy_root_tag
 test_expected_label_refuses_ambiguous_legacy_root_tag
 test_expected_label_refuses_reused_untagged_tab
+test_preupgrade_metadata_migrates_only_from_owned_live_process
+test_preupgrade_metadata_refuses_foreign_reused_process
 test_list_live_scopes_to_own_home_tag
 test_resolve_bare_selector_prefers_scoped_title
 test_resolve_bare_selector_refuses_ambiguous_untagged

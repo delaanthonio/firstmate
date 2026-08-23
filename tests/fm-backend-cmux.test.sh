@@ -1185,6 +1185,35 @@ test_kill_recovers_stale_target_by_label() {
   pass "fm_backend_cmux_kill: recovers stale workspace/surface ids by expected label"
 }
 
+test_endpoint_confirmation_refuses_renamed_recorded_workspace() {
+  local dir fb status recorded
+  dir="$TMP_ROOT/confirmed-gone-recorded-live"; mkdir -p "$dir/responses"
+  recorded=aaaaaaaa-0000-0000-0000-000000000000
+  cmux_windows_response "$dir" 1 eeeeeeee-0000-0000-0000-000000000000 1
+  cmux_workspace_list_response "$dir" 2 "$recorded" renamed-outside-firstmate
+  fb=$(make_cmux_fakebin "$dir")
+  PATH="$fb:$PATH" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
+    bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_endpoint_confirmed_gone "aaaaaaaa-0000-0000-0000-000000000000:bbbbbbbb-1111-1111-1111-111111111111" fm-task' "$ROOT"
+  status=$?
+  [ "$status" -ne 0 ] || fail "endpoint confirmation accepted a renamed live recorded workspace"
+  pass "fm_backend_cmux_endpoint_confirmed_gone: refuses a renamed live recorded workspace"
+}
+
+test_endpoint_confirmation_accepts_absent_recorded_workspace_and_titles() {
+  local dir fb title
+  dir="$TMP_ROOT/confirmed-gone-absent"; mkdir -p "$dir/responses"
+  title=$(cmux_expected_scoped_title fm-task)
+  cmux_windows_response "$dir" 1 eeeeeeee-0000-0000-0000-000000000000 1
+  cmux_workspace_list_response "$dir" 2 ffffffff-0000-0000-0000-000000000000 other
+  cmux_windows_response "$dir" 3 eeeeeeee-0000-0000-0000-000000000000 1
+  cmux_workspace_list_response "$dir" 4 ffffffff-0000-0000-0000-000000000000 other
+  fb=$(make_cmux_fakebin "$dir")
+  PATH="$fb:$PATH" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
+    bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_endpoint_confirmed_gone "aaaaaaaa-0000-0000-0000-000000000000:bbbbbbbb-1111-1111-1111-111111111111" fm-task' "$ROOT"
+  expect_code 0 $? "endpoint confirmation should accept an absent recorded workspace when no current or legacy title remains ($title)"
+  pass "fm_backend_cmux_endpoint_confirmed_gone: confirms exact UUID and title absence"
+}
+
 # --- list_live: label-based orphan discovery ---------------------------------
 
 test_list_live_filters_by_title_prefix() {
@@ -1241,12 +1270,16 @@ test_forced_secondmate_teardown_kills_cmux_children_with_child_home_tag() {
   cmux_workspace_list_response "$dir" 4 "cccccccc-2222-2222-2222-222222222222" "$child_title" "ffffffff-4444-4444-4444-444444444444" other
   cmux_windows_response "$dir" 6 "e1111111-0000-0000-0000-000000000000" 1
   cmux_workspace_list_response "$dir" 7
-  cmux_workspace_list_response "$dir" 8 "aaaaaaaa-0000-0000-0000-000000000000" "$parent_title"
-  cmux_panes_response "$dir" 9 "bbbbbbbb-1111-1111-1111-111111111111"
-  cmux_windows_response "$dir" 10 "e2222222-0000-0000-0000-000000000000" 2
-  cmux_workspace_list_response "$dir" 11 "aaaaaaaa-0000-0000-0000-000000000000" "$parent_title" "ffffffff-5555-5555-5555-555555555555" other
-  cmux_windows_response "$dir" 13 "e2222222-0000-0000-0000-000000000000" 1
-  cmux_workspace_list_response "$dir" 14
+  cmux_windows_response "$dir" 8 "e1111111-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 9
+  cmux_workspace_list_response "$dir" 10 "aaaaaaaa-0000-0000-0000-000000000000" "$parent_title"
+  cmux_panes_response "$dir" 11 "bbbbbbbb-1111-1111-1111-111111111111"
+  cmux_windows_response "$dir" 12 "e2222222-0000-0000-0000-000000000000" 2
+  cmux_workspace_list_response "$dir" 13 "aaaaaaaa-0000-0000-0000-000000000000" "$parent_title" "ffffffff-5555-5555-5555-555555555555" other
+  cmux_windows_response "$dir" 15 "e2222222-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 16
+  cmux_windows_response "$dir" 17 "e2222222-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 18
   fb=$(make_cmux_fakebin "$dir")
   out=$( PATH="$fb:$PATH" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$data" FM_CONFIG_OVERRIDE="$config" \
     FM_ROOT_OVERRIDE="$ROOT" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
@@ -1370,6 +1403,8 @@ test_kill_closes_workspace_directly_when_not_last
 test_kill_adds_sibling_when_last_in_window
 test_kill_is_best_effort_when_close_workspace_fails
 test_kill_recovers_stale_target_by_label
+test_endpoint_confirmation_refuses_renamed_recorded_workspace
+test_endpoint_confirmation_accepts_absent_recorded_workspace_and_titles
 test_list_live_filters_by_title_prefix
 test_forced_secondmate_teardown_kills_cmux_children_with_child_home_tag
 test_forced_secondmate_teardown_retains_unconfirmed_cmux_child

@@ -28,9 +28,15 @@ command -v jq >/dev/null 2>&1 || { echo "skip: jq not found (required by the zel
 
 SESSION="fm-backend-smoke-$$"
 export FM_ZELLIJ_SESSION="$SESSION"
+SESSION_FINGERPRINT_ONE=
+SESSION_FINGERPRINT_TWO=
 trap cleanup_all EXIT
 
 cleanup_all() {
+  if declare -F fm_backend_zellij_session_fingerprint_retire >/dev/null 2>&1; then
+    [ -z "$SESSION_FINGERPRINT_ONE" ] || fm_backend_zellij_session_fingerprint_retire "$SESSION" "$SESSION_FINGERPRINT_ONE" || true
+    [ -z "$SESSION_FINGERPRINT_TWO" ] || fm_backend_zellij_session_fingerprint_retire "$SESSION" "$SESSION_FINGERPRINT_TWO" || true
+  fi
   zellij_safe_delete "$SESSION"
 }
 
@@ -60,6 +66,12 @@ pass "real zellij: container_ensure starts the isolated background session ($CON
 CONTAINER2=$(fm_backend_zellij_container_ensure) || fail "second container_ensure failed"
 [ "$CONTAINER2" = "$CONTAINER" ] || fail "container_ensure is not idempotent: '$CONTAINER' vs '$CONTAINER2'"
 pass "real zellij: container_ensure is idempotent (reuses the existing session)"
+
+SESSION_FINGERPRINT_ONE=$(fm_backend_zellij_session_fingerprint "$SESSION") \
+  || fail "could not create a live-socket incarnation proof"
+fm_backend_zellij_session_fingerprint_matches "$SESSION" "$SESSION_FINGERPRINT_ONE" \
+  || fail "fresh live-socket incarnation proof did not validate"
+pass "real zellij: live socket carries a durable incarnation proof"
 
 # --- create_task + duplicate refusal -----------------------------------------
 
@@ -199,6 +211,16 @@ RECOVERED_CONTAINER=$(fm_backend_zellij_container_ensure) || fail "container_ens
 [ "$RECOVERED_CONTAINER" = "$SESSION" ] \
   || fail "recovered container should keep the isolated session name, got '$RECOVERED_CONTAINER'"
 pass "real zellij: container_ensure recovers a missing session before the next task"
+if fm_backend_zellij_session_fingerprint_matches "$SESSION" "$SESSION_FINGERPRINT_ONE"; then
+  fail "a recreated session validated the prior live socket's incarnation proof"
+fi
+SESSION_FINGERPRINT_TWO=$(fm_backend_zellij_session_fingerprint "$SESSION") \
+  || fail "could not create a proof for the recreated session"
+[ "$SESSION_FINGERPRINT_TWO" != "$SESSION_FINGERPRINT_ONE" ] \
+  || fail "recreated session reused the prior incarnation proof"
+fm_backend_zellij_session_fingerprint_matches "$SESSION" "$SESSION_FINGERPRINT_TWO" \
+  || fail "recreated session's own incarnation proof did not validate"
+pass "real zellij: session recreation invalidates the prior incarnation proof"
 
 # --- list_live (name-based recovery discovery) --------------------------------
 

@@ -2393,6 +2393,7 @@ if [ "$RELAUNCH" -eq 1 ] && [ "$BACKEND" = zellij ]; then
   ZELLIJ_SES=$(meta_value "$RELAUNCH_META" zellij_session)
   ZELLIJ_TAB_ID=$(meta_value "$RELAUNCH_META" zellij_tab_id)
   ZELLIJ_PANE_ID=$(meta_value "$RELAUNCH_META" zellij_pane_id)
+  ZELLIJ_PREVIOUS_SESSION_FINGERPRINT=$(meta_value "$RELAUNCH_META" zellij_session_fingerprint)
   ZELLIJ_SESSION_FINGERPRINT=$(fm_backend_zellij_session_fingerprint "$ZELLIJ_SES") || {
     echo "error: could not establish a stable incarnation fingerprint for zellij session '$ZELLIJ_SES'" >&2
     exit 1
@@ -2847,6 +2848,12 @@ preserve_relaunch_meta() {
 if [ "$RELAUNCH" -eq 1 ]; then
   SPAWN_META_PUBLISH_STARTED=1
   mv -f "$SPAWN_META_TMP" "$STATE/$ID.meta"
+  if [ "$BACKEND" = zellij ]; then
+    [ -z "${ZELLIJ_PREVIOUS_SESSION_FINGERPRINT:-}" ] \
+      || fm_backend_zellij_session_fingerprint_retire "$ZELLIJ_SES" "$ZELLIJ_PREVIOUS_SESSION_FINGERPRINT" \
+      || true
+    rm -f -- "$STATE/$ID.zellij-session-fingerprint"
+  fi
   RELAUNCH_REPLACEMENT_PENDING=0
   SPAWN_META_PUBLISH_STARTED=0
   SPAWN_META_TMP=

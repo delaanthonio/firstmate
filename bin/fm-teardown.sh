@@ -2231,8 +2231,23 @@ preflight_firstmate_home_herdr_children() {  # <home>
   done
 }
 
+cleanup_firstmate_child_backend_endpoint() {
+  local home=$1 sub_state=$2 backend=$3 target=$4 tab_id=$5 child_id=$6
+  if [ "$backend" = zellij ]; then
+    FM_ROOT_OVERRIDE='' FM_HOME=$home FM_ROOT=$home FM_STATE_OVERRIDE=$sub_state \
+      fm_backend_kill zellij "$target" "$tab_id" "fm-$child_id" 2>/dev/null || true
+    FM_ROOT_OVERRIDE='' FM_HOME=$home FM_ROOT=$home FM_STATE_OVERRIDE=$sub_state \
+      fm_backend_zellij_endpoint_confirmed_gone "$target" "$tab_id"
+  else
+    FM_ROOT_OVERRIDE='' FM_HOME=$home FM_ROOT=$home FM_STATE_OVERRIDE=$sub_state \
+      fm_backend_kill cmux "$target" "" "fm-$child_id" 2>/dev/null || true
+    FM_ROOT_OVERRIDE='' FM_HOME=$home FM_ROOT=$home FM_STATE_OVERRIDE=$sub_state \
+      fm_backend_cmux_endpoint_confirmed_gone "$target" "fm-$child_id"
+  fi
+}
+
 cleanup_firstmate_home_children() {
-  local home=$1 sub_state child_meta child_id child_t child_wt child_proj child_kind child_home child_backend child_orca_worktree_id child_tmp child_return_rc child_busy_gen
+  local home=$1 sub_state child_meta child_id child_t child_wt child_proj child_kind child_home child_backend child_orca_worktree_id child_tmp child_return_rc child_busy_gen child_zellij_session child_zellij_fingerprint
   sub_state="$home/state"
   [ -d "$sub_state" ] || return 0
   for child_meta in "$sub_state"/*.meta; do
@@ -2270,18 +2285,12 @@ cleanup_firstmate_home_children() {
       elif [ "$child_backend" = zellij ]; then
         # Zellij titles are scoped by the owning home tag, so forced secondmate
         # cleanup must verify child tabs as that child home, not the parent.
-        if ! ( unset FM_ROOT_OVERRIDE; FM_HOME=$home FM_ROOT=$home FM_STATE_OVERRIDE=$sub_state
-          fm_backend_kill zellij "$child_t" "$(meta_value "$child_meta" zellij_tab_id)" "fm-$child_id" 2>/dev/null || true
-          fm_backend_zellij_endpoint_confirmed_gone "$child_t" "$(meta_value "$child_meta" zellij_tab_id)"
-        ); then
+        if ! cleanup_firstmate_child_backend_endpoint "$home" "$sub_state" zellij "$child_t" "$(meta_value "$child_meta" zellij_tab_id)" "$child_id"; then
           echo "error: zellij endpoint $child_t for child $child_id is not confirmed gone; retaining that child's durable identity records and stopping forced cleanup" >&2
           return 1
         fi
       elif [ "$child_backend" = cmux ]; then
-        if ! ( unset FM_ROOT_OVERRIDE; FM_HOME=$home FM_ROOT=$home FM_STATE_OVERRIDE=$sub_state
-          fm_backend_kill cmux "$child_t" "" "fm-$child_id" 2>/dev/null || true
-          fm_backend_cmux_endpoint_confirmed_gone "$child_t" "fm-$child_id"
-        ); then
+        if ! cleanup_firstmate_child_backend_endpoint "$home" "$sub_state" cmux "$child_t" "" "$child_id"; then
           echo "error: cmux endpoint $child_t for child $child_id is not confirmed gone; retaining that child's durable identity records and stopping forced cleanup" >&2
           return 1
         fi
@@ -2332,11 +2341,22 @@ cleanup_firstmate_home_children() {
     fi
     retire_busy_state "$sub_state" "$child_id" "$child_busy_gen" || return 1
     status_retire_presentation_task "$sub_state" "$child_id" || return 1
+    if [ "$child_backend" = zellij ]; then
+      child_zellij_session=$(meta_value "$child_meta" zellij_session)
+      child_zellij_fingerprint=$(meta_value "$child_meta" zellij_session_fingerprint)
+      if [ -z "$child_zellij_fingerprint" ] && [ -f "$sub_state/$child_id.zellij-session-fingerprint" ]; then
+        IFS= read -r child_zellij_fingerprint < "$sub_state/$child_id.zellij-session-fingerprint" || true
+      fi
+      [ -z "$child_zellij_fingerprint" ] \
+        || fm_backend_zellij_session_fingerprint_retire "$child_zellij_session" "$child_zellij_fingerprint" \
+        || return 1
+    fi
     rm -f "$sub_state/$child_id.turn-ended" \
       "$sub_state/$child_id.meta" "$sub_state/$child_id.pi-ext.ts" \
       "$sub_state/$child_id.droid-settings.json" \
       "$sub_state/$child_id.grok-turnend-token" "$sub_state/$child_id.kimi-turnend-token" \
       "$sub_state/$child_id.muse-session" "$sub_state/$child_id.muse-session-current" \
+      "$sub_state/$child_id.zellij-session-fingerprint" \
       "$sub_state/$child_id.cursor-session"
   done
 }
@@ -2635,10 +2655,21 @@ fm_backend_clear_transition "$BACKEND" "$STATE" "$T" || true
 remove_pr_poll_artifacts "$STATE" "$ID" || exit 1
 retire_busy_state "$STATE" "$ID" "$BUSY_GEN" || exit 1
 status_retire_presentation_task "$STATE" "$ID" || exit 1
+if [ "$BACKEND" = zellij ]; then
+  ZELLIJ_SESSION_TO_RETIRE=$(meta_value "$META" zellij_session)
+  ZELLIJ_FINGERPRINT_TO_RETIRE=$(meta_value "$META" zellij_session_fingerprint)
+  if [ -z "$ZELLIJ_FINGERPRINT_TO_RETIRE" ] && [ -f "$STATE/$ID.zellij-session-fingerprint" ]; then
+    IFS= read -r ZELLIJ_FINGERPRINT_TO_RETIRE < "$STATE/$ID.zellij-session-fingerprint" || true
+  fi
+  [ -z "$ZELLIJ_FINGERPRINT_TO_RETIRE" ] \
+    || fm_backend_zellij_session_fingerprint_retire "$ZELLIJ_SESSION_TO_RETIRE" "$ZELLIJ_FINGERPRINT_TO_RETIRE" \
+    || exit 1
+fi
 rm -f "$STATE/$ID.turn-ended" "$STATE/$ID.meta" \
   "$STATE/$ID.pi-ext.ts" "$STATE/$ID.droid-settings.json" "$STATE/$ID.grok-turnend-token" \
   "$STATE/$ID.kimi-turnend-token" "$STATE/$ID.muse-session" \
   "$STATE/$ID.muse-session-current" "$STATE/$ID.cursor-session" \
+  "$STATE/$ID.zellij-session-fingerprint" \
   "$STATE/$ID.control-relaunch" "$STATE/$ID.control-relaunch.meta-prior" \
   "$STATE/$ID.control-relaunch.brief-prior" "$STATE/$ID.control-relaunch.note"
 fm_lock_release "$META_LOCK"

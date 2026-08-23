@@ -190,32 +190,159 @@ fm_backend_zellij_meta_exact_value() {  # <meta> <key>
   printf '%s' "$value"
 }
 
-fm_backend_zellij_session_fingerprint() {  # <session>
-  local session=$1 cache info fingerprint
-  if [ -n "${FM_ZELLIJ_SESSION_FINGERPRINT:-}" ]; then
-    fingerprint=$FM_ZELLIJ_SESSION_FINGERPRINT
+fm_backend_zellij_socket_path() {  # <session>
+  local session=$1 root
+  case "$session" in ''|*/*|*:*|*$'\n'*|*$'\r'*) return 1 ;; esac
+  if [ -n "${ZELLIJ_SOCKET_DIR:-}" ]; then
+    root=$ZELLIJ_SOCKET_DIR
+  elif [ -n "${XDG_RUNTIME_DIR:-}" ] && [ "$(uname -s)" != Darwin ]; then
+    root="$XDG_RUNTIME_DIR/zellij"
   else
-    if [ -n "${ZELLIJ_CACHE_DIR:-}" ]; then
-      cache=$ZELLIJ_CACHE_DIR
-    elif [ "$(uname -s)" = Darwin ]; then
-      cache="${HOME:?}/Library/Caches/org.Zellij-Contributors.Zellij"
-    else
-      cache="${XDG_CACHE_HOME:-${HOME:?}/.cache}/zellij"
-    fi
-    info="$cache/contract_version_1/session_info/$session"
-    [ -e "$info" ] && [ ! -L "$info" ] || return 1
-    if [ "$(uname -s)" = Darwin ]; then
-      fingerprint=$(stat -f '%d:%i:%B' "$info" 2>/dev/null) || return 1
-    else
-      fingerprint=$(stat -c '%d:%i:%W' "$info" 2>/dev/null) || return 1
-    fi
+    root="${TMPDIR:-/tmp}/zellij-$(id -u)"
   fi
-  case "$fingerprint" in ''|*[!0-9:]*) return 1 ;; esac
+  printf '%s/contract_version_1/%s' "${root%/}" "$session"
+}
+
+fm_backend_zellij_fingerprint_path() {  # <session> <fingerprint>
+  local socket fingerprint=$2
+  case "$fingerprint" in
+    fmz-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
+    *) return 1 ;;
+  esac
+  socket=$(fm_backend_zellij_socket_path "$1") || return 1
+  printf '%s/.firstmate-incarnations/%s' "${socket%/*}" "$fingerprint"
+}
+
+fm_backend_zellij_session_fingerprint() {  # <session>
+  local session=$1 socket dir entropy fingerprint proof old_umask
+  socket=$(fm_backend_zellij_socket_path "$session") || return 1
+  [ -S "$socket" ] && [ ! -L "$socket" ] || return 1
+  dir="${socket%/*}/.firstmate-incarnations"
+  old_umask=$(umask)
+  umask 077
+  [ ! -L "$dir" ] || { umask "$old_umask"; return 1; }
+  mkdir -p "$dir" || { umask "$old_umask"; return 1; }
+  [ -d "$dir" ] && [ ! -L "$dir" ] || { umask "$old_umask"; return 1; }
+  chmod 700 "$dir" || { umask "$old_umask"; return 1; }
+  for _ in 1 2 3 4; do
+    entropy=$(od -An -N16 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n') || continue
+    case "$entropy" in
+      [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
+      *) continue ;;
+    esac
+    fingerprint="fmz-$entropy"
+    proof="$dir/$fingerprint"
+    if ln "$socket" "$proof" 2>/dev/null; then
+      umask "$old_umask"
+      printf '%s' "$fingerprint"
+      return 0
+    fi
+  done
+  umask "$old_umask"
+  return 1
+}
+
+fm_backend_zellij_session_fingerprint_matches() {  # <session> <fingerprint>
+  local socket proof
+  socket=$(fm_backend_zellij_socket_path "$1") || return 1
+  proof=$(fm_backend_zellij_fingerprint_path "$1" "$2") || return 1
+  [ -S "$socket" ] && [ ! -L "$socket" ] \
+    && [ -S "$proof" ] && [ ! -L "$proof" ] \
+    && [ "$socket" -ef "$proof" ]
+}
+
+fm_backend_zellij_session_fingerprint_retire() {  # <session> <fingerprint>
+  local proof
+  proof=$(fm_backend_zellij_fingerprint_path "$1" "$2") || return 0
+  [ ! -L "$proof" ] || return 1
+  rm -f -- "$proof"
+}
+
+fm_backend_zellij_process_descends_from() {  # <pid> <ancestor>
+  local pid=$1 ancestor=$2 parent
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32; do
+    [ "$pid" = "$ancestor" ] && return 0
+    parent=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ') || return 1
+    case "$parent" in ''|*[!0-9]*|0|1) return 1 ;; esac
+    pid=$parent
+  done
+  return 1
+}
+
+fm_backend_zellij_socket_holder_pids() {  # <socket>
+  local socket=$1 line inode fd pid found=1
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -t -- "$socket" 2>/dev/null
+    return $?
+  fi
+  [ -r /proc/net/unix ] || return 1
+  while IFS= read -r line; do
+    case "$line" in *" $socket") inode=$(printf '%s\n' "$line" | awk '{print $7}'); break ;; esac
+  done < /proc/net/unix
+  case "${inode:-}" in ''|*[!0-9]*) return 1 ;; esac
+  for fd in /proc/[0-9]*/fd/*; do
+    [ -L "$fd" ] || continue
+    [ "$(readlink "$fd" 2>/dev/null)" = "socket:[$inode]" ] || continue
+    pid=${fd#/proc/}
+    pid=${pid%%/*}
+    printf '%s\n' "$pid"
+    found=0
+  done
+  return "$found"
+}
+
+fm_backend_zellij_preupgrade_ownership_proven() {  # <session> <pane-id> <meta>
+  local session=$1 pane=$2 meta=$3 socket server_pids server_pid worktree pid cwd env
+  socket=$(fm_backend_zellij_socket_path "$session") || return 1
+  server_pids=$(fm_backend_zellij_socket_holder_pids "$socket") || return 1
+  worktree=$(fm_backend_zellij_meta_exact_value "$meta" worktree) || return 1
+  case "$worktree" in /*) ;; *) return 1 ;; esac
+  while IFS= read -r server_pid; do
+    case "$server_pid" in ''|*[!0-9]*) continue ;; esac
+    while IFS= read -r pid; do
+      case "$pid" in ''|*[!0-9]*) continue ;; esac
+      fm_backend_zellij_process_descends_from "$pid" "$server_pid" || continue
+      if [ -d "/proc/$pid" ]; then
+        cwd=$(readlink "/proc/$pid/cwd" 2>/dev/null) || continue
+        env=$(tr '\0' ' ' < "/proc/$pid/environ" 2>/dev/null) || continue
+      else
+        command -v lsof >/dev/null 2>&1 || continue
+        cwd=$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -1)
+        env=$(ps eww -p "$pid" -o command= 2>/dev/null) || continue
+      fi
+      case "$cwd" in "$worktree"|"$worktree"/*) ;; *) continue ;; esac
+      case " $env " in *" ZELLIJ_SESSION_NAME=$session "*) ;; *) continue ;; esac
+      case " $env " in *" ZELLIJ_PANE_ID=$pane "*|*" ZELLIJ_PANE_ID=terminal_$pane "*) ;; *) continue ;; esac
+      case " $env " in *" FM_HOME=$FM_HOME "*) return 0 ;; esac
+    done < <(ps -axo pid=)
+  done <<< "$server_pids"
+  return 1
+}
+
+fm_backend_zellij_migrate_session_fingerprint() {  # <session> <pane-id> <meta> <sidecar>
+  local session=$1 pane=$2 meta=$3 sidecar=$4 fingerprint tmp old_umask
+  [ ! -e "$sidecar" ] && [ ! -L "$sidecar" ] || return 1
+  fm_backend_zellij_preupgrade_ownership_proven "$session" "$pane" "$meta" || return 1
+  fingerprint=$(fm_backend_zellij_session_fingerprint "$session") || return 1
+  old_umask=$(umask)
+  umask 077
+  tmp=$(mktemp "${sidecar%/*}/.zellij-session-fingerprint.XXXXXX") || {
+    umask "$old_umask"
+    fm_backend_zellij_session_fingerprint_retire "$session" "$fingerprint" || true
+    return 1
+  }
+  if ! printf '%s\n' "$fingerprint" > "$tmp" || ! mv -f "$tmp" "$sidecar"; then
+    umask "$old_umask"
+    rm -f -- "$tmp"
+    fm_backend_zellij_session_fingerprint_retire "$session" "$fingerprint" || true
+    return 1
+  fi
+  umask "$old_umask"
   printf '%s' "$fingerprint"
 }
 
 fm_backend_zellij_legacy_ownership_proven() {  # <session> <tab-id> <label>
-  local session=$1 tab_id=$2 label=$3 id state meta backend endpoint meta_session meta_tab meta_pane window recorded_fingerprint current_fingerprint
+  local session=$1 tab_id=$2 label=$3 id state meta sidecar backend endpoint meta_session meta_tab meta_pane window recorded_fingerprint
   case "$label" in fm-*) id=${label#fm-} ;; *) id=$label ;; esac
   case "$id" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac
   state=${FM_STATE_OVERRIDE:-$FM_HOME/state}
@@ -227,13 +354,24 @@ fm_backend_zellij_legacy_ownership_proven() {  # <session> <tab-id> <label>
   meta_tab=$(fm_backend_zellij_meta_exact_value "$meta" zellij_tab_id) || return 1
   meta_pane=$(fm_backend_zellij_meta_exact_value "$meta" zellij_pane_id) || return 1
   window=$(fm_backend_zellij_meta_exact_value "$meta" window) || return 1
-  recorded_fingerprint=$(fm_backend_zellij_meta_exact_value "$meta" zellij_session_fingerprint) || return 1
   [ "$backend" = zellij ] && [ "$endpoint" = "$id" ] \
     && [ "$meta_session" = "$session" ] && [ "$meta_tab" = "$tab_id" ] \
     && [ "$meta_pane" = "${FM_BACKEND_ZELLIJ_PANE:-}" ] \
     && [ "$window" = "$session:$meta_pane" ] || return 1
-  current_fingerprint=$(fm_backend_zellij_session_fingerprint "$session") || return 1
-  [ "$recorded_fingerprint" = "$current_fingerprint" ]
+  if recorded_fingerprint=$(fm_backend_zellij_meta_exact_value "$meta" zellij_session_fingerprint); then
+    :
+  elif grep -q '^zellij_session_fingerprint=' "$meta" 2>/dev/null; then
+    return 1
+  else
+    sidecar="$state/$id.zellij-session-fingerprint"
+    if [ -f "$sidecar" ] && [ ! -L "$sidecar" ]; then
+      recorded_fingerprint=$(cat "$sidecar") || return 1
+      case "$recorded_fingerprint" in ''|*$'\n'*) return 1 ;; esac
+    else
+      recorded_fingerprint=$(fm_backend_zellij_migrate_session_fingerprint "$session" "$meta_pane" "$meta" "$sidecar") || return 1
+    fi
+  fi
+  fm_backend_zellij_session_fingerprint_matches "$session" "$recorded_fingerprint"
 }
 
 # fm_backend_zellij_tool_check: refuse loudly if zellij or jq is missing.

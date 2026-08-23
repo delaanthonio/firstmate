@@ -361,6 +361,20 @@ fm_backend_cmux_workspace_ids_for_label() {  # <label>
   printf '%s\n' "$matches"
 }
 
+fm_backend_cmux_workspace_ids_global() {
+  local wins window_ids wid wss ids=
+  wins=$(fm_backend_cmux_cli list-windows --json --id-format uuids 2>/dev/null) || return 1
+  window_ids=$(printf '%s' "$wins" | jq -er '.[]? | .id' 2>/dev/null) || return 1
+  while IFS= read -r wid; do
+    [ -n "$wid" ] || continue
+    wss=$(fm_backend_cmux_cli workspace list --json --id-format uuids --window "$wid" 2>/dev/null) || return 1
+    printf '%s' "$wss" | jq -e '(.workspaces // []) | type == "array"' >/dev/null 2>&1 || return 1
+    ids="$ids${ids:+
+}$(printf '%s' "$wss" | jq -r '(.workspaces // []) | .[]? | .id' 2>/dev/null)" || return 1
+  done <<< "$window_ids"
+  printf '%s\n' "$ids"
+}
+
 fm_backend_cmux_unique_workspace_id_for_label() {  # <label>
   local label=$1 matches
   matches=$(fm_backend_cmux_workspace_ids_for_label "$label") || return 1
@@ -715,8 +729,10 @@ fm_backend_cmux_kill() {  # <target> [unused] [expected-label]
 }
 
 fm_backend_cmux_endpoint_confirmed_gone() {  # <target> <expected-label>
-  local target=$1 expected_label=$2 scoped legacy matches
+  local target=$1 expected_label=$2 scoped legacy matches inventory
   fm_backend_cmux_parse_target "$target" || return 1
+  inventory=$(fm_backend_cmux_workspace_ids_global) || return 1
+  printf '%s\n' "$inventory" | grep -qxF "$FM_BACKEND_CMUX_WORKSPACE" && return 1
   scoped=$(fm_backend_cmux_scoped_title "$expected_label") || return 1
   legacy=$(fm_backend_cmux_legacy_scoped_title "$expected_label") || return 1
   matches=$(fm_backend_cmux_workspace_ids_for_label "$scoped") || return 1
