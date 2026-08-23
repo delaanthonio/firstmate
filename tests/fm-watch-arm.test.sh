@@ -102,7 +102,10 @@ start_confirmation_arm() {  # <fixture> <output> <ready-delay> [environment-time
       FM_TEST_WATCHER_ACTIONABLE="$actionable" FM_TEST_WATCHER_ACTIONABLE_TRIGGER="$dir/actionable-trigger" \
       FM_TEST_WATCHER_ACTIONABLE_READY="$dir/actionable-ready" \
       FM_TEST_WATCHER_ACTIONABLE_ON_TERM="$actionable_on_term" \
-      FM_TEST_WATCHER_READY_DELAY="$delay" "$dir/bin/fm-watch-arm.sh" > "$out" 2>&1 4>"$dir/boundary" &
+      FM_TEST_WATCHER_READY_DELAY="$delay" \
+      FM_TEST_HEALTH_BLOCK_REQUEST="$dir/health-block-request" FM_TEST_HEALTH_BLOCK_LOCK="$dir/health-block-lock" \
+      FM_TEST_HEALTH_BLOCKED="$dir/health-blocked" FM_TEST_HEALTH_BLOCK_RELEASE="$dir/health-block-release" \
+      "$dir/bin/fm-watch-arm.sh" > "$out" 2>&1 4>"$dir/boundary" &
   else
     env -u FM_ARM_CONFIRM_TIMEOUT PATH="$dir/fakebin:$PATH" FM_HOME="$dir" \
       FM_ARM_READY_FD=4 \
@@ -111,7 +114,10 @@ start_confirmation_arm() {  # <fixture> <output> <ready-delay> [environment-time
       FM_TEST_WATCHER_ACTIONABLE="$actionable" FM_TEST_WATCHER_ACTIONABLE_TRIGGER="$dir/actionable-trigger" \
       FM_TEST_WATCHER_ACTIONABLE_READY="$dir/actionable-ready" \
       FM_TEST_WATCHER_ACTIONABLE_ON_TERM="$actionable_on_term" \
-      FM_TEST_WATCHER_READY_DELAY="$delay" "$dir/bin/fm-watch-arm.sh" > "$out" 2>&1 4>"$dir/boundary" &
+      FM_TEST_WATCHER_READY_DELAY="$delay" \
+      FM_TEST_HEALTH_BLOCK_REQUEST="$dir/health-block-request" FM_TEST_HEALTH_BLOCK_LOCK="$dir/health-block-lock" \
+      FM_TEST_HEALTH_BLOCKED="$dir/health-blocked" FM_TEST_HEALTH_BLOCK_RELEASE="$dir/health-block-release" \
+      "$dir/bin/fm-watch-arm.sh" > "$out" 2>&1 4>"$dir/boundary" &
   fi
   ARM_PID=$!
 }
@@ -506,6 +512,35 @@ test_confirmation_rejects_health_after_grace_deadline() {
   assert_single_confirmation_failure "$ARM_PID" "$out" "expired-grace confirmation arm"
   ! is_live_non_zombie "$watcher_pid" || fail "watcher accepted after the grace deadline survived cleanup"
   pass "watch-arm: health appearing after the grace deadline is refused"
+}
+
+test_confirmation_rejects_health_check_straddling_grace_deadline() {
+  local dir out watcher_pid
+  dir=$(make_confirmation_fixture confirm-health-check-straddles-grace)
+  sed 's/^fm_watcher_healthy()/fm_watcher_healthy_unblocked()/' "$dir/bin/fm-wake-lib.sh" > "$dir/bin/fm-wake-lib.sh.tmp"
+  mv "$dir/bin/fm-wake-lib.sh.tmp" "$dir/bin/fm-wake-lib.sh"
+  cat >> "$dir/bin/fm-wake-lib.sh" <<'SH'
+fm_watcher_healthy() {
+  fm_watcher_healthy_unblocked "$@" || return 1
+  if mkdir "$FM_TEST_HEALTH_BLOCK_LOCK" 2>/dev/null; then
+    printf 'blocked\n' > "$FM_TEST_HEALTH_BLOCKED"
+    while [ ! -e "$FM_TEST_HEALTH_BLOCK_RELEASE" ]; do sleep 0.02; done
+  fi
+}
+SH
+  printf '0\n' > "$dir/config/arm-confirm-timeout"
+  out="$dir/arm.out"
+  start_confirmation_arm "$dir" "$out" 0.5
+  wait_for_watcher_launch "$dir" || fail "straddling-health fixture did not launch its watcher"
+  advance_confirmation_clock "$dir" 1
+  wait_for_file_text "$dir/health-blocked" 'blocked' \
+    || fail "straddling-health fixture did not block inside watcher verification"
+  watcher_pid=$(cat "$dir/watcher.pid")
+  printf '7\n' > "$dir/now"
+  : > "$dir/health-block-release"
+  assert_single_confirmation_failure "$ARM_PID" "$out" "straddling-health confirmation arm"
+  ! is_live_non_zombie "$watcher_pid" || fail "watcher accepted after health verification crossed grace expiry"
+  pass "watch-arm: health verification crossing grace expiry is refused"
 }
 
 test_confirmation_grace_uses_initial_deadline() {
@@ -1317,6 +1352,7 @@ test_confirmation_timeout_reaps_term_resistant_child
 test_confirmation_timeout_reaps_stopped_child
 test_live_child_gets_one_bounded_confirmation_grace
 test_confirmation_rejects_health_after_grace_deadline
+test_confirmation_rejects_health_check_straddling_grace_deadline
 test_confirmation_grace_uses_initial_deadline
 test_confirmation_timeout_returns_finished_actionable_wake
 test_confirmation_cleanup_returns_actionable_wake

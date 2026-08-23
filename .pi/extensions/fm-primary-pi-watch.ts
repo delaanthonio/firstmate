@@ -156,6 +156,12 @@ function startDeadlineTimer(timeoutMs: number, onTimeout: () => void): () => voi
   };
 }
 
+function afterQueuedEvents(callback: () => void): () => void {
+  const immediate = setImmediate(callback);
+  immediate.unref();
+  return () => clearImmediate(immediate);
+}
+
 function parentPid(pid: string): string {
   const result = spawnSync("ps", ["-o", "ppid=", "-p", pid], { encoding: "utf8" });
   if (result.status !== 0) return "";
@@ -329,20 +335,25 @@ export default function (pi: ExtensionAPI) {
     if (!readiness) return Promise.resolve(false);
     return new Promise((resolveReady) => {
       let settled = false;
-      let cancelTimeout = startDeadlineTimer(piArmStartupTimeoutMs(), () => {
-        settled = true;
-        resolveReady(false);
-      });
-      void armConfirmationBoundary.get(armChild)?.then((confirmSeconds) => {
-        if (settled) return;
-        cancelTimeout();
-        cancelTimeout = startDeadlineTimer(piArmConfirmationTimeoutMs(confirmSeconds), () => {
+      let cancelQueuedSettlement = (): void => {};
+      const expire = (): void => {
+        cancelQueuedSettlement();
+        cancelQueuedSettlement = afterQueuedEvents(() => {
+          if (settled) return;
           settled = true;
           resolveReady(false);
         });
+      };
+      let cancelTimeout = startDeadlineTimer(piArmStartupTimeoutMs(), expire);
+      void armConfirmationBoundary.get(armChild)?.then((confirmSeconds) => {
+        if (settled) return;
+        cancelQueuedSettlement();
+        cancelTimeout();
+        cancelTimeout = startDeadlineTimer(piArmConfirmationTimeoutMs(confirmSeconds), expire);
       });
       void readiness.then((ready) => {
         settled = true;
+        cancelQueuedSettlement();
         cancelTimeout();
         resolveReady(ready);
       });

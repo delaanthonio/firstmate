@@ -77,6 +77,12 @@ function startDeadlineTimer(timeoutMs, onTimeout) {
   };
 }
 
+function afterQueuedEvents(callback) {
+  const immediate = setImmediate(callback);
+  immediate.unref();
+  return () => clearImmediate(immediate);
+}
+
 function setArmStatus(status) {
   armStatus = status;
 }
@@ -86,20 +92,25 @@ function waitForArmReady(armChild) {
   if (!readiness) return Promise.resolve("failed");
   return new Promise((resolve) => {
     let settled = false;
-    let cancelTimeout = startDeadlineTimer(openCodeArmStartupTimeoutMs(), () => {
-      settled = true;
-      resolve("timeout");
-    });
-    void armConfirmationBoundary.get(armChild)?.then((confirmSeconds) => {
-      if (settled) return;
-      cancelTimeout();
-      cancelTimeout = startDeadlineTimer(openCodeArmConfirmationTimeoutMs(confirmSeconds), () => {
+    let cancelQueuedSettlement = () => {};
+    const expire = () => {
+      cancelQueuedSettlement();
+      cancelQueuedSettlement = afterQueuedEvents(() => {
+        if (settled) return;
         settled = true;
         resolve("timeout");
       });
+    };
+    let cancelTimeout = startDeadlineTimer(openCodeArmStartupTimeoutMs(), expire);
+    void armConfirmationBoundary.get(armChild)?.then((confirmSeconds) => {
+      if (settled) return;
+      cancelQueuedSettlement();
+      cancelTimeout();
+      cancelTimeout = startDeadlineTimer(openCodeArmConfirmationTimeoutMs(confirmSeconds), expire);
     });
     void readiness.then((status) => {
       settled = true;
+      cancelQueuedSettlement();
       cancelTimeout();
       resolve(status);
     });

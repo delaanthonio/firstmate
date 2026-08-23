@@ -2200,12 +2200,13 @@ EOF
 }
 
 test_pi_delayed_start_preserves_arm_bound() {
-  local repo home plugin log retired stop out status
+  local repo home plugin log retired stop boundary out status
   repo="$TMP_ROOT/pi-selected-arm-bound-root"
   home="$TMP_ROOT/pi-selected-arm-bound-home"
   log="$TMP_ROOT/pi-selected-arm-bound.log"
   retired="$TMP_ROOT/pi-selected-arm-bound.retired"
   stop="$TMP_ROOT/pi-selected-arm-bound.stop"
+  boundary="$TMP_ROOT/pi-selected-arm-bound.boundary"
   mkdir -p "$home/state" "$home/config"
   printf '1\n' > "$home/config/arm-confirm-timeout"
   install_pi_watch_extension_fixture "$repo"
@@ -2226,12 +2227,13 @@ printf 'watcher-conf' >&4
 sleep 0.05
 printf 'irmation-boundary timeout=%s' "$selected" >&4
 exec 4>&-
+: > "$FM_BOUNDARY_PUBLISHED_FILE"
 sleep 0.8
 printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
 while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
-  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_RETIRED_FILE="$retired" FM_STOP_FILE="$stop" FM_PI_ARM_READY_TIMEOUT_MS=600 node --input-type=module 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_RETIRED_FILE="$retired" FM_STOP_FILE="$stop" FM_BOUNDARY_PUBLISHED_FILE="$boundary" FM_PI_ARM_READY_TIMEOUT_MS=600 node --input-type=module 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -2251,6 +2253,19 @@ writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 mod.default(pi);
 await tool.execute("tool-call-selected-bound", {}, undefined, undefined, {});
+for (let i = 0; i < 100; i += 1) {
+  const rows = existsSync(process.env.FM_ARM_LOG)
+    ? readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n").length
+    : 0;
+  if (rows >= 2) break;
+  await new Promise((resolve) => setTimeout(resolve, 10));
+}
+if (readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n").length < 2) throw new Error("Pi successor did not launch");
+const boundaryWaitDeadline = Date.now() + 2000;
+while (!existsSync(process.env.FM_BOUNDARY_PUBLISHED_FILE) && Date.now() < boundaryWaitDeadline) {}
+if (!existsSync(process.env.FM_BOUNDARY_PUBLISHED_FILE)) throw new Error("Pi successor did not publish its readiness boundary");
+const unblockAt = Date.now() + 800;
+while (Date.now() < unblockAt) {}
 for (let i = 0; i < 250 && !prompt; i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 20));
 }
@@ -2268,13 +2283,14 @@ EOF
 }
 
 test_opencode_delayed_start_preserves_arm_bound() {
-  local plugin repo home log retired stop out status
+  local plugin repo home log retired stop boundary out status
   plugin="$ROOT/.opencode/plugins/fm-primary-watch-arm.js"
   repo="$TMP_ROOT/opencode-selected-arm-bound-root"
   home="$TMP_ROOT/opencode-selected-arm-bound-home"
   log="$TMP_ROOT/opencode-selected-arm-bound.log"
   retired="$TMP_ROOT/opencode-selected-arm-bound.retired"
   stop="$TMP_ROOT/opencode-selected-arm-bound.stop"
+  boundary="$TMP_ROOT/opencode-selected-arm-bound.boundary"
   mkdir -p "$repo/bin" "$home/state" "$home/config"
   printf '1\n' > "$home/config/arm-confirm-timeout"
   git init -q "$repo"
@@ -2296,12 +2312,13 @@ printf 'watcher-conf' >&4
 sleep 0.05
 printf 'irmation-boundary timeout=%s' "$selected" >&4
 exec 4>&-
+: > "$FM_BOUNDARY_PUBLISHED_FILE"
 sleep 0.8
 printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
 while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
-  out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_RETIRED_FILE="$retired" FM_STOP_FILE="$stop" FM_OPENCODE_ARM_READY_TIMEOUT_MS=600 node --input-type=module 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_RETIRED_FILE="$retired" FM_STOP_FILE="$stop" FM_BOUNDARY_PUBLISHED_FILE="$boundary" FM_OPENCODE_ARM_READY_TIMEOUT_MS=600 node --input-type=module 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -2321,6 +2338,19 @@ const hooks = await mod.FmPrimaryWatchArm({
 });
 writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 await hooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
+for (let i = 0; i < 100; i += 1) {
+  const rows = existsSync(process.env.FM_ARM_LOG)
+    ? readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n").length
+    : 0;
+  if (rows >= 2) break;
+  await new Promise((resolve) => setTimeout(resolve, 10));
+}
+if (readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n").length < 2) throw new Error("OpenCode successor did not launch");
+const boundaryWaitDeadline = Date.now() + 2000;
+while (!existsSync(process.env.FM_BOUNDARY_PUBLISHED_FILE) && Date.now() < boundaryWaitDeadline) {}
+if (!existsSync(process.env.FM_BOUNDARY_PUBLISHED_FILE)) throw new Error("OpenCode successor did not publish its readiness boundary");
+const unblockAt = Date.now() + 800;
+while (Date.now() < unblockAt) {}
 for (let i = 0; i < 250 && !prompt; i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 20));
 }

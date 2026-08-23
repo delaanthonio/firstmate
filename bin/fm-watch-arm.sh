@@ -693,18 +693,20 @@ if [ "${FM_ARM_READY_FD:-}" = 4 ]; then
   exec 4>&-
 fi
 confirm_grace_used=0
-while :; do
+confirmation_deadline_open() {
   now=$(date +%s)
-  if [ "$now" -ge "$deadline" ]; then
-    if [ "$confirm_grace_used" -eq 0 ] && fm_pid_alive "$child"; then
-      confirm_grace_used=1
-      deadline=$((deadline + ARM_CONFIRM_LIVE_GRACE))
-      [ "$now" -lt "$deadline" ] || break
-    else
-      break
-    fi
+  [ "$now" -lt "$deadline" ] && return 0
+  if [ "$confirm_grace_used" -eq 0 ] && fm_pid_alive "$child"; then
+    confirm_grace_used=1
+    deadline=$((deadline + ARM_CONFIRM_LIVE_GRACE))
+    [ "$now" -lt "$deadline" ] && return 0
   fi
+  return 1
+}
+while :; do
+  confirmation_deadline_open || break
   if healthy_watcher; then
+    confirmation_deadline_open || break
     if [ "$HEALTHY_PID" = "$child" ]; then
       cycle_refresh_lock_before
       if ! handling_generation=$(handling_successor_generation); then
