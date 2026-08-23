@@ -16,6 +16,7 @@ The turn-end guard closes the remaining gap at the primary's own turn boundary.
 When work, a process-event source, or Relay polling needs supervision at that boundary and no identity-matched watcher has a fresh beacon, the harness integration must either block the turn end or force one bounded follow-up that uses the recovery instruction from the emitted session-start protocol.
 The same boundary also runs any due authenticated standing check under the watcher's cadence lock; actionable output is queued durably before the guard blocks or requests its bounded follow-up.
 The X relay shim, registered PR polls, and trusted custom checks retain the watcher's validation and immutable-snapshot rules, and each execution remains bounded by `FM_CHECK_TIMEOUT`.
+An unauthenticated state check is never executed and its rejection becomes an actionable wake; an execution failure or timeout is logged and lets the turn end fail open.
 The mid-turn pull warning uses the model-aware supervision verdict described below, while the turn-end guard keeps the PID-strict watcher predicate.
 The guard remains a backstop; [`watcher-continuity.md`](watcher-continuity.md) owns normal continuity.
 

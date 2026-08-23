@@ -30,7 +30,7 @@ zellij attach <session-name>
 Routine supervision does not require attachment.
 Use `bin/fm-peek.sh <id>` and `FM_HOME=<home> bin/fm-send.sh <id> '<text>'` against the metadata-routed endpoint.
 
-Verify setup by spawning a small task and confirming metadata contains `backend=zellij`, `zellij_session=`, `zellij_tab_id=`, and `zellij_pane_id=`.
+Verify setup by spawning a small task and confirming metadata contains `backend=zellij`, `zellij_session=`, `zellij_tab_id=`, `zellij_pane_id=`, and `zellij_session_fingerprint=`.
 
 ## Task shape and home isolation
 
@@ -41,9 +41,9 @@ This prevents task-id collisions between a primary, secondmates, and separate Fi
 
 Zellij does not enforce tab-name uniqueness, so the adapter performs its own duplicate check against the scoped title.
 Create, recover, list, and cleanup paths all use the same scoped title owner in `bin/fm-backend-hometag-lib.sh`.
-Moving a Firstmate installation changes its path hash and leaves old titles unmatched, consistent with worktree paths also becoming stale after a move.
+Moving a Firstmate home changes its path hash and leaves old titles unmatched, consistent with worktree paths also becoming stale after a move.
 
-A pre-home-tag task remains reachable through its recorded metadata only when exactly one live tab has the old unscoped title.
+A pre-home-tag task remains reachable through its recorded metadata only when exactly one live tab has the old title and its recorded ids and session fingerprint prove that the task belongs to the current session incarnation.
 Multiple old tabs with the same title cause a refusal rather than a guess.
 Bulk recovery never adopts unscoped legacy tabs because it has no safe home identity for them.
 
@@ -89,6 +89,7 @@ A short viewport may expose fewer lines than requested.
 
 Closing a pane leaves an empty tab.
 Cleanup resolves and verifies the owning tab, then uses `close-tab-by-id` so both the task pane and tab disappear.
+Teardown retains endpoint records, processes, worktrees, temporary runtime state, and session-fingerprint proofs unless the recorded endpoint and every matching current or legacy title are confirmed gone.
 Real test cleanup uses only an isolated non-`firstmate` session and the guard in `tests/zellij-test-safety.sh`; it never calls all-session deletion commands.
 
 ## Active limits
