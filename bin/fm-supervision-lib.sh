@@ -144,8 +144,8 @@ fm_supervision_log_check_failure() {  # <script> <status> <stderr-file>
 fm_supervision_run_due_checks() {
   local state=$1 interval=$2 timeout_s=$3 log_errors=${4:-false}
   local last_check="$state/.last-check" lock="$state/.last-check.lock" c out err_file out_file
-  local root=${FM_ROOT:-} home=${FM_HOME:-} id is_pr_poll provider url host path number custom_snapshot
-  local rejected_checks= matched_check=0
+  local root=${FM_ROOT:-} home=${FM_HOME:-} id= is_pr_poll provider url host path number custom_snapshot
+  local rejected_checks= matched_check=0 actionable_script= actionable_output= actionable_id= actionable_is_pr=0
   local old_queue=${FM_WAKE_QUEUE-} old_queue_lock=${FM_WAKE_QUEUE_LOCK-} had_queue=0 had_queue_lock=0 append_rc
   FM_SUP_CHECK_REASON=
   FM_SUP_CHECK_SCRIPT=
@@ -222,40 +222,47 @@ fm_supervision_run_due_checks() {
     fi
     out=$(cat "$out_file" 2>/dev/null || true)
     if [ -n "$out" ]; then
-      # shellcheck disable=SC2034 # Read by callers after this function returns 0.
-      FM_SUP_CHECK_SCRIPT=$c
-      # shellcheck disable=SC2034 # Read by callers after this function returns 0.
-      FM_SUP_CHECK_OUTPUT=$out
-      if [ -n "$rejected_checks" ]; then
-        FM_SUP_CHECK_OUTPUT="$FM_SUP_CHECK_OUTPUT
-rejected unauthenticated state checks:$rejected_checks"
+      if [ -z "$actionable_script" ]; then
+        actionable_script=$c
+        actionable_output=$out
+        actionable_id=$id
+        actionable_is_pr=$is_pr_poll
       fi
-      FM_SUP_CHECK_REASON="check: $c: $FM_SUP_CHECK_OUTPUT"
-      fm_custom_check_snapshot_cleanup
-      [ "${FM_WAKE_QUEUE+x}" ] && had_queue=1
-      [ "${FM_WAKE_QUEUE_LOCK+x}" ] && had_queue_lock=1
-      FM_WAKE_QUEUE="$state/.wake-queue"
-      FM_WAKE_QUEUE_LOCK="$state/.wake-queue.lock"
-      fm_wake_append check "$c" "$FM_SUP_CHECK_REASON"
-      append_rc=$?
-      if [ "$had_queue" -eq 1 ]; then FM_WAKE_QUEUE=$old_queue; else unset FM_WAKE_QUEUE; fi
-      if [ "$had_queue_lock" -eq 1 ]; then FM_WAKE_QUEUE_LOCK=$old_queue_lock; else unset FM_WAKE_QUEUE_LOCK; fi
-      if [ "$append_rc" -eq 0 ] && [ "$is_pr_poll" -eq 1 ] && [ "$out" = merged ]; then
-        if fm_pr_poll_retirement_publish "$state" "$id" "$root/bin/fm-pr-poll.sh" "$out"; then
-          fm_pr_poll_retirement_recover_one "$state" "$id" "$root/bin/fm-pr-poll.sh" || true
-        fi
-      fi
-      rm -f "$err_file" "$out_file"
-      [ "$append_rc" -ne 0 ] || touch "$last_check"
-      fm_lock_release "$lock"
-      [ "$append_rc" -eq 0 ] || return 2
-      return 0
-    fi
-    if [ "$FM_SUP_CHECK_STATUS" -ne 0 ] && [ "$log_errors" = true ]; then
+    elif [ "$FM_SUP_CHECK_STATUS" -ne 0 ] && [ "$log_errors" = true ]; then
       fm_supervision_log_check_failure "$c" "$FM_SUP_CHECK_STATUS" "$err_file"
     fi
     fm_custom_check_snapshot_cleanup
   done
+
+  if [ -n "$actionable_script" ]; then
+    # shellcheck disable=SC2034 # Read by callers after this function returns 0.
+    FM_SUP_CHECK_SCRIPT=$actionable_script
+    # shellcheck disable=SC2034 # Read by callers after this function returns 0.
+    FM_SUP_CHECK_OUTPUT=$actionable_output
+    if [ -n "$rejected_checks" ]; then
+      FM_SUP_CHECK_OUTPUT="$FM_SUP_CHECK_OUTPUT
+rejected unauthenticated state checks:$rejected_checks"
+    fi
+    FM_SUP_CHECK_REASON="check: $actionable_script: $FM_SUP_CHECK_OUTPUT"
+    [ "${FM_WAKE_QUEUE+x}" ] && had_queue=1
+    [ "${FM_WAKE_QUEUE_LOCK+x}" ] && had_queue_lock=1
+    FM_WAKE_QUEUE="$state/.wake-queue"
+    FM_WAKE_QUEUE_LOCK="$state/.wake-queue.lock"
+    fm_wake_append check "$actionable_script" "$FM_SUP_CHECK_REASON"
+    append_rc=$?
+    if [ "$had_queue" -eq 1 ]; then FM_WAKE_QUEUE=$old_queue; else unset FM_WAKE_QUEUE; fi
+    if [ "$had_queue_lock" -eq 1 ]; then FM_WAKE_QUEUE_LOCK=$old_queue_lock; else unset FM_WAKE_QUEUE_LOCK; fi
+    if [ "$append_rc" -eq 0 ] && [ "$actionable_is_pr" -eq 1 ] && [ "$actionable_output" = merged ]; then
+      if fm_pr_poll_retirement_publish "$state" "$actionable_id" "$root/bin/fm-pr-poll.sh" "$actionable_output"; then
+        fm_pr_poll_retirement_recover_one "$state" "$actionable_id" "$root/bin/fm-pr-poll.sh" || true
+      fi
+    fi
+    rm -f "$err_file" "$out_file"
+    [ "$append_rc" -ne 0 ] || touch "$last_check"
+    fm_lock_release "$lock"
+    [ "$append_rc" -eq 0 ] || return 2
+    return 0
+  fi
 
   if [ -n "$rejected_checks" ]; then
     # shellcheck disable=SC2034 # Read by callers after this function returns 0.

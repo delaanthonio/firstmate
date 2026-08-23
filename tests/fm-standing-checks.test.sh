@@ -194,6 +194,27 @@ test_leading_dangling_check_does_not_hide_valid_due_check() {
   pass "fm_supervision_run_due_checks: dangling entries do not hide valid due checks"
 }
 
+test_trailing_dangling_check_is_reported_after_valid_due_check() {
+  local state="$TMP_ROOT/valid-before-dangling/state" count rc
+  mkdir -p "$state"
+  use_state_home "$state"
+  count="$state/count"
+  counting_check "$state/aaa.check.sh" "$count" "ready"
+  ln -s "$state/missing-check" "$state/zzz.check.sh"
+  fm_supervision_run_due_checks "$state" 300 5 false; rc=$?
+  expect_code 0 "$rc" "valid due check should remain actionable before a trailing dangling entry"
+  [ "$(cat "$count")" = 1 ] || fail "valid due check did not execute exactly once before the trailing dangling entry"
+  assert_contains "$FM_SUP_CHECK_OUTPUT" "ready" \
+    "valid due check output was lost while classifying a trailing dangling entry"
+  assert_contains "$FM_SUP_CHECK_OUTPUT" "rejected unauthenticated state checks: $state/zzz.check.sh" \
+    "trailing dangling entry was not reported with the valid due check"
+  assert_grep "check: $state/aaa.check.sh: ready" "$state/.wake-queue" \
+    "valid due check wake was not durably queued before a trailing dangling entry"
+  assert_grep "rejected unauthenticated state checks: $state/zzz.check.sh" "$state/.wake-queue" \
+    "trailing dangling entry was not durably reported with the valid due check"
+  pass "fm_supervision_run_due_checks: trailing dangling entries are reported with valid due checks"
+}
+
 test_merged_pr_retirement_waits_for_durable_wake() {
   local state="$TMP_ROOT/merged-wake-failure/state" rc
   mkdir -p "$state"
@@ -247,5 +268,6 @@ test_timeout_check_fails_open_and_stamps_schedule
 test_concurrent_runner_lock_prevents_double_run
 test_unauthenticated_check_is_rejected_without_execution
 test_leading_dangling_check_does_not_hide_valid_due_check
+test_trailing_dangling_check_is_reported_after_valid_due_check
 test_merged_pr_retirement_waits_for_durable_wake
 test_rejected_check_append_failure_keeps_cadence_due
