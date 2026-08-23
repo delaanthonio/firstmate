@@ -1,14 +1,9 @@
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { encodeFirstmateOperationalInput } from "./lib/fm-operational-input.js";
 
 const COORDINATOR_KEY = "__firstmateOpenCodeWatchArm";
-// 35s on Windows so the budget stays above arm's MSYS confirm default (30s in
-// bin/fm-watch-arm.sh): a slow but successful Git Bash cold start must not be
-// SIGTERMed mid-confirmation. Conditioned on win32 so other platforms keep 12s.
-const ARM_READY_TIMEOUT_DEFAULT_MS = process.platform === "win32" ? 35000 : 12000;
-const ARM_READY_TIMEOUT_MS = positiveInteger("FM_OPENCODE_ARM_READY_TIMEOUT_MS", ARM_READY_TIMEOUT_DEFAULT_MS);
 const ARM_RETIRE_TIMEOUT_MS = positiveInteger("FM_WATCH_ARM_RETIRE_TIMEOUT_MS", 1000);
 const REARM_RETRY_BASE_MS = positiveInteger("FM_WATCH_REARM_RETRY_BASE_MS", 250);
 const REARM_RETRY_MAX_MS = positiveInteger("FM_WATCH_REARM_RETRY_MAX_MS", 4000);
@@ -30,18 +25,60 @@ function positiveInteger(name, fallback) {
   return Math.floor(value);
 }
 
+function selectedArmConfirmSeconds(configPath, platform) {
+  let raw = process.env.FM_ARM_CONFIRM_TIMEOUT;
+  if (!raw) {
+    const path = `${configPath}/arm-confirm-timeout`;
+    try {
+      const stat = lstatSync(path);
+      if (!stat.isFile() || stat.isSymbolicLink()) return null;
+      raw = readFileSync(path, "utf8");
+    } catch (error) {
+      if (error?.code !== "ENOENT") return null;
+      return platform === "win32" ? 30 : 10;
+    }
+  }
+  if (!/^[0-9]{1,10}\n?$/.test(raw)) return null;
+  const value = Number(raw.trimEnd());
+  if (!Number.isSafeInteger(value) || value > 2147483647) return null;
+  return value;
+}
+
+export function openCodeArmReadyTimeoutMs(configPath, platform = process.platform) {
+  const configured = positiveInteger("FM_OPENCODE_ARM_READY_TIMEOUT_MS", platform === "win32" ? 36000 : 16000);
+  const confirmSeconds = selectedArmConfirmSeconds(configPath, platform);
+  return confirmSeconds === null ? configured : Math.max(configured, (confirmSeconds + 6) * 1000);
+}
+
+function startDeadlineTimer(timeoutMs, onTimeout) {
+  const deadline = Date.now() + timeoutMs;
+  let timer = null;
+  const schedule = () => {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      onTimeout();
+      return;
+    }
+    timer = setTimeout(schedule, Math.min(remaining, 2147483647));
+    timer.unref();
+  };
+  schedule();
+  return () => {
+    if (timer) clearTimeout(timer);
+  };
+}
+
 function setArmStatus(status) {
   armStatus = status;
 }
 
-function waitForArmReady(armChild) {
+function waitForArmReady(armChild, configPath) {
   const readiness = armReadiness.get(armChild);
   if (!readiness) return Promise.resolve("failed");
   return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve("timeout"), ARM_READY_TIMEOUT_MS);
-    timer.unref();
+    const cancelTimeout = startDeadlineTimer(openCodeArmReadyTimeoutMs(configPath), () => resolve("timeout"));
     void readiness.then((status) => {
-      clearTimeout(timer);
+      cancelTimeout();
       resolve(status);
     });
   });
@@ -426,7 +463,7 @@ async function ensureArm(paths, sessionID, client, predecessorArmPid = "", inclu
   if (!armChild) {
     return armAttempt(launchResult.status, null, includeArmChild);
   }
-  return armAttempt(await waitForArmReady(armChild), armChild, includeArmChild);
+  return armAttempt(await waitForArmReady(armChild, paths.config), armChild, includeArmChild);
 }
 
 export const FmPrimaryWatchArm = async ({ client, directory, worktree }) => {

@@ -10,7 +10,7 @@
 // callbacks from a prior generation are no-ops against the active replacement.
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
@@ -88,13 +88,6 @@ const extensionVersion = `sha256:${createHash("sha256").update(readFileSync(exte
 const retryBaseMs = positiveInteger("FM_WATCH_REARM_RETRY_BASE_MS", 250);
 const retryMaxMs = positiveInteger("FM_WATCH_REARM_RETRY_MAX_MS", 4000);
 const retryLimit = positiveInteger("FM_WATCH_REARM_RETRY_LIMIT", 5);
-// 35s on Windows so the budget stays above arm's MSYS confirm default (30s in
-// bin/fm-watch-arm.sh): a slow but successful Git Bash cold start must not be
-// SIGTERMed mid-confirmation. Conditioned on win32 so other platforms keep 12s.
-const armReadyTimeoutMs = positiveInteger(
-  "FM_PI_ARM_READY_TIMEOUT_MS",
-  process.platform === "win32" ? 35000 : 12000,
-);
 const armRetireTimeoutMs = positiveInteger("FM_WATCH_ARM_RETIRE_TIMEOUT_MS", 1000);
 const repairOnlyHint = "call fm_watch_arm_pi again only after a later notification says the cycle is missing, failed, or unhealthy";
 const shuttingDownMessage = "watcher: not armed - Pi session is shutting down";
@@ -109,6 +102,49 @@ function positiveInteger(name: string, fallback: number): number {
   const value = Number(process.env[name]);
   if (!Number.isFinite(value) || value <= 0) return fallback;
   return Math.floor(value);
+}
+
+function selectedArmConfirmSeconds(configPath: string, platform: NodeJS.Platform): number | null {
+  let raw = process.env.FM_ARM_CONFIRM_TIMEOUT;
+  if (!raw) {
+    const path = `${configPath}/arm-confirm-timeout`;
+    try {
+      const stat = lstatSync(path);
+      if (!stat.isFile() || stat.isSymbolicLink()) return null;
+      raw = readFileSync(path, "utf8");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") return null;
+      return platform === "win32" ? 30 : 10;
+    }
+  }
+  if (!/^[0-9]{1,10}\n?$/.test(raw)) return null;
+  const value = Number(raw.trimEnd());
+  if (!Number.isSafeInteger(value) || value > 2147483647) return null;
+  return value;
+}
+
+export function piArmReadyTimeoutMs(configPath = config, platform: NodeJS.Platform = process.platform): number {
+  const configured = positiveInteger("FM_PI_ARM_READY_TIMEOUT_MS", platform === "win32" ? 36000 : 16000);
+  const confirmSeconds = selectedArmConfirmSeconds(configPath, platform);
+  return confirmSeconds === null ? configured : Math.max(configured, (confirmSeconds + 6) * 1000);
+}
+
+function startDeadlineTimer(timeoutMs: number, onTimeout: () => void): () => void {
+  const deadline = Date.now() + timeoutMs;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const schedule = (): void => {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      onTimeout();
+      return;
+    }
+    timer = setTimeout(schedule, Math.min(remaining, 2147483647));
+    timer.unref();
+  };
+  schedule();
+  return () => {
+    if (timer) clearTimeout(timer);
+  };
 }
 
 function parentPid(pid: string): string {
@@ -283,10 +319,9 @@ export default function (pi: ExtensionAPI) {
     const readiness = armReadiness.get(armChild);
     if (!readiness) return Promise.resolve(false);
     return new Promise((resolveReady) => {
-      const timer = setTimeout(() => resolveReady(false), armReadyTimeoutMs);
-      timer.unref();
+      const cancelTimeout = startDeadlineTimer(piArmReadyTimeoutMs(), () => resolveReady(false));
       void readiness.then((ready) => {
-        clearTimeout(timer);
+        cancelTimeout();
         resolveReady(ready);
       });
     });
