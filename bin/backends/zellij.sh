@@ -364,8 +364,8 @@ fm_backend_zellij_migrate_session_fingerprint() {  # <session> <pane-id> <meta> 
   printf '%s' "$fingerprint"
 }
 
-fm_backend_zellij_legacy_ownership_proven() {  # <session> <tab-id> <label> [allow-migration]
-  local session=$1 tab_id=$2 label=$3 allow_migration=${4:-1} id state meta sidecar backend endpoint meta_session meta_tab meta_pane window recorded_fingerprint
+fm_backend_zellij_recorded_ownership_proven() {  # <session> <tab-id> <label> [allow-migration] [require-stable]
+  local session=$1 tab_id=$2 label=$3 allow_migration=${4:-1} require_stable=${5:-0} id state meta sidecar backend endpoint meta_session meta_tab meta_pane window recorded_fingerprint
   case "$label" in fm-*) id=${label#fm-} ;; *) id=$label ;; esac
   case "$id" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac
   state=${FM_STATE_OVERRIDE:-$FM_HOME/state}
@@ -389,6 +389,8 @@ fm_backend_zellij_legacy_ownership_proven() {  # <session> <tab-id> <label> [all
     sidecar="$state/$id.zellij-session-fingerprint"
     if [ -f "$sidecar" ] && [ ! -L "$sidecar" ]; then
       recorded_fingerprint=$(fm_backend_zellij_sidecar_fingerprint "$session" "$sidecar") || return 1
+    elif [ "$require_stable" = 1 ]; then
+      return 1
     elif [ "$allow_migration" != 1 ]; then
       fm_backend_zellij_preupgrade_ownership_proven "$session" "$meta_pane" "$meta"
       return $?
@@ -397,6 +399,34 @@ fm_backend_zellij_legacy_ownership_proven() {  # <session> <tab-id> <label> [all
     fi
   fi
   fm_backend_zellij_session_fingerprint_matches "$session" "$recorded_fingerprint"
+}
+
+fm_backend_zellij_unpublished_ownership_proven() {  # <session> <tab-id> <label>
+  local session=$1 tab_id=$2 label=$3 id state meta
+  case "$label" in fm-*) id=${label#fm-} ;; *) id=$label ;; esac
+  case "$id" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac
+  state=${FM_STATE_OVERRIDE:-$FM_HOME/state}
+  meta="$state/$id.meta"
+  [ ! -e "$meta" ] && [ ! -L "$meta" ] || return 1
+  [ "${FM_BACKEND_ZELLIJ_UNPUBLISHED_SESSION:-}" = "$session" ] \
+    && [ "${FM_BACKEND_ZELLIJ_UNPUBLISHED_TAB_ID:-}" = "$tab_id" ] \
+    && [ "${FM_BACKEND_ZELLIJ_UNPUBLISHED_PANE_ID:-}" = "${FM_BACKEND_ZELLIJ_PANE:-}" ] \
+    && [ "${FM_BACKEND_ZELLIJ_UNPUBLISHED_LABEL:-}" = "$label" ] \
+    && fm_backend_zellij_session_fingerprint_matches \
+      "$session" "${FM_BACKEND_ZELLIJ_UNPUBLISHED_FINGERPRINT:-}"
+}
+
+fm_backend_zellij_ownership_proven() {  # <session> <tab-id> <label> [allow-migration] [require-stable]
+  local session=$1 tab_id=$2 label=$3 allow_migration=${4:-1} require_stable=${5:-0}
+  if fm_backend_zellij_recorded_ownership_proven \
+      "$session" "$tab_id" "$label" "$allow_migration" "$require_stable"; then
+    return 0
+  fi
+  fm_backend_zellij_unpublished_ownership_proven "$session" "$tab_id" "$label"
+}
+
+fm_backend_zellij_legacy_ownership_proven() {  # <session> <tab-id> <label> [allow-migration]
+  fm_backend_zellij_ownership_proven "$@"
 }
 
 # fm_backend_zellij_tool_check: refuse loudly if zellij or jq is missing.
@@ -539,15 +569,18 @@ fm_backend_zellij_tab_matches_label() {  # <session> <tab_id> <label> [allow-mig
   scoped=$(fm_backend_zellij_scoped_title "$label") || return 1
   legacy_scoped=$(fm_backend_zellij_legacy_scoped_title "$label") || return 1
   tabs=$(fm_backend_zellij_cli "$session" action list-tabs --json 2>/dev/null)
-  printf '%s' "$tabs" | jq -e --argjson t "$tab_id" --arg want "$scoped" \
-    '[.[]? | select(.tab_id == $t and .name == $want)] | length > 0' >/dev/null 2>&1 && return 0
+  if printf '%s' "$tabs" | jq -e --argjson t "$tab_id" --arg want "$scoped" \
+      '[.[]? | select(.tab_id == $t and .name == $want)] | length > 0' >/dev/null 2>&1; then
+    fm_backend_zellij_ownership_proven "$session" "$tab_id" "$label" "$allow_migration" 1
+    return $?
+  fi
   for candidate in "$legacy_scoped" "$label"; do
     [ "$candidate" != "$scoped" ] || continue
     printf '%s' "$tabs" | jq -e --argjson t "$tab_id" --arg want "$candidate" \
       '[.[]? | select(.tab_id == $t and .name == $want)] | length > 0' >/dev/null 2>&1 || continue
     count=$(printf '%s' "$tabs" | jq -r --arg want "$candidate" '[.[]? | select(.name == $want)] | length' 2>/dev/null)
     [ "$count" = "1" ] || return 1
-    fm_backend_zellij_legacy_ownership_proven "$session" "$tab_id" "$label" "$allow_migration"
+    fm_backend_zellij_ownership_proven "$session" "$tab_id" "$label" "$allow_migration"
     return $?
   done
   return 1

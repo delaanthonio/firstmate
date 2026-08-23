@@ -198,6 +198,33 @@ SH
   printf '%s\n' "$fb"
 }
 
+start_zellij_incarnation_fixture() {  # <token>
+  local token=$1 socket
+  command -v python3 >/dev/null 2>&1 || return 1
+  ZELLIJ_FIXTURE_ROOT=$(mktemp -d /tmp/fmz-incarnation.XXXXXX) || return 1
+  socket="$ZELLIJ_FIXTURE_ROOT/contract_version_1/firstmate"
+  mkdir -p "${socket%/*}/.firstmate-incarnations"
+  python3 -c 'import socket,sys,time; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(); time.sleep(30)' "$socket" &
+  ZELLIJ_FIXTURE_PID=$!
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    [ -S "$socket" ] && break
+    sleep 0.1
+  done
+  if [ ! -S "$socket" ]; then
+    stop_zellij_incarnation_fixture
+    return 1
+  fi
+  ln "$socket" "${socket%/*}/.firstmate-incarnations/$token"
+}
+
+stop_zellij_incarnation_fixture() {
+  [ -z "${ZELLIJ_FIXTURE_PID:-}" ] || kill "$ZELLIJ_FIXTURE_PID" 2>/dev/null || true
+  [ -z "${ZELLIJ_FIXTURE_PID:-}" ] || wait "$ZELLIJ_FIXTURE_PID" 2>/dev/null || true
+  [ -z "${ZELLIJ_FIXTURE_ROOT:-}" ] || rm -rf -- "$ZELLIJ_FIXTURE_ROOT"
+  ZELLIJ_FIXTURE_PID=
+  ZELLIJ_FIXTURE_ROOT=
+}
+
 # --- version_check / tool_check ----------------------------------------------
 
 test_version_check_accepts_current_version() {
@@ -961,20 +988,59 @@ test_send_text_line_reports_unsafe_input_when_cleanup_fails() {
 }
 
 test_expected_label_allows_matching_task_tab() {
-  local dir fb
+  local dir state fb token
   dir="$TMP_ROOT/label-match"; mkdir -p "$dir/responses"
+  state="$dir/state"
+  token=fmz-11111111111111111111111111111111
+  zellij_write_legacy_owner_meta "$state" label 3 7 200 "$token"
   zellij_pane_response "$dir" 1 7 3
   zellij_tab_response "$dir" 2 3 "$(zellij_expected_scoped_title fm-label)"
   fb=$(make_zellij_fakebin "$dir")
-  PATH="$fb:$PATH" FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" \
+  PATH="$fb:$PATH" FM_STATE_OVERRIDE="$state" FM_TEST_CURRENT_FINGERPRINT="$token" FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" \
     FM_ZELLIJ_SESSION_LIST="firstmate" \
-    bash -c '. "$0/bin/backends/zellij.sh"; fm_backend_zellij_send_key firstmate:7 Escape fm-label' "$ROOT"
+    bash -c '. "$0/bin/backends/zellij.sh"; fm_backend_zellij_session_fingerprint_matches() { [ "$2" = "$FM_TEST_CURRENT_FINGERPRINT" ]; }; fm_backend_zellij_send_key firstmate:7 Escape fm-label' "$ROOT"
   expect_code 0 $? "send_key should succeed when the pane belongs to the expected fm-id tab"
   zellij_assert_call_order "$dir/log" $'\x1f''list-panes'$'\x1f''--json' $'\x1f''list-tabs'$'\x1f''--json' \
     "expected-label readiness did not resolve the pane's owning tab before label verification"
   zellij_assert_call_order "$dir/log" $'\x1f''list-tabs'$'\x1f''--json' $'\x1f''send-keys' \
     "send_key ran before verifying the owning tab label"
   pass "fm_backend_zellij_target_ready: expected labels allow matching fm-<id> tabs"
+}
+
+test_expected_label_allows_fresh_unpublished_task_tab() {
+  local dir fb token
+  dir="$TMP_ROOT/label-fresh-unpublished"; mkdir -p "$dir/responses" "$dir/state"
+  token=fmz-22222222222222222222222222222222
+  zellij_pane_response "$dir" 1 7 3
+  zellij_tab_response "$dir" 2 3 "$(zellij_expected_scoped_title fm-fresh)"
+  fb=$(make_zellij_fakebin "$dir")
+  PATH="$fb:$PATH" FM_STATE_OVERRIDE="$dir/state" FM_TEST_CURRENT_FINGERPRINT="$token" \
+    FM_BACKEND_ZELLIJ_UNPUBLISHED_SESSION=firstmate FM_BACKEND_ZELLIJ_UNPUBLISHED_TAB_ID=3 \
+    FM_BACKEND_ZELLIJ_UNPUBLISHED_PANE_ID=7 FM_BACKEND_ZELLIJ_UNPUBLISHED_LABEL=fm-fresh \
+    FM_BACKEND_ZELLIJ_UNPUBLISHED_FINGERPRINT="$token" \
+    FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" FM_ZELLIJ_SESSION_LIST=firstmate \
+    bash -c '. "$0/bin/backends/zellij.sh"; fm_backend_zellij_session_fingerprint_matches() { [ "$2" = "$FM_TEST_CURRENT_FINGERPRINT" ]; }; fm_backend_zellij_send_key firstmate:7 Escape fm-fresh' "$ROOT"
+  expect_code 0 $? "fresh unpublished task should use its exact session-incarnation proof"
+  assert_contains "$(cat "$dir/log")" $'\x1f''send-keys' \
+    "fresh unpublished proof did not authorize its exact new task tab"
+  pass "fm_backend_zellij_target_ready: fresh unpublished tabs require exact incarnation proof"
+}
+
+test_expected_label_refuses_recreated_session_current_title() {
+  local dir state fb status
+  dir="$TMP_ROOT/label-recreated-current"; state="$dir/state"; mkdir -p "$dir/responses"
+  zellij_write_legacy_owner_meta "$state" reused 3 7 200 fmz-11111111111111111111111111111111
+  zellij_pane_response "$dir" 1 7 3
+  zellij_tab_response "$dir" 2 3 "$(zellij_expected_scoped_title fm-reused)"
+  fb=$(make_zellij_fakebin "$dir")
+  PATH="$fb:$PATH" FM_STATE_OVERRIDE="$state" FM_TEST_CURRENT_FINGERPRINT=fmz-99999999999999999999999999999999 \
+    FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" FM_ZELLIJ_SESSION_LIST=firstmate \
+    bash -c '. "$0/bin/backends/zellij.sh"; fm_backend_zellij_session_fingerprint_matches() { [ "$2" = "$FM_TEST_CURRENT_FINGERPRINT" ]; }; fm_backend_zellij_send_key firstmate:7 Escape fm-reused' "$ROOT"
+  status=$?
+  [ "$status" -ne 0 ] || fail "recreated session reused current title and ids without recorded incarnation ownership"
+  assert_not_contains "$(cat "$dir/log")" $'\x1f''send-keys' \
+    "recreated session current-title reuse reached the replacement endpoint"
+  pass "fm_backend_zellij_target_ready: recreated sessions cannot reuse current titles and ids"
 }
 
 test_expected_label_rejects_reused_pane_id() {
@@ -1083,15 +1149,18 @@ test_kill_falls_back_to_close_pane_when_tab_lookup_empty() {
 }
 
 test_kill_closes_recorded_tab_when_pane_already_gone() {
-  local dir fb
+  local dir state fb token
   dir="$TMP_ROOT/kill-recorded-tab"; mkdir -p "$dir/responses"
+  state="$dir/state"
+  token=fmz-33333333333333333333333333333333
+  zellij_write_legacy_owner_meta "$state" zghost 3 7 200 "$token"
   printf '[]\n' > "$dir/responses/1.out"
   printf '[{"tab_id":3,"name":"%s"}]\n' "$(zellij_expected_scoped_title fm-zghost)" > "$dir/responses/2.out"
   printf '[]\n' > "$dir/responses/4.out"
   fb=$(make_zellij_fakebin "$dir")
-  PATH="$fb:$PATH" FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" \
+  PATH="$fb:$PATH" FM_STATE_OVERRIDE="$state" FM_TEST_CURRENT_FINGERPRINT="$token" FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" \
     FM_ZELLIJ_SESSION_LIST="firstmate" \
-    bash -c '. "$0/bin/backends/zellij.sh"; fm_backend_zellij_kill firstmate:7 3 fm-zghost' "$ROOT"
+    bash -c '. "$0/bin/backends/zellij.sh"; fm_backend_zellij_session_fingerprint_matches() { [ "$2" = "$FM_TEST_CURRENT_FINGERPRINT" ]; }; fm_backend_zellij_kill firstmate:7 3 fm-zghost' "$ROOT"
   expect_code 0 $? "kill must stay best-effort even when only the recorded tab id is usable"
   zellij_assert_call_order "$dir/log" $'\x1f''list-panes'$'\x1f''--json' $'\x1f''list-tabs'$'\x1f''--json' \
     "kill did not verify the recorded tab id by label before closing it"
@@ -1149,8 +1218,10 @@ test_endpoint_confirmation_refuses_live_resolved_pane_with_stale_tab_id() {
 }
 
 test_teardown_passes_recorded_tab_id_to_zellij_kill() {
-  local dir state data config project fb out status
+  local dir state data config project fb out status token
   dir="$TMP_ROOT/teardown-zellij-ghost"; state="$dir/state"; data="$dir/data"; config="$dir/config"; project="$dir/project"
+  token=fmz-55555555555555555555555555555555
+  start_zellij_incarnation_fixture "$token" || { echo "skip: python3 not found (required for zellij socket lifecycle fixture)"; return; }
   mkdir -p "$state" "$data/zghost" "$config" "$project" "$dir/responses"
   printf 'report\n' > "$data/zghost/report.md"
   fm_write_meta "$state/zghost.meta" \
@@ -1160,6 +1231,7 @@ test_teardown_passes_recorded_tab_id_to_zellij_kill() {
     "zellij_session=firstmate" \
     "zellij_tab_id=3" \
     "zellij_pane_id=7" \
+    "zellij_session_fingerprint=$token" \
     "worktree=$dir/missing-worktree" \
     "project=$project" \
     "kind=scout" \
@@ -1174,9 +1246,11 @@ test_teardown_passes_recorded_tab_id_to_zellij_kill() {
   printf '[]\n' > "$dir/responses/8.out"
   fb=$(make_zellij_fakebin "$dir")
   out=$( PATH="$fb:$PATH" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$data" FM_CONFIG_OVERRIDE="$config" \
+    ZELLIJ_SOCKET_DIR="$ZELLIJ_FIXTURE_ROOT" \
     FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" FM_ZELLIJ_SESSION_LIST="firstmate" \
     "$ROOT/bin/fm-teardown.sh" zghost 2>&1 )
   status=$?
+  stop_zellij_incarnation_fixture
   expect_code 0 "$status" "fm-teardown should succeed for a zellij scout whose worktree is already gone: $out"
   zellij_assert_call_order "$dir/log" $'\x1f''list-panes'$'\x1f''--json' $'\x1f''list-tabs'$'\x1f''--json' \
     "fm-teardown did not verify the recorded zellij_tab_id against the task label"
@@ -1319,7 +1393,7 @@ test_forced_secondmate_teardown_kills_zellij_children_with_child_home_tag() {
 }
 
 test_forced_secondmate_teardown_retains_unconfirmed_zellij_child() {
-  local dir state data config home project child_wt fb out status child_title parent_title
+  local dir state data config home project child_wt fb out status child_title
   dir="$TMP_ROOT/teardown-zellij-unconfirmed-child"; state="$dir/state"; data="$dir/data"; config="$dir/config"; home="$dir/secondmate-home"; project="$dir/project"
   child_wt="$dir/child-worktree"
   mkdir -p "$state" "$data" "$config" "$home/state" "$home/data" "$home/config" "$home/projects" "$project" "$dir/responses"
@@ -1331,9 +1405,8 @@ test_forced_secondmate_teardown_retains_unconfirmed_zellij_child() {
   fm_write_meta "$state/smz.meta" "window=firstmate:99" "endpoint_task_id=smz" "backend=zellij" "zellij_session=firstmate" "zellij_tab_id=99" "zellij_pane_id=99" "worktree=$home" "project=$home" "kind=secondmate" "mode=secondmate" "home=$home"
   fm_write_meta "$home/state/childz.meta" "window=firstmate:7" "endpoint_task_id=childz" "backend=zellij" "zellij_session=firstmate" "zellij_tab_id=4" "zellij_pane_id=7" "worktree=$child_wt" "project=$project" "kind=scout"
   child_title=fm-childz
-  parent_title=$(zellij_expected_scoped_title fm-smz "$ROOT" "$ROOT")
-  zellij_pane_response "$dir" 1 99 99
-  zellij_tab_response "$dir" 2 99 "$parent_title"
+  printf '[]\n' > "$dir/responses/1.out"
+  printf '[]\n' > "$dir/responses/2.out"
   zellij_pane_response "$dir" 3 7 4
   zellij_tab_response "$dir" 4 4 "$child_title"
   fb=$(make_zellij_fakebin "$dir")
@@ -1692,10 +1765,15 @@ SH
 }
 
 test_scripts_verify_label_for_fm_targets() {
-  local dir state fb neutral out
+  local dir state fb neutral out token
   dir="$TMP_ROOT/script-fm-target-label"; state="$dir/state"; mkdir -p "$state" "$dir/responses"
   neutral="$dir/neutral-root"; mkdir -p "$neutral"
-  fm_write_meta "$state/zlabel.meta" "window=firstmate:7" "backend=zellij"
+  token=fmz-66666666666666666666666666666666
+  start_zellij_incarnation_fixture "$token" || { echo "skip: python3 not found (required for zellij socket lifecycle fixture)"; return; }
+  fm_write_meta "$state/zlabel.meta" \
+    "window=firstmate:7" "endpoint_task_id=zlabel" "backend=zellij" \
+    "zellij_session=firstmate" "zellij_tab_id=3" "zellij_pane_id=7" \
+    "zellij_session_fingerprint=$token"
   touch "$state/.last-watcher-beat"
   zellij_pane_response "$dir" 1 7 3
   zellij_tab_response "$dir" 2 3 "$(zellij_expected_scoped_title fm-zlabel "$neutral")"
@@ -1703,8 +1781,10 @@ test_scripts_verify_label_for_fm_targets() {
   fb=$(make_zellij_fakebin "$dir")
 
   out=$( PATH="$fb:$PATH" FM_ROOT_OVERRIDE="$neutral" FM_STATE_OVERRIDE="$state" \
+    ZELLIJ_SOCKET_DIR="$ZELLIJ_FIXTURE_ROOT" \
     FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" FM_ZELLIJ_SESSION_LIST="firstmate" \
     "$ROOT/bin/fm-peek.sh" fm-zlabel 5 2>/dev/null )
+  stop_zellij_incarnation_fixture
   [ "$out" = "captured through fm-id" ] || fail "fm-peek did not capture through zellij for an fm-id target with a matching tab label, got '$out'"
   zellij_assert_call_order "$dir/log" $'\x1f''list-tabs'$'\x1f''--json' $'\x1f''dump-screen' \
     "fm-peek did not verify the fm-id tab label before capture"
@@ -1782,6 +1862,8 @@ test_send_literal_uses_paste_separator_for_option_shaped_text
 test_send_text_line_clears_partial_input_when_enter_fails
 test_send_text_line_reports_unsafe_input_when_cleanup_fails
 test_expected_label_allows_matching_task_tab
+test_expected_label_allows_fresh_unpublished_task_tab
+test_expected_label_refuses_recreated_session_current_title
 test_expected_label_rejects_reused_pane_id
 test_current_path_probes_with_marker_and_ignores_prompt_paths
 test_current_path_ignores_tilde_prefixed_banner_lines

@@ -173,6 +173,23 @@ SH
   pass "fm_supervision_run_due_checks: unauthenticated custom checks are rejected without execution"
 }
 
+test_leading_dangling_check_does_not_hide_valid_due_check() {
+  local state="$TMP_ROOT/dangling-before-valid/state" count rc
+  mkdir -p "$state"
+  use_state_home "$state"
+  count="$state/count"
+  ln -s "$state/missing-check" "$state/aaa.check.sh"
+  counting_check "$state/zzz.check.sh" "$count" "ready"
+  fm_supervision_run_due_checks "$state" 300 5 false; rc=$?
+  expect_code 0 "$rc" "valid due check should remain actionable after a leading dangling entry"
+  [ "$(cat "$count")" = 1 ] || fail "leading dangling entry prevented the valid due check from executing"
+  assert_contains "$FM_SUP_CHECK_OUTPUT" "ready" \
+    "valid due check output was lost after classifying a leading dangling entry"
+  assert_grep "check: $state/zzz.check.sh: ready" "$state/.wake-queue" \
+    "valid due check wake was not durably queued after a leading dangling entry"
+  pass "fm_supervision_run_due_checks: dangling entries do not hide valid due checks"
+}
+
 test_merged_pr_retirement_waits_for_durable_wake() {
   local state="$TMP_ROOT/merged-wake-failure/state" rc
   mkdir -p "$state"
@@ -225,5 +242,6 @@ test_erroring_check_fails_open_and_logs_when_requested
 test_timeout_check_fails_open_and_stamps_schedule
 test_concurrent_runner_lock_prevents_double_run
 test_unauthenticated_check_is_rejected_without_execution
+test_leading_dangling_check_does_not_hide_valid_due_check
 test_merged_pr_retirement_waits_for_durable_wake
 test_rejected_check_append_failure_keeps_cadence_due

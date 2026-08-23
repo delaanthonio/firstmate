@@ -145,7 +145,7 @@ fm_supervision_run_due_checks() {
   local state=$1 interval=$2 timeout_s=$3 log_errors=${4:-false}
   local last_check="$state/.last-check" lock="$state/.last-check.lock" c out err_file out_file
   local root=${FM_ROOT:-} home=${FM_HOME:-} id is_pr_poll provider url host path number custom_snapshot
-  local rejected_checks=
+  local rejected_checks= matched_check=0
   local old_queue=${FM_WAKE_QUEUE-} old_queue_lock=${FM_WAKE_QUEUE_LOCK-} had_queue=0 had_queue_lock=0 append_rc
   FM_SUP_CHECK_REASON=
   FM_SUP_CHECK_SCRIPT=
@@ -153,9 +153,12 @@ fm_supervision_run_due_checks() {
   FM_SUP_CHECK_STATUS=0
 
   for c in "$state"/*.check.sh; do
-    [ -e "$c" ] || return 1
+    if [ -e "$c" ] || [ -L "$c" ]; then
+      matched_check=1
+    fi
     break
   done
+  [ "$matched_check" -eq 1 ] || return 1
 
   [ "$(fm_supervision_path_age "$last_check")" -ge "$interval" ] || return 1
   if ! fm_lock_try_acquire "$lock"; then
@@ -177,7 +180,10 @@ fm_supervision_run_due_checks() {
     return 1
   }
   for c in "$state"/*.check.sh; do
-    [ -e "$c" ] || continue
+    if [ ! -e "$c" ]; then
+      [ -L "$c" ] && rejected_checks="$rejected_checks $c"
+      continue
+    fi
     : > "$err_file"
     : > "$out_file"
     is_pr_poll=0
