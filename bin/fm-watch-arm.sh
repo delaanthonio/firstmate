@@ -723,7 +723,11 @@ while :; do
       owned_child_finished "$rc"
       exit $?
     fi
-    if ! stop_owned_child_bounded; then
+    if ! fm_pid_alive "$child"; then
+      wait "$child" 2>/dev/null
+      OWNED_CHILD_RC=$?
+      child=
+    elif ! stop_owned_child_bounded; then
       print_watch_output "$child_out"
       rc=$OWNED_CHILD_RC
       cleanup_child
@@ -732,6 +736,10 @@ while :; do
       exit 1
     fi
     rc=$OWNED_CHILD_RC
+    if [ "$rc" -eq 0 ] && watch_output_has_wake "$child_out"; then
+      owned_child_finished "$rc"
+      exit $?
+    fi
     if ! healthy_watcher; then
       print_watch_output "$child_out"
       cleanup_child

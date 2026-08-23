@@ -50,6 +50,12 @@ printf '%s\n' "${BASHPID:-$$}" > "$FM_TEST_WATCHER_PID_FILE"
 if [ "${FM_TEST_WATCHER_TERM_RESISTANT:-0}" = 1 ]; then
   trap '' TERM
 fi
+if [ "${FM_TEST_WATCHER_ACTIONABLE:-0}" = 1 ]; then
+  while [ ! -e "$FM_TEST_WATCHER_ACTIONABLE_TRIGGER" ]; do sleep 0.02; done
+  printf 'signal: synthetic startup-race wake\n'
+  printf 'ready\n' > "$FM_TEST_WATCHER_ACTIONABLE_READY"
+  exit 0
+fi
 if [ "${FM_TEST_WATCHER_READY_DELAY:-never}" = never ]; then
   while :; do sleep 1; done
 fi
@@ -82,19 +88,23 @@ SH
   printf '%s\n' "$dir"
 }
 
-start_confirmation_arm() {  # <fixture> <output> <ready-delay> [environment-timeout] [term-resistant]
-  local dir=$1 out=$2 delay=$3 timeout=${4:-} term_resistant=${5:-0}
+start_confirmation_arm() {  # <fixture> <output> <ready-delay> [environment-timeout] [term-resistant] [actionable]
+  local dir=$1 out=$2 delay=$3 timeout=${4:-} term_resistant=${5:-0} actionable=${6:-0}
   if [ -n "$timeout" ]; then
     PATH="$dir/fakebin:$PATH" FM_HOME="$dir" FM_ARM_CONFIRM_TIMEOUT="$timeout" \
       FM_ARM_READY_FD=4 \
       FM_TEST_NOW_FILE="$dir/now" FM_TEST_WATCHER_LOG="$dir/watcher.log" \
       FM_TEST_WATCHER_PID_FILE="$dir/watcher.pid" FM_TEST_WATCHER_TERM_RESISTANT="$term_resistant" \
+      FM_TEST_WATCHER_ACTIONABLE="$actionable" FM_TEST_WATCHER_ACTIONABLE_TRIGGER="$dir/actionable-trigger" \
+      FM_TEST_WATCHER_ACTIONABLE_READY="$dir/actionable-ready" \
       FM_TEST_WATCHER_READY_DELAY="$delay" "$dir/bin/fm-watch-arm.sh" > "$out" 2>&1 4>"$dir/boundary" &
   else
     env -u FM_ARM_CONFIRM_TIMEOUT PATH="$dir/fakebin:$PATH" FM_HOME="$dir" \
       FM_ARM_READY_FD=4 \
       FM_TEST_NOW_FILE="$dir/now" FM_TEST_WATCHER_LOG="$dir/watcher.log" \
       FM_TEST_WATCHER_PID_FILE="$dir/watcher.pid" FM_TEST_WATCHER_TERM_RESISTANT="$term_resistant" \
+      FM_TEST_WATCHER_ACTIONABLE="$actionable" FM_TEST_WATCHER_ACTIONABLE_TRIGGER="$dir/actionable-trigger" \
+      FM_TEST_WATCHER_ACTIONABLE_READY="$dir/actionable-ready" \
       FM_TEST_WATCHER_READY_DELAY="$delay" "$dir/bin/fm-watch-arm.sh" > "$out" 2>&1 4>"$dir/boundary" &
   fi
   ARM_PID=$!
@@ -511,6 +521,51 @@ test_startup_race_boundedly_retires_owned_child() {
   kill -TERM "$winner_pid" 2>/dev/null || true
   wait "$winner_pid" 2>/dev/null || true
   pass "watch-arm: a startup-race winner is attached after bounded child retirement"
+}
+
+test_startup_race_returns_owned_actionable_wake() {
+  local dir out winner_pid watcher_state status i
+  dir=$(make_confirmation_fixture confirm-competing-actionable)
+  out="$dir/arm.out"
+  start_confirmation_arm "$dir" "$out" never '' 0 1
+  wait_for_watcher_launch "$dir" || fail "actionable startup-race fixture did not launch its watcher"
+  kill -STOP "$ARM_PID" 2>/dev/null || fail "could not suspend actionable startup-race arm"
+  i=0
+  watcher_state=
+  while [ "$i" -lt 50 ]; do
+    watcher_state=$(ps -p "$ARM_PID" -o stat= 2>/dev/null | tr -d ' ' || true)
+    case "$watcher_state" in T*) break ;; esac
+    sleep 0.02
+    i=$((i + 1))
+  done
+  case "$watcher_state" in
+    T*) ;;
+    *) fail "actionable startup-race arm did not enter the stopped state: $watcher_state" ;;
+  esac
+  touch "$dir/actionable-trigger"
+  wait_for_file_text "$dir/actionable-ready" ready \
+    || fail "owned watcher did not deliver its actionable startup-race wake"
+  FM_HOME="$dir" FM_TEST_WATCHER_LOG="$dir/winner.log" \
+    FM_TEST_WATCHER_PID_FILE="$dir/winner.pid" FM_TEST_WATCHER_TERM_RESISTANT=0 \
+    FM_TEST_WATCHER_ACTIONABLE=0 FM_TEST_WATCHER_READY_DELAY=0 \
+    "$dir/bin/fm-watch.sh" > "$dir/winner.out" 2>&1 &
+  winner_pid=$!
+  wait_for_file_text "$dir/state/.watch.lock/pid" "$winner_pid" \
+    || fail "actionable-race competing watcher did not publish a healthy lock: $(cat "$dir/winner.out")"
+  kill -CONT "$ARM_PID" 2>/dev/null || fail "could not resume actionable startup-race arm"
+  wait_for_exit "$ARM_PID" 80
+  status=$?
+  expect_code 0 "$status" "actionable startup-race arm must return its delivered wake: $(cat "$out")"
+  grep -F 'signal: synthetic startup-race wake' "$out" >/dev/null \
+    || fail "arm did not return the owned child's actionable startup-race wake: $(cat "$out")"
+  ! grep -q '^watcher: attached' "$out" \
+    || fail "arm attached over an already delivered actionable wake: $(cat "$out")"
+  ! grep -q '^watcher: FAILED' "$out" \
+    || fail "arm failed after an owned child delivered an actionable wake: $(cat "$out")"
+  is_live_non_zombie "$winner_pid" || fail "competing watcher did not remain live after actionable wake return"
+  kill -TERM "$winner_pid" 2>/dev/null || true
+  wait "$winner_pid" 2>/dev/null || true
+  pass "watch-arm: a startup-race wake returns before competing watcher attachment"
 }
 
 test_attached_arm_reports_the_delivered_wake() {
@@ -1164,6 +1219,7 @@ test_confirmation_timeout_reaps_stopped_child
 test_live_child_gets_one_bounded_confirmation_grace
 test_confirmation_rejects_health_after_grace_deadline
 test_startup_race_boundedly_retires_owned_child
+test_startup_race_returns_owned_actionable_wake
 test_attached_arm_reports_the_delivered_wake
 test_attached_arm_reports_the_delivered_wake_after_drain
 test_attached_arm_still_fails_on_a_wake_it_did_not_deliver
