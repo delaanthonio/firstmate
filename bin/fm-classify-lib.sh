@@ -1093,16 +1093,19 @@ signal_reason_is_actionable() {  # <file> ...
 #             (e.g. waiting on CI);
 #   paused  - the crew's authoritative current state is a declared external-wait
 #             pause (paused:), which is EXPECTED to idle;
-#   none    - neither, so the wake must surface (a stopped/finished/parked/failed/
-#             torn-down/unknown crew, or an unreadable verdict).
-# One fm-crew-state.sh read serves BOTH absorb reasons at once. Reading the state
-# authoritatively (not the status log) is what keeps run-step precedence: a crew
-# that appended paused: but then STARTED a run reports working, never paused.
+#   terminal:<state>[:<event>] - a done, failed, parked, or blocked state, with
+#             the exact run transition identity when fm-crew-state exposes one;
+#   none    - neither, so the wake must surface (a stopped/torn-down/unknown crew,
+#             or an unreadable verdict).
+# One fm-crew-state.sh read distinguishes both absorb reasons and terminal state.
+# Reading the state authoritatively (not the status log) preserves causal
+# precedence: a crew that appended paused: but then started a run reports working,
+# while a terminal transition newer than the pause remains terminal.
 # NOT a pure read: fm-crew-state.sh may make a bounded no-mistakes call, so callers
-# run it only on no-verb signal and first-sighting stale paths, never every wake.
+# reserve it for no-verb signals and stale-state reconciliation, never every wake.
 # FM_CREW_STATE_BIN lets tests stub the verdict.
-crew_absorb_class() {  # <id>
-  local id=$1 line state src
+crew_state_class() {  # <id>
+  local id=$1 line state src event
   [ -n "$id" ] || { printf 'none'; return; }
   line=$("$FM_CREW_STATE_BIN" "$id" 2>/dev/null) || true
   case "$line" in state:*) ;; *) printf 'none'; return ;; esac
@@ -1112,7 +1115,27 @@ crew_absorb_class() {  # <id>
     src=${line#*source: }; src=${src%% *}
     case "$src" in run-step|pane) printf 'working'; return ;; esac
   fi
+  case "$state" in
+    parked|done|blocked|failed)
+      case "$line" in
+        *" · event: "*)
+          event=${line##*" · event: "}
+          case "$event" in ''|*[!A-Za-z0-9_.:-]*) event= ;; esac
+          ;;
+      esac
+      if [ -n "${event:-}" ]; then printf 'terminal:%s:%s' "$state" "$event"
+      else printf 'terminal:%s' "$state"
+      fi
+      return
+      ;;
+  esac
   printf 'none'
+}
+
+crew_absorb_class() {  # <id>
+  local class
+  class=$(crew_state_class "$1")
+  case "$class" in working|paused) printf '%s' "$class" ;; *) printf 'none' ;; esac
 }
 
 # 0 if crew <id> shows POSITIVE evidence it is still working (crew_absorb_class

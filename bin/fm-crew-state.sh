@@ -16,7 +16,7 @@
 # fixed mapping logic, no heuristics and no LLM. Output is one stable, parseable,
 # token-tight line firstmate can read every heartbeat:
 #
-#   state: <working|parked|done|blocked|paused|failed|unknown> · source: <run-step|pane|status-log|none> · <detail>
+#   state: <working|parked|done|blocked|paused|failed|unknown> · source: <run-step|pane|status-log|none> [· <detail>] [· event: <identity>]
 #
 # Logic, in order:
 #   1. Resolve worktree + backend target + kind from state/<id>.meta.
@@ -30,11 +30,15 @@
 #      diverged from it, invalidates attribution.
 #      The run-step is AUTHORITATIVE: running/fixing -> working, ci -> working,
 #      awaiting_approval/fix_review -> parked (with gate findings), terminal
-#      passed/checks-passed -> done, failed/cancelled -> failed. EXCEPT: while
-#      the active step is ci, `axi status` alone cannot tell "still waiting on
-#      checks" from "checks green, waiting on merge" (see nm_ci_checks_state) -
-#      a ci-step log-tail check overrides working -> done once checks read
-#      green, so a green PR is never silently read as still-validating.
+#      passed/checks-passed -> done, failed/cancelled -> failed. One later
+#      current-state declaration can override a failed/cancelled run: a
+#      `<pause-verb> [after-run=<run-id>]:` status bound to that exact terminal
+#      run, or an unmarked legacy pause provably appended after its terminal
+#      step, declares an external wait.
+#      While the active step is ci, `axi status`
+#      alone cannot tell "still waiting on checks" from
+#      "checks green, waiting on merge" (see nm_ci_checks_state), so a ci-step
+#      log-tail check overrides working -> done once checks read green.
 #   3. Reconcile the status log: if its last line says needs-decision/blocked but
 #      the run-step shows the run moved on, the log is deterministically stale and
 #      is flagged superseded. A genuinely parked run plus a needs-decision log
@@ -82,12 +86,22 @@ FM_CREW_STATE_RUNS_LIMIT=${FM_CREW_STATE_RUNS_LIMIT:-200}
 case "$FM_CREW_STATE_RUNS_LIMIT" in ''|*[!0-9]*) FM_CREW_STATE_RUNS_LIMIT=200 ;; esac
 SEP=' · '
 
-# Emit the one canonical line and exit 0. Detail is optional.
-emit() {  # <state> <source> [detail]
+# Emit the one canonical line and exit 0. Detail and event identity are optional.
+emit() {  # <state> <source> [detail] [event]
   local line="state: $1${SEP}source: $2"
   [ -n "${3:-}" ] && line="$line${SEP}$3"
+  [ -n "${4:-}" ] && line="$line${SEP}event: $4"
   printf '%s\n' "$line"
   exit 0
+}
+
+run_event_identity() {  # <transition>
+  local transition=$1 run_id
+  [ "$RUN_SOURCE" = full ] || return 1
+  run_id=$(strip_quotes "$(nm_field id)")
+  [ -n "$run_id" ] && [ -n "$transition" ] || return 1
+  case "$run_id:$transition" in *[!A-Za-z0-9_.:-]*) return 1 ;; esac
+  printf 'run:%s:%s' "$run_id" "$transition"
 }
 
 # --- meta resolution --------------------------------------------------------
@@ -374,6 +388,73 @@ nm_run_head_matches_worktree() {
   fm_nm_head_matches_worktree "$WT" "$run_head"
 }
 
+pause_terminal_run_id() {
+  local prefix run_id
+  prefix=${1%%:*}
+  case "$prefix" in *\[after-run=*\]*) ;; *) return 1 ;; esac
+  run_id=${prefix#*\[after-run=}
+  run_id=${run_id%%\]*}
+  case "$run_id" in ''|*[!A-Za-z0-9_-]*) return 1 ;; esac
+  printf '%s' "$run_id"
+}
+
+pause_has_terminal_run_id() {
+  case "${1%%:*}" in *\[after-run=*\]*) return 0 ;; *) return 1 ;; esac
+}
+
+pause_binds_terminal_run() {
+  local pause_run_id run_id
+  [ "$RUN_SOURCE" = full ] || return 1
+  pause_run_id=$(pause_terminal_run_id "$LOG_LINE") || return 1
+  run_id=$(strip_quotes "$(nm_field id)")
+  [ -n "$run_id" ] && [ "$pause_run_id" = "$run_id" ]
+}
+
+nm_terminal_completed_at() {
+  local run_id nm_home db completed_at query
+  run_id=$(strip_quotes "$(nm_field id)")
+  case "$run_id" in ''|*[!A-Za-z0-9_-]*) return 1 ;; esac
+  if [ -n "${NM_HOME:-}" ]; then
+    nm_home=$NM_HOME
+  else
+    [ -n "${HOME:-}" ] || return 1
+    nm_home="$HOME/.no-mistakes"
+  fi
+  db="$nm_home/state.sqlite"
+  [ -r "$db" ] || return 1
+  command -v sqlite3 >/dev/null 2>&1 || return 1
+  query="SELECT COALESCE((SELECT terminal_head_verified_at FROM runs WHERE id = '$run_id'), (SELECT MAX(completed_at) FROM step_results WHERE run_id = '$run_id' AND status = 'failed'));"
+  completed_at=$(sqlite3 -readonly "$db" "$query" 2>/dev/null) || return 1
+  case "$completed_at" in ''|*[!0-9]*) return 1 ;; esac
+  printf '%s' "$completed_at"
+}
+
+status_log_mtime() {
+  if [ "$(uname -s 2>/dev/null || true)" = Darwin ]; then
+    stat -f %m "$LOG" 2>/dev/null
+  else
+    stat -c %Y "$LOG" 2>/dev/null
+  fi
+}
+
+unmarked_pause_follows_terminal_run() {
+  local pause_at terminal_at physical_last
+  [ "$RUN_SOURCE" = full ] || return 1
+  physical_last=$(tail -1 "$LOG" 2>/dev/null) || return 1
+  [ "$physical_last" = "$LOG_LINE" ] || return 1
+  pause_at=$(status_log_mtime) || return 1
+  terminal_at=$(nm_terminal_completed_at) || return 1
+  [ "$pause_at" -gt "$terminal_at" ]
+}
+
+pause_supersedes_terminal_run() {
+  if pause_has_terminal_run_id "$LOG_LINE"; then
+    pause_binds_terminal_run
+  else
+    unmarked_pause_follows_terminal_run
+  fi
+}
+
 # Coarse runs-list rows are "<status> <branch> <short-sha> ...". 0 if the short
 # sha for this branch row matches the worktree head under the same rules as
 # nm_run_head_matches_worktree (equal, or local is ancestor of run tip).
@@ -418,6 +499,7 @@ fi
 if [ "$HAVE_RUN" = 1 ]; then
   RUN_STATE=working
   RUN_DETAIL=""
+  RUN_EVENT=""
   CI_STEP_STATUS=""
   CI_LOG_STATE=""
   RUN_STATUS=""
@@ -447,10 +529,10 @@ if [ "$HAVE_RUN" = 1 ]; then
 
     if [ -n "$outcome" ]; then
       case "$outcome" in
-        passed)        RUN_STATE="done"; RUN_DETAIL="run passed: PR merged/closed" ;;
-        checks-passed) RUN_STATE="done"; RUN_DETAIL="checks green: PR ready for review" ;;
-        failed)        RUN_STATE=failed; RUN_DETAIL="run failed" ;;
-        cancelled)     RUN_STATE=failed; RUN_DETAIL="run cancelled" ;;
+        passed)        RUN_STATE="done"; RUN_DETAIL="run passed: PR merged/closed"; RUN_EVENT=$(run_event_identity "outcome:$outcome" || true) ;;
+        checks-passed) RUN_STATE="done"; RUN_DETAIL="checks green: PR ready for review"; RUN_EVENT=$(run_event_identity "outcome:$outcome" || true) ;;
+        failed)        RUN_STATE=failed; RUN_DETAIL="run failed"; RUN_EVENT=$(run_event_identity "outcome:$outcome" || true) ;;
+        cancelled)     RUN_STATE=failed; RUN_DETAIL="run cancelled"; RUN_EVENT=$(run_event_identity "outcome:$outcome" || true) ;;
         *)             RUN_STATE=unknown; RUN_DETAIL="outcome: $outcome" ;;
       esac
     elif [ -n "$awaiting" ] || [ "$status" = awaiting_approval ] || [ "$status" = fix_review ] || [ -n "$gate_status" ] || [ "$has_gate" = 1 ]; then
@@ -463,6 +545,7 @@ if [ "$HAVE_RUN" = 1 ]; then
       [ -n "$gate" ] || gate=gate
       RUN_STATE=parked
       RUN_DETAIL="parked at $gate"
+      RUN_EVENT=$(run_event_identity "gate:$status" || true)
       fcount=$(nm_gate_findings_count)
       [ -n "$fcount" ] && RUN_DETAIL="$RUN_DETAIL: $fcount finding(s)"
       if printf '%s\n' "$RUN_OUT" | grep -q 'ask-user'; then
@@ -472,9 +555,9 @@ if [ "$HAVE_RUN" = 1 ]; then
       case "$status" in
         ci)             RUN_STATE=working; RUN_DETAIL="ci running" ;;
         running|fixing) RUN_STATE=working; RUN_DETAIL="validating ($status)" ;;
-        completed)      RUN_STATE="done"; RUN_DETAIL="run completed" ;;
-        failed)         RUN_STATE=failed;  RUN_DETAIL="run failed" ;;
-        cancelled)      RUN_STATE=failed;  RUN_DETAIL="run cancelled" ;;
+        completed)      RUN_STATE="done"; RUN_DETAIL="run completed"; RUN_EVENT=$(run_event_identity "status:$status" || true) ;;
+        failed)         RUN_STATE=failed;  RUN_DETAIL="run failed"; RUN_EVENT=$(run_event_identity "status:$status" || true) ;;
+        cancelled)      RUN_STATE=failed;  RUN_DETAIL="run cancelled"; RUN_EVENT=$(run_event_identity "status:$status" || true) ;;
         "")             RUN_STATE=working; RUN_DETAIL="run active" ;;
         *)              RUN_STATE=working; RUN_DETAIL="run active ($status)" ;;
       esac
@@ -486,6 +569,7 @@ if [ "$HAVE_RUN" = 1 ]; then
             if [ "$CI_LOG_STATE" = green ]; then
               RUN_STATE="done"
               RUN_DETAIL="checks green: PR ready for review (still monitoring for merge/close)"
+              RUN_EVENT=$(run_event_identity "ci:checks-green" || true)
             fi
             ;;
           fixing)
@@ -509,8 +593,18 @@ if [ "$HAVE_RUN" = 1 ]; then
       CI_LOG_STATE=not-ready
     fi
     if [ "$CI_LOG_STATE" != not-ready ]; then
-      emit "done" status-log "$(status_line_note "$LOG_LINE")${SEP}run still monitoring PR"
+      RUN_EVENT=$(run_event_identity "status-log:ci-ready" || true)
+      emit "done" status-log "$(status_line_note "$LOG_LINE")${SEP}run still monitoring PR" "$RUN_EVENT"
     fi
+  fi
+
+  # A failed/cancelled run remains authoritative unless the worker's newest
+  # append-only status event either binds that exact run or is an unmarked
+  # legacy pause provably newer than its immutable terminal-step completion.
+  # The worker is then deliberately waiting on a known external condition, so
+  # stale supervision uses the bounded pause cadence.
+  if [ "$RUN_STATE" = failed ] && status_is_paused "$LOG_LINE" && pause_supersedes_terminal_run; then
+    emit paused status-log "$(status_line_note "$LOG_LINE")${SEP}terminal run superseded by declared pause"
   fi
 
   # Reconcile the status log. A needs-decision/blocked log line that the run-step
@@ -528,7 +622,7 @@ if [ "$HAVE_RUN" = 1 ]; then
       ;;
   esac
 
-  emit "$RUN_STATE" run-step "$RUN_DETAIL"
+  emit "$RUN_STATE" run-step "$RUN_DETAIL" "$RUN_EVENT"
 fi
 
 # --- fallback: no run attributed to this crew ------------------------------
