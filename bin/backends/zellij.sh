@@ -267,6 +267,20 @@ fm_backend_zellij_sidecar_fingerprint() {  # <session> <sidecar>
   printf '%s' "$fingerprint"
 }
 
+fm_backend_zellij_relaunch_fingerprints_retire() {  # <session> <metadata-fingerprint> <sidecar>
+  local session=$1 metadata_fingerprint=$2 sidecar=$3 sidecar_fingerprint=""
+  if [ -e "$sidecar" ] || [ -L "$sidecar" ]; then
+    sidecar_fingerprint=$(fm_backend_zellij_sidecar_fingerprint "$session" "$sidecar") || return 1
+  fi
+  if [ -n "$metadata_fingerprint" ]; then
+    fm_backend_zellij_session_fingerprint_retire "$session" "$metadata_fingerprint" || return 1
+  fi
+  if [ -n "$sidecar_fingerprint" ] && [ "$sidecar_fingerprint" != "$metadata_fingerprint" ]; then
+    fm_backend_zellij_session_fingerprint_retire "$session" "$sidecar_fingerprint" || return 1
+  fi
+  rm -f -- "$sidecar"
+}
+
 fm_backend_zellij_process_descends_from() {  # <pid> <ancestor>
   local pid=$1 ancestor=$2 parent
   for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32; do

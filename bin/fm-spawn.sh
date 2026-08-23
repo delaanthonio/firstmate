@@ -2405,12 +2405,11 @@ if [ "$RELAUNCH" -eq 1 ] && [ "$BACKEND" = zellij ]; then
   ZELLIJ_SES=$(meta_value "$RELAUNCH_META" zellij_session)
   ZELLIJ_TAB_ID=$(meta_value "$RELAUNCH_META" zellij_tab_id)
   ZELLIJ_PANE_ID=$(meta_value "$RELAUNCH_META" zellij_pane_id)
-  ZELLIJ_PREVIOUS_SESSION_FINGERPRINT=$(meta_value "$RELAUNCH_META" zellij_session_fingerprint)
-  if [ -z "$ZELLIJ_PREVIOUS_SESSION_FINGERPRINT" ] \
-     && { [ -e "$STATE/$ID.zellij-session-fingerprint" ] \
-       || [ -L "$STATE/$ID.zellij-session-fingerprint" ]; }; then
-    ZELLIJ_PREVIOUS_SESSION_FINGERPRINT=$(fm_backend_zellij_sidecar_fingerprint \
-      "$ZELLIJ_SES" "$STATE/$ID.zellij-session-fingerprint") || {
+  ZELLIJ_PREVIOUS_METADATA_FINGERPRINT=$(meta_value "$RELAUNCH_META" zellij_session_fingerprint)
+  if [ -e "$STATE/$ID.zellij-session-fingerprint" ] \
+     || [ -L "$STATE/$ID.zellij-session-fingerprint" ]; then
+    fm_backend_zellij_sidecar_fingerprint \
+      "$ZELLIJ_SES" "$STATE/$ID.zellij-session-fingerprint" >/dev/null || {
       echo "error: invalid zellij session fingerprint sidecar for $ID" >&2
       exit 1
     }
@@ -2878,13 +2877,13 @@ if [ "$RELAUNCH" -eq 1 ]; then
   if [ "$BACKEND" = zellij ]; then
     ZELLIJ_ABORT_FINGERPRINT=
     ZELLIJ_ABORT_SESSION=
-    [ -z "${ZELLIJ_PREVIOUS_SESSION_FINGERPRINT:-}" ] \
-      || fm_backend_zellij_session_fingerprint_retire "$ZELLIJ_SES" "$ZELLIJ_PREVIOUS_SESSION_FINGERPRINT" \
-      || {
-        echo "error: could not retire previous zellij session fingerprint for $ID" >&2
-        exit 1
-      }
-    rm -f -- "$STATE/$ID.zellij-session-fingerprint"
+    fm_backend_zellij_relaunch_fingerprints_retire \
+      "$ZELLIJ_SES" \
+      "${ZELLIJ_PREVIOUS_METADATA_FINGERPRINT:-}" \
+      "$STATE/$ID.zellij-session-fingerprint" || {
+      echo "error: could not retire previous zellij session fingerprints for $ID" >&2
+      exit 1
+    }
   fi
   RELAUNCH_REPLACEMENT_PENDING=0
   SPAWN_META_PUBLISH_STARTED=0

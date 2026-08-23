@@ -519,6 +519,50 @@ test_sidecar_fingerprint_requires_one_valid_token() {
   pass "fm_backend_zellij_sidecar_fingerprint: accepts only one validated durable token"
 }
 
+test_relaunch_retries_all_fingerprint_retirements() {
+  local dir proofs sidecar failed_once metadata_fingerprint sidecar_fingerprint replacement_fingerprint
+  dir="$TMP_ROOT/relaunch-fingerprint-retry"; proofs="$dir/proofs"
+  sidecar="$dir/task.zellij-session-fingerprint"; failed_once="$dir/failed-once"
+  metadata_fingerprint=fmz-11111111111111111111111111111111
+  sidecar_fingerprint=fmz-22222222222222222222222222222222
+  replacement_fingerprint=fmz-33333333333333333333333333333333
+  mkdir -p "$proofs"
+  : > "$proofs/$metadata_fingerprint"
+  : > "$proofs/$sidecar_fingerprint"
+  : > "$proofs/$replacement_fingerprint"
+  printf '%s\n' "$sidecar_fingerprint" > "$sidecar"
+
+  FM_TEST_PROOFS="$proofs" FM_TEST_SIDECAR="$sidecar" FM_TEST_FAILED_ONCE="$failed_once" \
+    FM_TEST_METADATA_FINGERPRINT="$metadata_fingerprint" \
+    FM_TEST_SIDECAR_FINGERPRINT="$sidecar_fingerprint" \
+    FM_TEST_REPLACEMENT_FINGERPRINT="$replacement_fingerprint" \
+    bash -c '
+      set -euo pipefail
+      . "$0/bin/backends/zellij.sh"
+      fm_backend_zellij_session_fingerprint_retire() {
+        local fingerprint=$2
+        if [ "$fingerprint" = "$FM_TEST_SIDECAR_FINGERPRINT" ] && [ ! -e "$FM_TEST_FAILED_ONCE" ]; then
+          : > "$FM_TEST_FAILED_ONCE"
+          return 1
+        fi
+        rm -f -- "$FM_TEST_PROOFS/$fingerprint"
+      }
+      if fm_backend_zellij_relaunch_fingerprints_retire firstmate "$FM_TEST_METADATA_FINGERPRINT" "$FM_TEST_SIDECAR"; then
+        exit 1
+      fi
+      [ -e "$FM_TEST_SIDECAR" ]
+      [ ! -e "$FM_TEST_PROOFS/$FM_TEST_METADATA_FINGERPRINT" ]
+      [ -e "$FM_TEST_PROOFS/$FM_TEST_SIDECAR_FINGERPRINT" ]
+      [ -e "$FM_TEST_PROOFS/$FM_TEST_REPLACEMENT_FINGERPRINT" ]
+      fm_backend_zellij_relaunch_fingerprints_retire firstmate "$FM_TEST_REPLACEMENT_FINGERPRINT" "$FM_TEST_SIDECAR"
+      [ ! -e "$FM_TEST_SIDECAR" ]
+      [ ! -e "$FM_TEST_PROOFS/$FM_TEST_METADATA_FINGERPRINT" ]
+      [ ! -e "$FM_TEST_PROOFS/$FM_TEST_SIDECAR_FINGERPRINT" ]
+      [ ! -e "$FM_TEST_PROOFS/$FM_TEST_REPLACEMENT_FINGERPRINT" ]
+    ' "$ROOT" || fail "relaunch did not retry independent metadata and sidecar fingerprint retirements"
+  pass "zellij relaunch: retries independent metadata and sidecar fingerprint retirements"
+}
+
 test_spawn_abort_retires_unpublished_session_fingerprint() {
   local dir home subhome state fb socket_root socket server_pid status proof_count
   command -v python3 >/dev/null 2>&1 || { echo "skip: python3 not found (required for zellij socket lifecycle fixture)"; return; }
@@ -1695,6 +1739,7 @@ test_preupgrade_metadata_migrates_only_from_owned_live_process
 test_preupgrade_metadata_refuses_foreign_reused_process
 test_inactive_preupgrade_metadata_is_contained_without_record_loss
 test_sidecar_fingerprint_requires_one_valid_token
+test_relaunch_retries_all_fingerprint_retirements
 test_spawn_abort_retires_unpublished_session_fingerprint
 test_list_live_scopes_to_own_home_tag
 test_resolve_bare_selector_prefers_scoped_title
