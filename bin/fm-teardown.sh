@@ -2247,7 +2247,7 @@ cleanup_firstmate_child_backend_endpoint() {
 }
 
 cleanup_firstmate_home_children() {
-  local home=$1 sub_state child_meta child_id child_t child_wt child_proj child_kind child_home child_backend child_orca_worktree_id child_tmp child_return_rc child_busy_gen child_zellij_session child_zellij_fingerprint
+  local home=$1 sub_state child_meta child_id child_t child_wt child_proj child_kind child_home child_backend child_orca_worktree_id child_tmp child_return_rc child_busy_gen child_zellij_session child_zellij_fingerprint child_zellij_sidecar_fingerprint
   sub_state="$home/state"
   [ -d "$sub_state" ] || return 0
   for child_meta in "$sub_state"/*.meta; do
@@ -2344,11 +2344,18 @@ cleanup_firstmate_home_children() {
     if [ "$child_backend" = zellij ]; then
       child_zellij_session=$(meta_value "$child_meta" zellij_session)
       child_zellij_fingerprint=$(meta_value "$child_meta" zellij_session_fingerprint)
-      if [ -z "$child_zellij_fingerprint" ] && [ -f "$sub_state/$child_id.zellij-session-fingerprint" ]; then
-        IFS= read -r child_zellij_fingerprint < "$sub_state/$child_id.zellij-session-fingerprint" || true
+      child_zellij_sidecar_fingerprint=
+      if [ -e "$sub_state/$child_id.zellij-session-fingerprint" ] \
+         || [ -L "$sub_state/$child_id.zellij-session-fingerprint" ]; then
+        child_zellij_sidecar_fingerprint=$(fm_backend_zellij_sidecar_fingerprint \
+          "$child_zellij_session" "$sub_state/$child_id.zellij-session-fingerprint") || return 1
       fi
       [ -z "$child_zellij_fingerprint" ] \
         || fm_backend_zellij_session_fingerprint_retire "$child_zellij_session" "$child_zellij_fingerprint" \
+        || return 1
+      [ -z "$child_zellij_sidecar_fingerprint" ] \
+        || [ "$child_zellij_sidecar_fingerprint" = "$child_zellij_fingerprint" ] \
+        || fm_backend_zellij_session_fingerprint_retire "$child_zellij_session" "$child_zellij_sidecar_fingerprint" \
         || return 1
     fi
     rm -f "$sub_state/$child_id.turn-ended" \
@@ -2658,11 +2665,18 @@ status_retire_presentation_task "$STATE" "$ID" || exit 1
 if [ "$BACKEND" = zellij ]; then
   ZELLIJ_SESSION_TO_RETIRE=$(meta_value "$META" zellij_session)
   ZELLIJ_FINGERPRINT_TO_RETIRE=$(meta_value "$META" zellij_session_fingerprint)
-  if [ -z "$ZELLIJ_FINGERPRINT_TO_RETIRE" ] && [ -f "$STATE/$ID.zellij-session-fingerprint" ]; then
-    IFS= read -r ZELLIJ_FINGERPRINT_TO_RETIRE < "$STATE/$ID.zellij-session-fingerprint" || true
+  ZELLIJ_SIDECAR_FINGERPRINT_TO_RETIRE=
+  if [ -e "$STATE/$ID.zellij-session-fingerprint" ] \
+     || [ -L "$STATE/$ID.zellij-session-fingerprint" ]; then
+    ZELLIJ_SIDECAR_FINGERPRINT_TO_RETIRE=$(fm_backend_zellij_sidecar_fingerprint \
+      "$ZELLIJ_SESSION_TO_RETIRE" "$STATE/$ID.zellij-session-fingerprint") || exit 1
   fi
   [ -z "$ZELLIJ_FINGERPRINT_TO_RETIRE" ] \
     || fm_backend_zellij_session_fingerprint_retire "$ZELLIJ_SESSION_TO_RETIRE" "$ZELLIJ_FINGERPRINT_TO_RETIRE" \
+    || exit 1
+  [ -z "$ZELLIJ_SIDECAR_FINGERPRINT_TO_RETIRE" ] \
+    || [ "$ZELLIJ_SIDECAR_FINGERPRINT_TO_RETIRE" = "$ZELLIJ_FINGERPRINT_TO_RETIRE" ] \
+    || fm_backend_zellij_session_fingerprint_retire "$ZELLIJ_SESSION_TO_RETIRE" "$ZELLIJ_SIDECAR_FINGERPRINT_TO_RETIRE" \
     || exit 1
 fi
 rm -f "$STATE/$ID.turn-ended" "$STATE/$ID.meta" \

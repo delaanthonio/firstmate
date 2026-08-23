@@ -482,6 +482,84 @@ test_preupgrade_metadata_refuses_foreign_reused_process() {
   pass "fm_backend_zellij_legacy_ownership_proven: refuses foreign reused panes without persisting proof"
 }
 
+test_inactive_preupgrade_metadata_is_contained_without_record_loss() {
+  local dir state worktree fb before status
+  dir="$TMP_ROOT/preupgrade-inactive-containment"; state="$dir/state"; worktree="$dir/worktree"
+  mkdir -p "$dir/responses"
+  zellij_write_preupgrade_owner_meta "$state" legacy 3 7 "$worktree"
+  before=$(cat "$state/legacy.meta")
+  zellij_pane_response "$dir" 1 7 3
+  zellij_tab_response "$dir" 2 3 fm-legacy
+  fb=$(make_zellij_fakebin "$dir")
+  PATH="$fb:$PATH" FM_HOME="$ROOT" FM_STATE_OVERRIDE="$state" \
+    FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" FM_ZELLIJ_SESSION_LIST=firstmate \
+    bash -c '. "$0/bin/backends/zellij.sh"; fm_backend_zellij_preupgrade_ownership_proven() { return 1; }; fm_backend_zellij_send_key firstmate:7 Escape fm-legacy' "$ROOT"
+  status=$?
+  [ "$status" -ne 0 ] || fail "inactive pre-upgrade metadata should fail closed without an incarnation proof"
+  [ "$(cat "$state/legacy.meta")" = "$before" ] || fail "inactive containment changed durable task metadata"
+  [ -d "$worktree" ] || fail "inactive containment removed the recorded worktree"
+  [ ! -e "$state/legacy.zellij-session-fingerprint" ] || fail "inactive containment invented an ownership proof"
+  assert_not_contains "$(cat "$dir/log")" $'\x1f''send-keys' "inactive containment sent to an unproven pane"
+  pass "fm_backend_zellij_legacy_ownership_proven: inactive pre-upgrade tabs fail closed with lifecycle records intact"
+}
+
+test_sidecar_fingerprint_requires_one_valid_token() {
+  local dir sidecar token out status
+  dir="$TMP_ROOT/sidecar-fingerprint-validation"; sidecar="$dir/legacy.zellij-session-fingerprint"
+  mkdir -p "$dir"
+  token=fmz-22222222222222222222222222222222
+  printf '%s\n' "$token" > "$sidecar"
+  out=$(ZELLIJ_SOCKET_DIR="$dir/socket-root" bash -c '. "$0/bin/backends/zellij.sh"; fm_backend_zellij_sidecar_fingerprint firstmate "$1"' "$ROOT" "$sidecar")
+  expect_code 0 $? "a valid migrated fingerprint sidecar should be accepted"
+  [ "$out" = "$token" ] || fail "valid sidecar returned '$out', expected '$token'"
+  printf '%s\n%s\n' "$token" "$token" > "$sidecar"
+  ZELLIJ_SOCKET_DIR="$dir/socket-root" bash -c '. "$0/bin/backends/zellij.sh"; fm_backend_zellij_sidecar_fingerprint firstmate "$1"' "$ROOT" "$sidecar" >/dev/null
+  status=$?
+  [ "$status" -ne 0 ] || fail "a multi-line migrated fingerprint sidecar should be refused"
+  pass "fm_backend_zellij_sidecar_fingerprint: accepts only one validated durable token"
+}
+
+test_spawn_abort_retires_unpublished_session_fingerprint() {
+  local dir home subhome state fb socket_root socket server_pid status proof_count
+  command -v python3 >/dev/null 2>&1 || { echo "skip: python3 not found (required for zellij socket lifecycle fixture)"; return; }
+  dir="$TMP_ROOT/spawn-abort-fingerprint"; home="$dir/primary"; subhome="$dir/secondmate"
+  state="$home/state"; socket_root="socket-root"
+  socket="$dir/$socket_root/contract_version_1/firstmate"
+  mkdir -p "$state" "$home/data" "$home/config" "$subhome/bin" "$subhome/data" "${socket%/*}" "$dir/responses"
+  printf '# Firstmate\n' > "$subhome/AGENTS.md"
+  printf 'legacy\n' > "$subhome/.fm-secondmate-home"
+  printf 'charter\n' > "$subhome/data/charter.md"
+  (cd "$dir" && python3 -c 'import socket,sys,time; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(); time.sleep(30)' "$socket_root/contract_version_1/firstmate") &
+  server_pid=$!
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    [ -S "$socket" ] && break
+    sleep 0.1
+  done
+  [ -S "$socket" ] || { kill "$server_pid" 2>/dev/null || true; wait "$server_pid" 2>/dev/null || true; fail "zellij socket fixture did not start"; }
+  printf '[]\n' > "$dir/responses/1.out"
+  printf 'not-a-tab-id\n' > "$dir/responses/2.out"
+  fb=$(make_zellij_fakebin "$dir")
+  cat > "$fb/claude" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+  chmod +x "$fb/claude"
+  (cd "$dir" && PATH="$fb:$PATH" TMUX='' CLAUDECODE=1 ZELLIJ_SOCKET_DIR="$socket_root" \
+    FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" FM_STATE_OVERRIDE="$state" \
+    FM_DATA_OVERRIDE="$home/data" FM_CONFIG_OVERRIDE="$home/config" FM_PROJECTS_OVERRIDE="$home/projects" \
+    FM_SKIP_SECONDMATE_INHERIT=1 FM_SPAWN_NO_GUARD=1 \
+    FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" FM_ZELLIJ_SESSION_LIST=firstmate \
+    "$ROOT/bin/fm-spawn.sh" legacy "$subhome" claude --backend zellij --secondmate >/dev/null 2>&1)
+  status=$?
+  kill "$server_pid" 2>/dev/null || true
+  wait "$server_pid" 2>/dev/null || true
+  [ "$status" -ne 0 ] || fail "zellij spawn fixture should abort after publishing a session proof"
+  proof_count=$(find "$dir/$socket_root/contract_version_1/.firstmate-incarnations" -type s 2>/dev/null | wc -l | tr -d ' ')
+  [ "$proof_count" = 0 ] || fail "aborted zellij spawn left $proof_count unpublished session proof(s)"
+  [ ! -e "$state/legacy.meta" ] || fail "aborted zellij spawn published task metadata"
+  pass "fm-spawn zellij abort: retires the unpublished session-incarnation proof"
+}
+
 test_list_live_scopes_to_own_home_tag() {
   local dir fb out own_title foreign_title other_home
   dir="$TMP_ROOT/list-live-scope"; mkdir -p "$dir/responses"
@@ -1524,6 +1602,9 @@ test_expected_label_refuses_ambiguous_legacy_root_tag
 test_expected_label_refuses_reused_untagged_tab
 test_preupgrade_metadata_migrates_only_from_owned_live_process
 test_preupgrade_metadata_refuses_foreign_reused_process
+test_inactive_preupgrade_metadata_is_contained_without_record_loss
+test_sidecar_fingerprint_requires_one_valid_token
+test_spawn_abort_retires_unpublished_session_fingerprint
 test_list_live_scopes_to_own_home_tag
 test_resolve_bare_selector_prefers_scoped_title
 test_resolve_bare_selector_refuses_ambiguous_untagged

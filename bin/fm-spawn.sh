@@ -693,6 +693,8 @@ RELAUNCH_REPLACEMENT_STATE=
 RELAUNCH_REPLACEMENT_WT=
 CONFIG_INHERIT_LOCK=
 CONFIG_INHERIT_LOCK_HELD=0
+ZELLIJ_ABORT_SESSION=
+ZELLIJ_ABORT_FINGERPRINT=
 
 parse_orca_worktree_result() {
   local raw=$1 rest
@@ -713,6 +715,14 @@ parse_orca_worktree_result() {
 
 spawn_abort_cleanup() {
   local status=$?
+  if [ -n "$ZELLIJ_ABORT_FINGERPRINT" ]; then
+    if ! fm_backend_zellij_session_fingerprint_retire \
+        "$ZELLIJ_ABORT_SESSION" "$ZELLIJ_ABORT_FINGERPRINT"; then
+      echo "warning: could not retire unpublished zellij session fingerprint after aborted spawn of $ID" >&2
+    fi
+    ZELLIJ_ABORT_FINGERPRINT=
+    ZELLIJ_ABORT_SESSION=
+  fi
   if [ -n "$DROID_SETTINGS_CLEANUP" ]; then
     rm -f "$DROID_SETTINGS_CLEANUP" || true
     DROID_SETTINGS_CLEANUP=
@@ -2165,6 +2175,8 @@ EOF
       echo "error: could not establish a stable incarnation fingerprint for zellij session '$ZELLIJ_SES'" >&2
       exit 1
     }
+    ZELLIJ_ABORT_SESSION=$ZELLIJ_SES
+    ZELLIJ_ABORT_FINGERPRINT=$ZELLIJ_SESSION_FINGERPRINT
     ZELLIJ_TASK_IDS=$(fm_backend_zellij_create_task "$ZELLIJ_SES" "$W" "$PROJ_ABS") || exit 1
     read -r ZELLIJ_TAB_ID ZELLIJ_PANE_ID <<EOF
 $ZELLIJ_TASK_IDS
@@ -2394,10 +2406,21 @@ if [ "$RELAUNCH" -eq 1 ] && [ "$BACKEND" = zellij ]; then
   ZELLIJ_TAB_ID=$(meta_value "$RELAUNCH_META" zellij_tab_id)
   ZELLIJ_PANE_ID=$(meta_value "$RELAUNCH_META" zellij_pane_id)
   ZELLIJ_PREVIOUS_SESSION_FINGERPRINT=$(meta_value "$RELAUNCH_META" zellij_session_fingerprint)
+  if [ -z "$ZELLIJ_PREVIOUS_SESSION_FINGERPRINT" ] \
+     && { [ -e "$STATE/$ID.zellij-session-fingerprint" ] \
+       || [ -L "$STATE/$ID.zellij-session-fingerprint" ]; }; then
+    ZELLIJ_PREVIOUS_SESSION_FINGERPRINT=$(fm_backend_zellij_sidecar_fingerprint \
+      "$ZELLIJ_SES" "$STATE/$ID.zellij-session-fingerprint") || {
+      echo "error: invalid zellij session fingerprint sidecar for $ID" >&2
+      exit 1
+    }
+  fi
   ZELLIJ_SESSION_FINGERPRINT=$(fm_backend_zellij_session_fingerprint "$ZELLIJ_SES") || {
     echo "error: could not establish a stable incarnation fingerprint for zellij session '$ZELLIJ_SES'" >&2
     exit 1
   }
+  ZELLIJ_ABORT_SESSION=$ZELLIJ_SES
+  ZELLIJ_ABORT_FINGERPRINT=$ZELLIJ_SESSION_FINGERPRINT
 fi
 
 # Per-task temp root: /tmp/fm-<home-tag>/<id>/ with Go's build temp nested at
@@ -2845,13 +2868,22 @@ preserve_relaunch_meta() {
     echo "control_relaunch_tx=$FM_CONTROL_RELAUNCH_TX"
   fi
 } > "$SPAWN_META_PATH"
+if [ "$RELAUNCH" -eq 0 ] && [ "$BACKEND" = zellij ]; then
+  ZELLIJ_ABORT_FINGERPRINT=
+  ZELLIJ_ABORT_SESSION=
+fi
 if [ "$RELAUNCH" -eq 1 ]; then
   SPAWN_META_PUBLISH_STARTED=1
   mv -f "$SPAWN_META_TMP" "$STATE/$ID.meta"
   if [ "$BACKEND" = zellij ]; then
+    ZELLIJ_ABORT_FINGERPRINT=
+    ZELLIJ_ABORT_SESSION=
     [ -z "${ZELLIJ_PREVIOUS_SESSION_FINGERPRINT:-}" ] \
       || fm_backend_zellij_session_fingerprint_retire "$ZELLIJ_SES" "$ZELLIJ_PREVIOUS_SESSION_FINGERPRINT" \
-      || true
+      || {
+        echo "error: could not retire previous zellij session fingerprint for $ID" >&2
+        exit 1
+      }
     rm -f -- "$STATE/$ID.zellij-session-fingerprint"
   fi
   RELAUNCH_REPLACEMENT_PENDING=0

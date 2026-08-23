@@ -258,6 +258,15 @@ fm_backend_zellij_session_fingerprint_retire() {  # <session> <fingerprint>
   rm -f -- "$proof"
 }
 
+fm_backend_zellij_sidecar_fingerprint() {  # <session> <sidecar>
+  local session=$1 sidecar=$2 fingerprint
+  [ -f "$sidecar" ] && [ ! -L "$sidecar" ] || return 1
+  fingerprint=$(cat "$sidecar") || return 1
+  case "$fingerprint" in ''|*$'\n'*) return 1 ;; esac
+  fm_backend_zellij_fingerprint_path "$session" "$fingerprint" >/dev/null || return 1
+  printf '%s' "$fingerprint"
+}
+
 fm_backend_zellij_process_descends_from() {  # <pid> <ancestor>
   local pid=$1 ancestor=$2 parent
   for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32; do
@@ -365,8 +374,7 @@ fm_backend_zellij_legacy_ownership_proven() {  # <session> <tab-id> <label>
   else
     sidecar="$state/$id.zellij-session-fingerprint"
     if [ -f "$sidecar" ] && [ ! -L "$sidecar" ]; then
-      recorded_fingerprint=$(cat "$sidecar") || return 1
-      case "$recorded_fingerprint" in ''|*$'\n'*) return 1 ;; esac
+      recorded_fingerprint=$(fm_backend_zellij_sidecar_fingerprint "$session" "$sidecar") || return 1
     else
       recorded_fingerprint=$(fm_backend_zellij_migrate_session_fingerprint "$session" "$meta_pane" "$meta" "$sidecar") || return 1
     fi
