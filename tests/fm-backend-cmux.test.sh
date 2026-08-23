@@ -1264,21 +1264,21 @@ test_forced_secondmate_teardown_kills_cmux_children_with_child_home_tag() {
     "kind=scout"
   child_title=$(cmux_expected_scoped_title fm-childc "$home")
   parent_title=$(cmux_expected_scoped_title fm-smc "$ROOT")
-  cmux_workspace_list_response "$dir" 1 "cccccccc-2222-2222-2222-222222222222" "$child_title"
-  cmux_panes_response "$dir" 2 "dddddddd-3333-3333-3333-333333333333"
-  cmux_windows_response "$dir" 3 "e1111111-0000-0000-0000-000000000000" 2
-  cmux_workspace_list_response "$dir" 4 "cccccccc-2222-2222-2222-222222222222" "$child_title" "ffffffff-4444-4444-4444-444444444444" other
-  cmux_windows_response "$dir" 6 "e1111111-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 1 "aaaaaaaa-0000-0000-0000-000000000000" "$parent_title"
+  cmux_panes_response "$dir" 2 "bbbbbbbb-1111-1111-1111-111111111111"
+  cmux_windows_response "$dir" 3 "e2222222-0000-0000-0000-000000000000" 2
+  cmux_workspace_list_response "$dir" 4 "aaaaaaaa-0000-0000-0000-000000000000" "$parent_title" "ffffffff-5555-5555-5555-555555555555" other
+  cmux_windows_response "$dir" 6 "e2222222-0000-0000-0000-000000000000" 1
   cmux_workspace_list_response "$dir" 7
-  cmux_windows_response "$dir" 8 "e1111111-0000-0000-0000-000000000000" 1
+  cmux_windows_response "$dir" 8 "e2222222-0000-0000-0000-000000000000" 1
   cmux_workspace_list_response "$dir" 9
-  cmux_workspace_list_response "$dir" 10 "aaaaaaaa-0000-0000-0000-000000000000" "$parent_title"
-  cmux_panes_response "$dir" 11 "bbbbbbbb-1111-1111-1111-111111111111"
-  cmux_windows_response "$dir" 12 "e2222222-0000-0000-0000-000000000000" 2
-  cmux_workspace_list_response "$dir" 13 "aaaaaaaa-0000-0000-0000-000000000000" "$parent_title" "ffffffff-5555-5555-5555-555555555555" other
-  cmux_windows_response "$dir" 15 "e2222222-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 10 "cccccccc-2222-2222-2222-222222222222" "$child_title"
+  cmux_panes_response "$dir" 11 "dddddddd-3333-3333-3333-333333333333"
+  cmux_windows_response "$dir" 12 "e1111111-0000-0000-0000-000000000000" 2
+  cmux_workspace_list_response "$dir" 13 "cccccccc-2222-2222-2222-222222222222" "$child_title" "ffffffff-4444-4444-4444-444444444444" other
+  cmux_windows_response "$dir" 15 "e1111111-0000-0000-0000-000000000000" 1
   cmux_workspace_list_response "$dir" 16
-  cmux_windows_response "$dir" 17 "e2222222-0000-0000-0000-000000000000" 1
+  cmux_windows_response "$dir" 17 "e1111111-0000-0000-0000-000000000000" 1
   cmux_workspace_list_response "$dir" 18
   fb=$(make_cmux_fakebin "$dir")
   out=$( PATH="$fb:$PATH" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$data" FM_CONFIG_OVERRIDE="$config" \
@@ -1292,7 +1292,7 @@ test_forced_secondmate_teardown_kills_cmux_children_with_child_home_tag() {
 }
 
 test_forced_secondmate_teardown_retains_unconfirmed_cmux_child() {
-  local dir state data config home project child_wt fb out status child_title
+  local dir state data config home project child_wt fb out status child_title parent_title
   dir="$TMP_ROOT/teardown-cmux-unconfirmed-child"; state="$dir/state"; data="$dir/data"; config="$dir/config"; home="$dir/secondmate-home"; project="$dir/project"
   child_wt="$dir/child-worktree"
   mkdir -p "$state" "$data" "$config" "$home/state" "$home/data" "$home/config" "$home/projects" "$project" "$dir/responses"
@@ -1304,12 +1304,21 @@ test_forced_secondmate_teardown_retains_unconfirmed_cmux_child() {
   fm_write_meta "$state/smc.meta" "window=aaaaaaaa-0000-0000-0000-000000000000:bbbbbbbb-1111-1111-1111-111111111111" "endpoint_task_id=smc" "backend=cmux" "cmux_workspace_id=aaaaaaaa-0000-0000-0000-000000000000" "cmux_surface_id=bbbbbbbb-1111-1111-1111-111111111111" "worktree=$home" "project=$home" "kind=secondmate" "mode=secondmate" "home=$home"
   fm_write_meta "$home/state/childc.meta" "window=cccccccc-2222-2222-2222-222222222222:dddddddd-3333-3333-3333-333333333333" "endpoint_task_id=childc" "backend=cmux" "cmux_workspace_id=cccccccc-2222-2222-2222-222222222222" "cmux_surface_id=dddddddd-3333-3333-3333-333333333333" "worktree=$child_wt" "project=$project" "kind=scout"
   child_title=$(cmux_expected_scoped_title fm-childc "$home")
-  cmux_workspace_list_response "$dir" 1 "cccccccc-2222-2222-2222-222222222222" "$child_title"
-  cmux_panes_response "$dir" 2 "dddddddd-3333-3333-3333-333333333333"
-  cmux_windows_response "$dir" 3 "e1111111-0000-0000-0000-000000000000" 2
-  cmux_workspace_list_response "$dir" 4 "cccccccc-2222-2222-2222-222222222222" "$child_title" "ffffffff-4444-4444-4444-444444444444" other
-  cmux_windows_response "$dir" 6 "e1111111-0000-0000-0000-000000000000" 1
-  cmux_workspace_list_response "$dir" 7 "cccccccc-2222-2222-2222-222222222222" "$child_title"
+  parent_title=$(cmux_expected_scoped_title fm-smc "$ROOT")
+  cmux_workspace_list_response "$dir" 1 "aaaaaaaa-0000-0000-0000-000000000000" "$parent_title"
+  cmux_panes_response "$dir" 2 "bbbbbbbb-1111-1111-1111-111111111111"
+  cmux_windows_response "$dir" 3 "e2222222-0000-0000-0000-000000000000" 2
+  cmux_workspace_list_response "$dir" 4 "aaaaaaaa-0000-0000-0000-000000000000" "$parent_title" "ffffffff-5555-5555-5555-555555555555" other
+  cmux_windows_response "$dir" 6 "e2222222-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 7
+  cmux_windows_response "$dir" 8 "e2222222-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 9
+  cmux_workspace_list_response "$dir" 10 "cccccccc-2222-2222-2222-222222222222" "$child_title"
+  cmux_panes_response "$dir" 11 "dddddddd-3333-3333-3333-333333333333"
+  cmux_windows_response "$dir" 12 "e1111111-0000-0000-0000-000000000000" 2
+  cmux_workspace_list_response "$dir" 13 "cccccccc-2222-2222-2222-222222222222" "$child_title" "ffffffff-4444-4444-4444-444444444444" other
+  cmux_windows_response "$dir" 15 "e1111111-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 16 "cccccccc-2222-2222-2222-222222222222" "$child_title"
   fb=$(make_cmux_fakebin "$dir")
   out=$( PATH="$fb:$PATH" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$data" FM_CONFIG_OVERRIDE="$config" FM_ROOT_OVERRIDE="$ROOT" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" "$ROOT/bin/fm-teardown.sh" smc --force 2>&1 )
   status=$?

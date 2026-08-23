@@ -2416,10 +2416,6 @@ if [ "$KIND" = secondmate ]; then
   preflight_firstmate_home_process_event_tree "$HOME_PATH" "secondmate home" || exit 1
 fi
 
-if [ "$KIND" = secondmate ] && [ "$FORCE" = "--force" ]; then
-  cleanup_firstmate_home_children "$HOME_PATH" || exit $?
-fi
-
 if [ "$KIND" = scout ] && [ "$FORCE" != "--force" ]; then
   REPORT="$DATA/$ID/report.md"
   if [ ! -f "$REPORT" ]; then
@@ -2479,6 +2475,29 @@ if [ -d "$WT" ] && [ "$FORCE" != "--force" ]; then
       exit 1
     fi
   fi
+fi
+
+TEARDOWN_ENDPOINT_CLOSE_CONFIRMED=0
+if [ "$BACKEND" = zellij ]; then
+  fm_backend_kill "$BACKEND" "$T" "$(meta_value "$META" zellij_tab_id)" "fm-$ID" 2>/dev/null || true
+  if ! declare -F fm_backend_zellij_endpoint_confirmed_gone >/dev/null 2>&1 \
+    || ! fm_backend_zellij_endpoint_confirmed_gone "$T" "$(meta_value "$META" zellij_tab_id)"; then
+    echo "error: zellij endpoint $T for $ID is not confirmed gone; retaining endpoint records, processes, worktree, and temporary runtime state" >&2
+    exit 1
+  fi
+  TEARDOWN_ENDPOINT_CLOSE_CONFIRMED=1
+elif [ "$BACKEND" = cmux ]; then
+  fm_backend_kill "$BACKEND" "$T" "" "fm-$ID" 2>/dev/null || true
+  if ! declare -F fm_backend_cmux_endpoint_confirmed_gone >/dev/null 2>&1 \
+    || ! fm_backend_cmux_endpoint_confirmed_gone "$T" "fm-$ID"; then
+    echo "error: cmux endpoint $T for $ID is not confirmed gone; retaining endpoint records, processes, worktree, and temporary runtime state" >&2
+    exit 1
+  fi
+  TEARDOWN_ENDPOINT_CLOSE_CONFIRMED=1
+fi
+
+if [ "$KIND" = secondmate ] && [ "$FORCE" = "--force" ]; then
+  cleanup_firstmate_home_children "$HOME_PATH" || exit $?
 fi
 
 # Every landed/discard-work refusal above has now passed (or --force skipped
@@ -2604,7 +2623,7 @@ elif [ "$BACKEND" = herdr ]; then
   else
     echo "warning: herdr session presentation lock path is unavailable; skipping the pane close rather than closing unlocked" >&2
   fi
-elif [ "$BACKEND" != orca ]; then
+elif [ "$BACKEND" != orca ] && [ "$TEARDOWN_ENDPOINT_CLOSE_CONFIRMED" != 1 ]; then
   fm_backend_kill "$BACKEND" "$T" "$(meta_value "$META" zellij_tab_id)" "fm-$ID" 2>/dev/null || true
 fi
 if [ "$HERDR_PRESENTATION_RETIRE_CANDIDATE" = 1 ]; then
@@ -2631,20 +2650,6 @@ if [ "$BACKEND" = herdr ]; then
   fi
   if ! fm_backend_herdr_endpoint_confirmed_gone "$T"; then
     echo "error: herdr pane $T for $ID is not confirmed gone after its close was refused, skipped, or failed; retaining every durable task record - rerun teardown once the close can run under the session lock" >&2
-    exit 1
-  fi
-fi
-if [ "$BACKEND" = zellij ]; then
-  if ! declare -F fm_backend_zellij_endpoint_confirmed_gone >/dev/null 2>&1 \
-    || ! fm_backend_zellij_endpoint_confirmed_gone "$T" "$(meta_value "$META" zellij_tab_id)"; then
-    echo "error: zellij endpoint $T for $ID is not confirmed gone; retaining every durable task record" >&2
-    exit 1
-  fi
-fi
-if [ "$BACKEND" = cmux ]; then
-  if ! declare -F fm_backend_cmux_endpoint_confirmed_gone >/dev/null 2>&1 \
-    || ! fm_backend_cmux_endpoint_confirmed_gone "$T" "fm-$ID"; then
-    echo "error: cmux endpoint $T for $ID is not confirmed gone; retaining every durable task record" >&2
     exit 1
   fi
 fi

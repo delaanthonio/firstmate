@@ -1123,6 +1123,65 @@ test_teardown_passes_recorded_tab_id_to_zellij_kill() {
   pass "fm-teardown.sh: passes recorded zellij_tab_id with the expected task label"
 }
 
+test_inactive_preupgrade_teardown_refuses_before_mutation() {
+  local dir state data config project worktree task_tmp fb out status pid branch
+  dir="$TMP_ROOT/teardown-inactive-preupgrade"; state="$dir/state"; data="$dir/data"; config="$dir/config"
+  project="$dir/project"; worktree="$dir/worktree"
+  mkdir -p "$state" "$data" "$config" "$project" "$dir/responses"
+  git -C "$project" init -q
+  git -C "$project" -c user.name=test -c user.email=test@example.invalid commit -q --allow-empty -m init
+  git -C "$project" worktree add -q -b legacy-containment "$worktree"
+  printf 'keep-worktree\n' > "$worktree/uncommitted"
+  task_tmp=$(FM_HOME="$dir" bash -c '. "$0/bin/fm-backend-hometag-lib.sh"; printf "/tmp/fm-%s/legacy" "$(fm_backend_hometag)"' "$ROOT")
+  mkdir -p "$task_tmp/gotmp"
+  printf 'keep-temp\n' > "$task_tmp/gotmp/artifact"
+  fm_write_meta "$state/legacy.meta" \
+    "window=firstmate:7" \
+    "endpoint_task_id=legacy" \
+    "backend=zellij" \
+    "zellij_session=firstmate" \
+    "zellij_tab_id=3" \
+    "zellij_pane_id=7" \
+    "worktree=$worktree" \
+    "project=$project" \
+    "kind=ship" \
+    "mode=local-only" \
+    "tasktmp=$task_tmp"
+  zellij_pane_response "$dir" 1 7 3
+  zellij_tab_response "$dir" 2 3 fm-legacy
+  zellij_tab_response "$dir" 3 3 fm-legacy
+  zellij_tab_response "$dir" 4 3 fm-legacy
+  fb=$(make_zellij_fakebin "$dir")
+  cat > "$fb/treehouse" <<'SH'
+#!/usr/bin/env bash
+printf 'called\n' >> "$FM_TEST_TREEHOUSE_LOG"
+exit 0
+SH
+  chmod +x "$fb/treehouse"
+  (cd "$worktree" && sleep 60) &
+  pid=$!
+  out=$( PATH="$fb:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$data" \
+    FM_CONFIG_OVERRIDE="$config" FM_ROOT_OVERRIDE="$ROOT" FM_TEST_TREEHOUSE_LOG="$dir/treehouse.log" \
+    FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" FM_ZELLIJ_SESSION_LIST=firstmate \
+    "$ROOT/bin/fm-teardown.sh" legacy --force 2>&1 )
+  status=$?
+  [ "$status" -ne 0 ] || fail "inactive pre-upgrade zellij teardown should fail closed"
+  kill -0 "$pid" 2>/dev/null || fail "inactive containment reaped the task process before endpoint confirmation"
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  [ -f "$state/legacy.meta" ] || fail "inactive containment removed task metadata"
+  [ -f "$worktree/uncommitted" ] || fail "inactive containment changed or returned the worktree"
+  [ -f "$task_tmp/gotmp/artifact" ] || fail "inactive containment removed temporary runtime state"
+  [ ! -e "$dir/treehouse.log" ] || fail "inactive containment attempted worktree return"
+  branch=$(git -C "$worktree" branch --show-current)
+  [ "$branch" = legacy-containment ] || fail "inactive containment detached or deleted the task branch"
+  assert_contains "$out" "retaining endpoint records, processes, worktree, and temporary runtime state" \
+    "inactive containment did not explain its no-mutation refusal"
+  rm -rf "$task_tmp"
+  rmdir "${task_tmp%/*}" 2>/dev/null || true
+  pass "fm-teardown.sh: inactive pre-upgrade zellij containment refuses before every mutation"
+}
+
 test_forced_secondmate_teardown_kills_zellij_children_with_child_home_tag() {
   local dir state data config home project fb out status child_title
   dir="$TMP_ROOT/teardown-zellij-secondmate-child"; state="$dir/state"; data="$dir/data"; config="$dir/config"; home="$dir/secondmate-home"; project="$dir/project"
@@ -1151,10 +1210,11 @@ test_forced_secondmate_teardown_kills_zellij_children_with_child_home_tag() {
     "project=$project" \
     "kind=scout"
   child_title=$(zellij_expected_scoped_title fm-childz "$home" "$home")
-  zellij_pane_response "$dir" 1 7 4
-  zellij_tab_response "$dir" 2 4 "$child_title"
-  printf '[]\n' > "$dir/responses/4.out"
-  printf '[]\n' > "$dir/responses/5.out"
+  printf '[]\n' > "$dir/responses/1.out"
+  printf '[]\n' > "$dir/responses/2.out"
+  printf '[]\n' > "$dir/responses/3.out"
+  zellij_pane_response "$dir" 4 7 4
+  zellij_tab_response "$dir" 5 4 "$child_title"
   printf '[]\n' > "$dir/responses/6.out"
   printf '[]\n' > "$dir/responses/7.out"
   fb=$(make_zellij_fakebin "$dir")
@@ -1182,9 +1242,12 @@ test_forced_secondmate_teardown_retains_unconfirmed_zellij_child() {
   fm_write_meta "$state/smz.meta" "window=firstmate:99" "endpoint_task_id=smz" "backend=zellij" "zellij_session=firstmate" "zellij_tab_id=99" "zellij_pane_id=99" "worktree=$home" "project=$home" "kind=secondmate" "mode=secondmate" "home=$home"
   fm_write_meta "$home/state/childz.meta" "window=firstmate:7" "endpoint_task_id=childz" "backend=zellij" "zellij_session=firstmate" "zellij_tab_id=4" "zellij_pane_id=7" "worktree=$child_wt" "project=$project" "kind=scout"
   child_title=$(zellij_expected_scoped_title fm-childz "$home")
-  zellij_pane_response "$dir" 1 7 4
-  zellij_tab_response "$dir" 2 4 "$child_title"
-  zellij_tab_response "$dir" 4 4 "$child_title"
+  printf '[]\n' > "$dir/responses/1.out"
+  printf '[]\n' > "$dir/responses/2.out"
+  printf '[]\n' > "$dir/responses/3.out"
+  zellij_pane_response "$dir" 4 7 4
+  zellij_tab_response "$dir" 5 4 "$child_title"
+  zellij_tab_response "$dir" 7 4 "$child_title"
   fb=$(make_zellij_fakebin "$dir")
   out=$( PATH="$fb:$PATH" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$data" FM_CONFIG_OVERRIDE="$config" FM_ROOT_OVERRIDE="$ROOT" FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" FM_ZELLIJ_SESSION_LIST=firstmate "$ROOT/bin/fm-teardown.sh" smz --force 2>&1 )
   status=$?
@@ -1637,6 +1700,7 @@ test_kill_closes_recorded_tab_when_pane_already_gone
 test_kill_skips_recorded_tab_when_label_mismatches
 test_kill_is_noop_when_session_absent
 test_teardown_passes_recorded_tab_id_to_zellij_kill
+test_inactive_preupgrade_teardown_refuses_before_mutation
 test_forced_secondmate_teardown_kills_zellij_children_with_child_home_tag
 test_forced_secondmate_teardown_retains_unconfirmed_zellij_child
 test_send_text_submit_detects_landed_send
