@@ -29,7 +29,7 @@
 FM_BACKEND_HOMETAG_SECONDMATE_MARKER=".fm-secondmate-home"
 
 fm_backend_tag_for_path() {
-  local path=$1 marker="$FM_HOME/$FM_BACKEND_HOMETAG_SECONDMATE_MARKER" id prefix resolved hash
+  local path=$1 marker="$1/$FM_BACKEND_HOMETAG_SECONDMATE_MARKER" id prefix resolved hash
   if [ -f "$marker" ]; then
     IFS= read -r id < "$marker" 2>/dev/null || return 1
     id=${id//[[:space:]]/}

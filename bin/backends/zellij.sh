@@ -33,8 +33,8 @@
 # "fm-<hometag>-<id>"); every list/find/recover/kill path is scoped to this
 # home's own tag. A tab created before this change carries the old untagged
 # "fm-<id>" title; target_ready, kill, and ad hoc selector fallback still
-# match it, but ONLY when that bare title is unambiguous (exactly one live tab
-# in the session carries it) - see fm_backend_zellij_tab_matches_label and
+# match it, but ONLY when that title is unambiguous and durable task metadata
+# binds its ids to the current session incarnation - see fm_backend_zellij_tab_matches_label and
 # docs/zellij-backend.md "Home-scoped tab titles" for the full migration
 # posture. Moving/relocating a firstmate installation changes its tag
 # (acceptable - recorded worktree paths do not survive a move either).
@@ -85,7 +85,7 @@
 #     auto-creating), verify the specific pane still appears in list-panes JSON,
 #     and, for metadata-routed task selector operations, verify the pane's tab
 #     still matches the expected caller-facing task label through the home-scoped or
-#     unambiguous legacy title before use. Kill verifies the session and, when
+#     unambiguous, ownership-proven legacy title before use. Kill verifies the session and, when
 #     teardown supplies an expected tab label, verifies a tab id still matches
 #     that label before closing it. Output-SHAPE validation (a bare integer tab
 #     id, JSON that parses) rejects the "session not found" text fallback. A
@@ -164,6 +164,80 @@ fm_backend_zellij_scoped_title() {  # <fm-task-label>
     *) rest=$label ;;
   esac
   printf 'fm-%s-%s' "$home" "$rest"
+}
+
+fm_backend_zellij_legacy_scoped_title() {  # <fm-task-label>
+  local label=$1 rest home
+  home=$(fm_backend_legacy_roottag) || return 1
+  case "$label" in
+    fm-*) rest=${label#fm-} ;;
+    *) rest=$label ;;
+  esac
+  printf 'fm-%s-%s' "$home" "$rest"
+}
+
+fm_backend_zellij_meta_exact_value() {  # <meta> <key>
+  local meta=$1 key=$2 line value='' count=0
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      "$key="*)
+        count=$((count + 1))
+        value=${line#*=}
+        ;;
+    esac
+  done < "$meta"
+  [ "$count" -eq 1 ] || return 1
+  printf '%s' "$value"
+}
+
+fm_backend_zellij_session_started_at() {  # <session>
+  local session=$1 cache info started
+  if [ -n "${FM_ZELLIJ_SESSION_STARTED_AT:-}" ]; then
+    started=$FM_ZELLIJ_SESSION_STARTED_AT
+  else
+    if [ -n "${ZELLIJ_CACHE_DIR:-}" ]; then
+      cache=$ZELLIJ_CACHE_DIR
+    elif [ "$(uname -s)" = Darwin ]; then
+      cache="${HOME:?}/Library/Caches/org.Zellij-Contributors.Zellij"
+    else
+      cache="${XDG_CACHE_HOME:-${HOME:?}/.cache}/zellij"
+    fi
+    info="$cache/contract_version_1/session_info/$session"
+    [ -e "$info" ] && [ ! -L "$info" ] || return 1
+    if [ "$(uname -s)" = Darwin ]; then
+      started=$(stat -f '%B' "$info" 2>/dev/null) || return 1
+    else
+      started=$(stat -c '%W' "$info" 2>/dev/null) || return 1
+    fi
+  fi
+  case "$started" in ''|*[!0-9]*|0) return 1 ;; esac
+  printf '%s' "$started"
+}
+
+fm_backend_zellij_legacy_ownership_proven() {  # <session> <tab-id> <label>
+  local session=$1 tab_id=$2 label=$3 id state meta backend endpoint meta_session meta_tab meta_pane window spawn_gen spawn_started session_started
+  case "$label" in fm-*) id=${label#fm-} ;; *) id=$label ;; esac
+  case "$id" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac
+  state=${FM_STATE_OVERRIDE:-$FM_HOME/state}
+  meta="$state/$id.meta"
+  [ -f "$meta" ] && [ ! -L "$meta" ] || return 1
+  backend=$(fm_backend_zellij_meta_exact_value "$meta" backend) || return 1
+  endpoint=$(fm_backend_zellij_meta_exact_value "$meta" endpoint_task_id) || return 1
+  meta_session=$(fm_backend_zellij_meta_exact_value "$meta" zellij_session) || return 1
+  meta_tab=$(fm_backend_zellij_meta_exact_value "$meta" zellij_tab_id) || return 1
+  meta_pane=$(fm_backend_zellij_meta_exact_value "$meta" zellij_pane_id) || return 1
+  window=$(fm_backend_zellij_meta_exact_value "$meta" window) || return 1
+  spawn_gen=$(fm_backend_zellij_meta_exact_value "$meta" spawn_gen) || return 1
+  [ "$backend" = zellij ] && [ "$endpoint" = "$id" ] \
+    && [ "$meta_session" = "$session" ] && [ "$meta_tab" = "$tab_id" ] \
+    && [ "$meta_pane" = "${FM_BACKEND_ZELLIJ_PANE:-}" ] \
+    && [ "$window" = "$session:$meta_pane" ] || return 1
+  case "$spawn_gen" in s[0-9]*.*) ;; *) return 1 ;; esac
+  spawn_started=${spawn_gen#s}
+  spawn_started=${spawn_started%%.*}
+  case "$spawn_started" in ''|*[!0-9]*) return 1 ;; esac
+  session_started=$(fm_backend_zellij_session_started_at "$session") || return 1
+  [ "$spawn_started" -gt "$session_started" ]
 }
 
 # fm_backend_zellij_tool_check: refuse loudly if zellij or jq is missing.
@@ -290,27 +364,34 @@ fm_backend_zellij_pane_exists() {  # <session> <pane_id>
 # tab name firstmate expects for the caller-facing task label <label>?
 # Checks the home-scoped, tagged title first (fm_backend_zellij_scoped_title
 # - what every NEW tab is created with), then falls back to the legacy
-# untagged bare title (the plain <label>, e.g. "fm-<id>") for a tab created
-# before this home-scoping change shipped - but ONLY when that bare name is
-# not ambiguous: exactly one live tab in the whole session carries it. A bare
+# root-tagged or untagged title for a tab created before this home-scoping
+# change shipped - but ONLY when that name is not ambiguous and the recorded
+# task metadata proves the ids were issued by this session incarnation. A bare
 # name shared by 2+ live tabs (this home's own pre-migration tab plus, say, a
 # same-named tab from a different firstmate home sharing this one zellij
 # session) refuses rather than silently trusting whichever one happened to
 # match - the migration posture documented in docs/zellij-backend.md
 # "Home-scoped tab titles". One list-tabs call serves every check here (the
-# scoped check, the bare check, and the ambiguity count all read the SAME
+# scoped check, the legacy checks, and the ambiguity count all read the SAME
 # already-fetched JSON), so a caller whose fake-CLI fixture supplies exactly
 # one list-tabs response keeps working unchanged.
 fm_backend_zellij_tab_matches_label() {  # <session> <tab_id> <label>
-  local session=$1 tab_id=$2 label=$3 scoped tabs count
+  local session=$1 tab_id=$2 label=$3 scoped legacy_scoped tabs candidate count
   scoped=$(fm_backend_zellij_scoped_title "$label") || return 1
+  legacy_scoped=$(fm_backend_zellij_legacy_scoped_title "$label") || return 1
   tabs=$(fm_backend_zellij_cli "$session" action list-tabs --json 2>/dev/null)
   printf '%s' "$tabs" | jq -e --argjson t "$tab_id" --arg want "$scoped" \
     '[.[]? | select(.tab_id == $t and .name == $want)] | length > 0' >/dev/null 2>&1 && return 0
-  printf '%s' "$tabs" | jq -e --argjson t "$tab_id" --arg want "$label" \
-    '[.[]? | select(.tab_id == $t and .name == $want)] | length > 0' >/dev/null 2>&1 || return 1
-  count=$(printf '%s' "$tabs" | jq -r --arg want "$label" '[.[]? | select(.name == $want)] | length' 2>/dev/null)
-  [ "$count" = "1" ]
+  for candidate in "$legacy_scoped" "$label"; do
+    [ "$candidate" != "$scoped" ] || continue
+    printf '%s' "$tabs" | jq -e --argjson t "$tab_id" --arg want "$candidate" \
+      '[.[]? | select(.tab_id == $t and .name == $want)] | length > 0' >/dev/null 2>&1 || continue
+    count=$(printf '%s' "$tabs" | jq -r --arg want "$candidate" '[.[]? | select(.name == $want)] | length' 2>/dev/null)
+    [ "$count" = "1" ] || return 1
+    fm_backend_zellij_legacy_ownership_proven "$session" "$tab_id" "$label"
+    return $?
+  done
+  return 1
 }
 
 # fm_backend_zellij_create_task: create the task's tab (one terminal pane) in
