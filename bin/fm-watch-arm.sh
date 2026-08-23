@@ -697,7 +697,8 @@ while :; do
   if [ "$now" -ge "$deadline" ]; then
     if [ "$confirm_grace_used" -eq 0 ] && fm_pid_alive "$child"; then
       confirm_grace_used=1
-      deadline=$((now + ARM_CONFIRM_LIVE_GRACE))
+      deadline=$((deadline + ARM_CONFIRM_LIVE_GRACE))
+      [ "$now" -lt "$deadline" ] || break
     else
       break
     fi

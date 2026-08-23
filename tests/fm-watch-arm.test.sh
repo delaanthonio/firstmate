@@ -497,6 +497,36 @@ test_confirmation_rejects_health_after_grace_deadline() {
   pass "watch-arm: health appearing after the grace deadline is refused"
 }
 
+test_confirmation_grace_uses_initial_deadline() {
+  local dir out watcher_pid watcher_state i
+  dir=$(make_confirmation_fixture confirm-suspended-before-initial-deadline)
+  printf '0\n' > "$dir/config/arm-confirm-timeout"
+  out="$dir/arm.out"
+  start_confirmation_arm "$dir" "$out" 2
+  wait_for_watcher_launch "$dir" || fail "pre-deadline suspension fixture did not launch its watcher"
+  watcher_pid=$(cat "$dir/watcher.pid")
+  kill -STOP "$ARM_PID" 2>/dev/null || fail "could not suspend confirmation arm before initial expiry"
+  i=0
+  watcher_state=
+  while [ "$i" -lt 50 ]; do
+    watcher_state=$(ps -p "$ARM_PID" -o stat= 2>/dev/null | tr -d ' ' || true)
+    case "$watcher_state" in T*) break ;; esac
+    sleep 0.02
+    i=$((i + 1))
+  done
+  case "$watcher_state" in
+    T*) ;;
+    *) fail "pre-deadline confirmation arm did not enter the stopped state: $watcher_state" ;;
+  esac
+  printf '7\n' > "$dir/now"
+  wait_for_file_text "$dir/state/.watch.lock/pid" "$watcher_pid" \
+    || fail "pre-deadline suspension watcher did not become healthy while its arm was suspended"
+  kill -CONT "$ARM_PID" 2>/dev/null || fail "could not resume confirmation arm after pre-deadline suspension"
+  assert_single_confirmation_failure "$ARM_PID" "$out" "pre-deadline suspended confirmation arm"
+  ! is_live_non_zombie "$watcher_pid" || fail "watcher survived grace derived after delayed expiry observation"
+  pass "watch-arm: confirmation grace remains anchored to the initial deadline"
+}
+
 test_startup_race_boundedly_retires_owned_child() {
   local dir out child_pid winner_pid
   dir=$(make_confirmation_fixture confirm-competing-winner)
@@ -700,16 +730,11 @@ test_rearm_resurfaces_durable_queue_and_remote_open_decision() {
   append_wake "$state" check startup-network 'check: startup-network'
 
   start_rearm_arm "$home" "$state" "$fakebin" "$armout"
-  sleep 0.25
-  if is_live_non_zombie "$ARM_PID"; then
-    # End the fixture through an ordinary actionable status transition so this
-    # failing pre-fix path leaves no child behind.
-    printf 'done: fixture cleanup\n' > "$state/cleanup.status"
-    wait_for_exit "$ARM_PID" 80 || true
+  wait_for_exit "$ARM_PID" 80
+  status=$?
+  if [ "$status" -eq 124 ]; then
     fail "re-arm stayed live instead of surfacing durable wakes and the still-open remote decision"
   fi
-  wait "$ARM_PID"
-  status=$?
   expect_code 0 "$status" "re-arm re-surface wake must close successfully"
   grep -F 'check: rearm-resurface' "$armout" >/dev/null \
     || fail "re-arm did not report the durable recovery wake: $(cat "$armout")"
@@ -1218,6 +1243,7 @@ test_confirmation_timeout_reaps_term_resistant_child
 test_confirmation_timeout_reaps_stopped_child
 test_live_child_gets_one_bounded_confirmation_grace
 test_confirmation_rejects_health_after_grace_deadline
+test_confirmation_grace_uses_initial_deadline
 test_startup_race_boundedly_retires_owned_child
 test_startup_race_returns_owned_actionable_wake
 test_attached_arm_reports_the_delivered_wake
