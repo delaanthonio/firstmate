@@ -179,11 +179,11 @@ EOF
 test_kimi_launch_then_send_is_verified() {
   local id rec out rc launch pointer brief_real meta task_tmp
   id="kimi-success-z1-$$"
-  task_tmp="/tmp/fm-$id"
-  KIMI_RUNTIME_TASK_TMP=$task_tmp
-  rm -rf "$task_tmp"
   rec=$(make_spawn_case success "$id")
   read_spawn_record "$rec"
+  task_tmp=$(FM_HOME="$HOME_DIR" FM_ROOT="$HOME_DIR" bash -c '. "$1"; printf "/tmp/fm-%s/%s" "$(fm_backend_hometag)" "$2"' _ "$ROOT/bin/fm-backend-hometag-lib.sh" "$id")
+  KIMI_RUNTIME_TASK_TMP=$task_tmp
+  rm -rf "$task_tmp"
   out=$(FM_FAKE_KIMI_SWALLOW_FIRST=yes run_spawn \
     "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" \
     --model kimi-code/k3 --effort high)
@@ -214,6 +214,20 @@ test_kimi_launch_then_send_is_verified() {
   assert_grep 'token=' "$WT_DIR/.fm-kimi-turnend" "kimi spawn did not write its token pointer"
   assert_present "$HOME_DIR/state/$id.kimi-turnend-token" "kimi spawn did not record its token"
   pass "fm-spawn: kimi launches, delivers its brief, and registers a guarded turn-end token"
+}
+
+test_spawn_refuses_unsafe_secondmate_home_marker() {
+  local id rec out rc
+  id="kimi-unsafe-home-marker-$$"
+  rec=$(make_spawn_case unsafe-home-marker "$id")
+  read_spawn_record "$rec"
+  printf 'x/../../../../escape\n' > "$HOME_DIR/.fm-secondmate-home"
+  out=$(run_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id")
+  rc=$?
+  [ "$rc" -ne 0 ] || fail "spawn accepted an unsafe secondmate home marker"
+  [ ! -s "$CASE_DIR/launch.log" ] || fail "spawn launched the harness after rejecting an unsafe home marker"
+  assert_absent "$HOME_DIR/state/$id.meta" "spawn published task metadata after rejecting an unsafe home marker"
+  pass "fm-spawn: refuses unsafe secondmate home markers before temp-root creation"
 }
 
 test_kimi_hook_install_is_surgical_idempotent_and_removable() {
@@ -662,6 +676,7 @@ test_kimi_hook_remove_preserves_owned_newline_boundary
 test_kimi_hook_fails_closed_on_missing_malformed_or_partial_config
 test_kimi_hook_install_refuses_without_jq
 test_kimi_launch_then_send_is_verified
+test_spawn_refuses_unsafe_secondmate_home_marker
 test_kimi_hook_is_silent_and_requires_registered_workspace_token
 test_kimi_spawn_refuses_unsafe_global_config_before_pane_creation
 test_kimi_teardown_removes_pointer_and_registry_token

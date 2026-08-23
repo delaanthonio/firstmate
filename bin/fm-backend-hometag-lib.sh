@@ -31,8 +31,9 @@ FM_BACKEND_HOMETAG_SECONDMATE_MARKER=".fm-secondmate-home"
 fm_backend_tag_for_path() {
   local path=$1 marker="$FM_HOME/$FM_BACKEND_HOMETAG_SECONDMATE_MARKER" id prefix resolved hash
   if [ -f "$marker" ]; then
-    id=$(tr -d '[:space:]' < "$marker" 2>/dev/null)
+    id=$(cat "$marker" 2>/dev/null) || return 1
     if [ -n "$id" ]; then
+      case "$id" in *[!A-Za-z0-9._-]*) return 1 ;; esac
       prefix="2ndmate-$id"
     else
       prefix="firstmate"
