@@ -862,6 +862,9 @@ live_ws=cccccccc-2222-2222-2222-222222222222
 live_sf=dddddddd-3333-3333-3333-333333333333
 printf '%s\n' "$*" >> "$FM_FAKE_CMUX_LOG"
 case "${1:-}:${2:-}" in
+  list-windows:*)
+    printf '[{"id":"eeeeeeee-4444-4444-4444-444444444444","workspace_count":1}]'
+    ;;
   workspace:list)
     printf '{"workspaces":[{"id":"%s","title":"%s"}]}' "$live_ws" "$FM_FAKE_CMUX_TITLE"
     ;;

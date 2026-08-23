@@ -1564,8 +1564,10 @@ SH
     PATH="$case_dir/fakebin:$PATH" \
     "$teardown_bin" task-x1 --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
   [ "$rc" -ne 0 ] || fail "herdr-preflight-$mode: teardown continued without its required preflight"
-  assert_grep "nothing was changed" "$case_dir/stderr" \
-    "herdr-preflight-$mode: the retryable pre-return refusal was not explained visibly"
+  if ! grep -F -- "nothing was changed" "$case_dir/stderr" >/dev/null \
+    && ! grep -F -- "teardown changed nothing" "$case_dir/stderr" >/dev/null; then
+    fail "herdr-preflight-$mode: the retryable pre-return refusal was not explained visibly"
+  fi
   [ -d "$case_dir/wt" ] || fail "herdr-preflight-$mode: refusal removed the isolated copy"
   [ "$(git -C "$case_dir/wt" rev-parse --abbrev-ref HEAD 2>/dev/null)" = "fm/task-x1" ] \
     || fail "herdr-preflight-$mode: refusal dropped the task branch"
@@ -2233,14 +2235,16 @@ test_leaked_worktree_process_is_reaped() {
 }
 
 test_leaked_tasktmp_process_is_reaped() {
-  local case_dir rc pid
+  local case_dir rc pid tag task_tmp
   case_dir=$(make_case leaked-tasktmp-reap)
   write_meta "$case_dir" no-mistakes ship
-  printf '%s\n' "tasktmp=$case_dir/tasktmp" >> "$case_dir/state/task-x1.meta"
-  mkdir -p "$case_dir/tasktmp"
+  tag=$(FM_HOME="$case_dir" FM_ROOT="$case_dir" bash -c '. "$1"; fm_backend_hometag' _ "$ROOT/bin/fm-backend-hometag-lib.sh")
+  task_tmp="/tmp/fm-$tag/task-x1"
+  printf '%s\n' "tasktmp=$task_tmp" >> "$case_dir/state/task-x1.meta"
+  mkdir -p "$task_tmp"
   land_shippable_commit "$case_dir"
 
-  ( cd "$case_dir/tasktmp" && exec sleep 300 ) &
+  ( cd "$task_tmp" && exec sleep 300 ) &
   pid=$!
   disown
   sleep 0.3

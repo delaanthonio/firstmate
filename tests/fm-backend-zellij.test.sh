@@ -451,7 +451,7 @@ test_preupgrade_metadata_migrates_only_from_owned_live_process() {
   fb=$(make_zellij_fakebin "$dir")
   make_zellij_ownership_fakebin "$dir" >/dev/null
   token=fmz-11111111111111111111111111111111
-  PATH="$fb:$PATH" FM_HOME="$ROOT" FM_STATE_OVERRIDE="$state" FM_TEST_SERVER_PID=100 FM_TEST_WORKER_PID=200 \
+  PATH="$fb:$PATH" FM_HOME="$ROOT" FM_STATE_OVERRIDE="$state" FM_TEST_SERVER_PID=987654321 FM_TEST_WORKER_PID=987654322 \
     FM_TEST_WORKTREE="$worktree" FM_TEST_PROCESS_HOME="$ROOT" FM_TEST_FINGERPRINT="$token" \
     FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" FM_ZELLIJ_SESSION_LIST=firstmate \
     bash -c '. "$0/bin/backends/zellij.sh"; fm_backend_zellij_session_fingerprint() { printf "%s" "$FM_TEST_FINGERPRINT"; }; fm_backend_zellij_session_fingerprint_matches() { [ "$2" = "$FM_TEST_FINGERPRINT" ]; }; fm_backend_zellij_send_key firstmate:7 Escape fm-legacy' "$ROOT"
@@ -471,7 +471,7 @@ test_preupgrade_metadata_refuses_foreign_reused_process() {
   zellij_tab_response "$dir" 2 3 fm-legacy
   fb=$(make_zellij_fakebin "$dir")
   make_zellij_ownership_fakebin "$dir" >/dev/null
-  PATH="$fb:$PATH" FM_HOME="$ROOT" FM_STATE_OVERRIDE="$state" FM_TEST_SERVER_PID=100 FM_TEST_WORKER_PID=200 \
+  PATH="$fb:$PATH" FM_HOME="$ROOT" FM_STATE_OVERRIDE="$state" FM_TEST_SERVER_PID=987654321 FM_TEST_WORKER_PID=987654322 \
     FM_TEST_WORKTREE="$worktree" FM_TEST_PROCESS_HOME="$foreign_home" \
     FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" FM_ZELLIJ_SESSION_LIST=firstmate \
     bash -c '. "$0/bin/backends/zellij.sh"; fm_backend_zellij_session_fingerprint() { return 99; }; fm_backend_zellij_send_key firstmate:7 Escape fm-legacy' "$ROOT"
@@ -567,14 +567,15 @@ test_spawn_abort_retires_unpublished_session_fingerprint() {
   local dir home subhome state fb socket_root socket server_pid status proof_count
   command -v python3 >/dev/null 2>&1 || { echo "skip: python3 not found (required for zellij socket lifecycle fixture)"; return; }
   dir="$TMP_ROOT/spawn-abort-fingerprint"; home="$dir/primary"; subhome="$dir/secondmate"
-  state="$home/state"; socket_root="socket-root"
-  socket="$dir/$socket_root/contract_version_1/firstmate"
+  state="$home/state"; socket_root=$(mktemp -d /tmp/fmz-socket.XXXXXX)
+  socket="$socket_root/contract_version_1/firstmate"
   mkdir -p "$state" "$home/data" "$home/config" "$subhome/bin" "$subhome/data" "${socket%/*}" "$dir/responses"
   printf '# Firstmate\n' > "$subhome/AGENTS.md"
   printf 'legacy\n' > "$subhome/.fm-secondmate-home"
   printf 'charter\n' > "$subhome/data/charter.md"
-  coproc { exec python3 -c 'import socket,sys,time; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(); time.sleep(30)' "$socket"; }
-  server_pid=$COPROC_PID
+  python3 -c 'import socket,sys,time; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(); time.sleep(30)' "$socket" &
+  # shellcheck disable=SC2031 # Bash 3.2-compatible background launch; this function runs in the test shell.
+  server_pid=$!
   for _ in 1 2 3 4 5 6 7 8 9 10; do
     [ -S "$socket" ] && break
     sleep 0.1
@@ -598,9 +599,10 @@ SH
   kill "$server_pid" 2>/dev/null || true
   wait "$server_pid" 2>/dev/null || true
   [ "$status" -ne 0 ] || fail "zellij spawn fixture should abort after publishing a session proof"
-  proof_count=$(find "$dir/$socket_root/contract_version_1/.firstmate-incarnations" -type s 2>/dev/null | wc -l | tr -d ' ')
+  proof_count=$(find "$socket_root/contract_version_1/.firstmate-incarnations" -type s 2>/dev/null | wc -l | tr -d ' ')
   [ "$proof_count" = 0 ] || fail "aborted zellij spawn left $proof_count unpublished session proof(s)"
   [ ! -e "$state/legacy.meta" ] || fail "aborted zellij spawn published task metadata"
+  rm -rf -- "$socket_root"
   pass "fm-spawn zellij abort: retires the unpublished session-incarnation proof"
 }
 
@@ -1222,8 +1224,9 @@ printf 'called\n' >> "$FM_TEST_TREEHOUSE_LOG"
 exit 0
 SH
   chmod +x "$fb/treehouse"
-  coproc { cd "$worktree" && exec sleep 60; }
-  pid=$COPROC_PID
+  (cd "$worktree" && exec sleep 60) &
+  # shellcheck disable=SC2031 # Bash 3.2-compatible background launch; this function runs in the test shell.
+  pid=$!
   out=$( PATH="$fb:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$data" \
     FM_CONFIG_OVERRIDE="$config" FM_ROOT_OVERRIDE="$ROOT" FM_TEST_TREEHOUSE_LOG="$dir/treehouse.log" \
     FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" FM_ZELLIJ_SESSION_LIST=firstmate \
