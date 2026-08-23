@@ -1,0 +1,16 @@
+FM_TEST_BEGIN 2026-08-23T10:25:54Z tests/fm-standing-checks.test.sh family=unclassified expected_gate_skip=none
+ok - fm_supervision_run_due_checks: due actionable check appends wake and stamps schedule
+ok - fm_supervision_run_due_checks: not-due check does not double-run
+ok - fm_supervision_run_due_checks: missing and silent checks stay quiet
+ok - fm_supervision_run_due_checks: erroring check fails open
+ok - fm_supervision_run_due_checks: timeout fails open without wedging
+ok - fm_supervision_run_due_checks: held lock prevents concurrent check execution
+ok - fm_supervision_run_due_checks: unauthenticated custom checks are rejected without execution
+ok - fm_supervision_run_due_checks: dangling entries do not hide valid due checks
+ok - fm_supervision_run_due_checks: trailing dangling entries are reported with valid due checks
+ok - fm_supervision_run_due_checks: merged PR retirement follows durable wake append
+ok - fm_supervision_run_due_checks: rejected checks advance cadence after durable wake
+FM_TEST_END 2026-08-23T10:25:58Z tests/fm-standing-checks.test.sh exit=0 duration_ms=4085 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=4162
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=4085 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-standing-checks.test.sh duration_ms=4085
