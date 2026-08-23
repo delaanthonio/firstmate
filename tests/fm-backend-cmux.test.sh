@@ -1238,11 +1238,15 @@ test_forced_secondmate_teardown_kills_cmux_children_with_child_home_tag() {
   cmux_workspace_list_response "$dir" 1 "cccccccc-2222-2222-2222-222222222222" "$child_title"
   cmux_panes_response "$dir" 2 "dddddddd-3333-3333-3333-333333333333"
   cmux_windows_response "$dir" 3 "e1111111-0000-0000-0000-000000000000" 2
-  cmux_workspace_list_response "$dir" 4 "cccccccc-2222-2222-2222-222222222222" "$child_title" "ffffffff-4444-4444-4444-444444444444" "other"
-  cmux_workspace_list_response "$dir" 6 "aaaaaaaa-0000-0000-0000-000000000000" "$parent_title"
-  cmux_panes_response "$dir" 7 "bbbbbbbb-1111-1111-1111-111111111111"
-  cmux_windows_response "$dir" 8 "e2222222-0000-0000-0000-000000000000" 2
-  cmux_workspace_list_response "$dir" 9 "aaaaaaaa-0000-0000-0000-000000000000" "$parent_title" "ffffffff-5555-5555-5555-555555555555" "other"
+  cmux_workspace_list_response "$dir" 4 "cccccccc-2222-2222-2222-222222222222" "$child_title" "ffffffff-4444-4444-4444-444444444444" other
+  cmux_windows_response "$dir" 6 "e1111111-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 7
+  cmux_workspace_list_response "$dir" 8 "aaaaaaaa-0000-0000-0000-000000000000" "$parent_title"
+  cmux_panes_response "$dir" 9 "bbbbbbbb-1111-1111-1111-111111111111"
+  cmux_windows_response "$dir" 10 "e2222222-0000-0000-0000-000000000000" 2
+  cmux_workspace_list_response "$dir" 11 "aaaaaaaa-0000-0000-0000-000000000000" "$parent_title" "ffffffff-5555-5555-5555-555555555555" other
+  cmux_windows_response "$dir" 13 "e2222222-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 14
   fb=$(make_cmux_fakebin "$dir")
   out=$( PATH="$fb:$PATH" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$data" FM_CONFIG_OVERRIDE="$config" \
     FM_ROOT_OVERRIDE="$ROOT" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
@@ -1252,6 +1256,36 @@ test_forced_secondmate_teardown_kills_cmux_children_with_child_home_tag() {
   assert_contains "$(cat "$dir/log")" $'\x1f''close-workspace'$'\x1f''--workspace'$'\x1f''cccccccc-2222-2222-2222-222222222222' \
     "forced secondmate teardown did not close a child cmux workspace scoped to the child home"
   pass "fm-teardown.sh: force cleanup kills cmux children using the child home tag"
+}
+
+test_forced_secondmate_teardown_retains_unconfirmed_cmux_child() {
+  local dir state data config home project child_wt fb out status child_title
+  dir="$TMP_ROOT/teardown-cmux-unconfirmed-child"; state="$dir/state"; data="$dir/data"; config="$dir/config"; home="$dir/secondmate-home"; project="$dir/project"
+  child_wt="$dir/child-worktree"
+  mkdir -p "$state" "$data" "$config" "$home/state" "$home/data" "$home/config" "$home/projects" "$project" "$dir/responses"
+  git -C "$project" init -q
+  git -C "$project" -c user.name=test -c user.email=test@example.invalid commit -q --allow-empty -m init
+  git -C "$project" worktree add -q -b childc "$child_wt"
+  printf 'keep\n' > "$child_wt/uncommitted"
+  printf 'smc\n' > "$home/.fm-secondmate-home"
+  fm_write_meta "$state/smc.meta" "window=aaaaaaaa-0000-0000-0000-000000000000:bbbbbbbb-1111-1111-1111-111111111111" "endpoint_task_id=smc" "backend=cmux" "cmux_workspace_id=aaaaaaaa-0000-0000-0000-000000000000" "cmux_surface_id=bbbbbbbb-1111-1111-1111-111111111111" "worktree=$home" "project=$home" "kind=secondmate" "mode=secondmate" "home=$home"
+  fm_write_meta "$home/state/childc.meta" "window=cccccccc-2222-2222-2222-222222222222:dddddddd-3333-3333-3333-333333333333" "endpoint_task_id=childc" "backend=cmux" "cmux_workspace_id=cccccccc-2222-2222-2222-222222222222" "cmux_surface_id=dddddddd-3333-3333-3333-333333333333" "worktree=$child_wt" "project=$project" "kind=scout"
+  child_title=$(cmux_expected_scoped_title fm-childc "$home")
+  cmux_workspace_list_response "$dir" 1 "cccccccc-2222-2222-2222-222222222222" "$child_title"
+  cmux_panes_response "$dir" 2 "dddddddd-3333-3333-3333-333333333333"
+  cmux_windows_response "$dir" 3 "e1111111-0000-0000-0000-000000000000" 2
+  cmux_workspace_list_response "$dir" 4 "cccccccc-2222-2222-2222-222222222222" "$child_title" "ffffffff-4444-4444-4444-444444444444" other
+  cmux_windows_response "$dir" 6 "e1111111-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 7 "cccccccc-2222-2222-2222-222222222222" "$child_title"
+  fb=$(make_cmux_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$data" FM_CONFIG_OVERRIDE="$config" FM_ROOT_OVERRIDE="$ROOT" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" "$ROOT/bin/fm-teardown.sh" smc --force 2>&1 )
+  status=$?
+  [ "$status" -ne 0 ] || fail "forced teardown should refuse an unconfirmed cmux child close"
+  [ -f "$home/state/childc.meta" ] || fail "forced teardown removed an unconfirmed cmux child's metadata"
+  [ -f "$child_wt/uncommitted" ] || fail "forced teardown removed an unconfirmed cmux child's worktree"
+  [ -d "$home" ] || fail "forced teardown removed the home containing an unconfirmed cmux child"
+  assert_contains "$out" "not confirmed gone" "forced teardown did not explain the retained cmux child"
+  pass "fm-teardown.sh: retains child lifecycle records until cmux closure is confirmed"
 }
 
 # --- fm-spawn.sh: --secondmate refuses backend=cmux --------------------------
@@ -1338,4 +1372,5 @@ test_kill_is_best_effort_when_close_workspace_fails
 test_kill_recovers_stale_target_by_label
 test_list_live_filters_by_title_prefix
 test_forced_secondmate_teardown_kills_cmux_children_with_child_home_tag
+test_forced_secondmate_teardown_retains_unconfirmed_cmux_child
 test_secondmate_spawn_refuses_cmux_backend

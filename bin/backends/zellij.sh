@@ -190,10 +190,10 @@ fm_backend_zellij_meta_exact_value() {  # <meta> <key>
   printf '%s' "$value"
 }
 
-fm_backend_zellij_session_started_at() {  # <session>
-  local session=$1 cache info started
-  if [ -n "${FM_ZELLIJ_SESSION_STARTED_AT:-}" ]; then
-    started=$FM_ZELLIJ_SESSION_STARTED_AT
+fm_backend_zellij_session_fingerprint() {  # <session>
+  local session=$1 cache info fingerprint
+  if [ -n "${FM_ZELLIJ_SESSION_FINGERPRINT:-}" ]; then
+    fingerprint=$FM_ZELLIJ_SESSION_FINGERPRINT
   else
     if [ -n "${ZELLIJ_CACHE_DIR:-}" ]; then
       cache=$ZELLIJ_CACHE_DIR
@@ -205,17 +205,17 @@ fm_backend_zellij_session_started_at() {  # <session>
     info="$cache/contract_version_1/session_info/$session"
     [ -e "$info" ] && [ ! -L "$info" ] || return 1
     if [ "$(uname -s)" = Darwin ]; then
-      started=$(stat -f '%B' "$info" 2>/dev/null) || return 1
+      fingerprint=$(stat -f '%d:%i:%B' "$info" 2>/dev/null) || return 1
     else
-      started=$(stat -c '%W' "$info" 2>/dev/null) || return 1
+      fingerprint=$(stat -c '%d:%i:%W' "$info" 2>/dev/null) || return 1
     fi
   fi
-  case "$started" in ''|*[!0-9]*|0) return 1 ;; esac
-  printf '%s' "$started"
+  case "$fingerprint" in ''|*[!0-9:]*) return 1 ;; esac
+  printf '%s' "$fingerprint"
 }
 
 fm_backend_zellij_legacy_ownership_proven() {  # <session> <tab-id> <label>
-  local session=$1 tab_id=$2 label=$3 id state meta backend endpoint meta_session meta_tab meta_pane window spawn_gen spawn_started session_started
+  local session=$1 tab_id=$2 label=$3 id state meta backend endpoint meta_session meta_tab meta_pane window recorded_fingerprint current_fingerprint
   case "$label" in fm-*) id=${label#fm-} ;; *) id=$label ;; esac
   case "$id" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac
   state=${FM_STATE_OVERRIDE:-$FM_HOME/state}
@@ -227,17 +227,13 @@ fm_backend_zellij_legacy_ownership_proven() {  # <session> <tab-id> <label>
   meta_tab=$(fm_backend_zellij_meta_exact_value "$meta" zellij_tab_id) || return 1
   meta_pane=$(fm_backend_zellij_meta_exact_value "$meta" zellij_pane_id) || return 1
   window=$(fm_backend_zellij_meta_exact_value "$meta" window) || return 1
-  spawn_gen=$(fm_backend_zellij_meta_exact_value "$meta" spawn_gen) || return 1
+  recorded_fingerprint=$(fm_backend_zellij_meta_exact_value "$meta" zellij_session_fingerprint) || return 1
   [ "$backend" = zellij ] && [ "$endpoint" = "$id" ] \
     && [ "$meta_session" = "$session" ] && [ "$meta_tab" = "$tab_id" ] \
     && [ "$meta_pane" = "${FM_BACKEND_ZELLIJ_PANE:-}" ] \
     && [ "$window" = "$session:$meta_pane" ] || return 1
-  case "$spawn_gen" in s[0-9]*.*) ;; *) return 1 ;; esac
-  spawn_started=${spawn_gen#s}
-  spawn_started=${spawn_started%%.*}
-  case "$spawn_started" in ''|*[!0-9]*) return 1 ;; esac
-  session_started=$(fm_backend_zellij_session_started_at "$session") || return 1
-  [ "$spawn_started" -gt "$session_started" ]
+  current_fingerprint=$(fm_backend_zellij_session_fingerprint "$session") || return 1
+  [ "$recorded_fingerprint" = "$current_fingerprint" ]
 }
 
 # fm_backend_zellij_tool_check: refuse loudly if zellij or jq is missing.
@@ -692,6 +688,17 @@ fm_backend_zellij_kill() {  # <target> [tab_id] [expected_label]
   elif [ -z "$expected_label" ]; then
     fm_backend_zellij_cli "$FM_BACKEND_ZELLIJ_SESSION" action close-pane --pane-id "$FM_BACKEND_ZELLIJ_PANE" >/dev/null 2>&1 || true
   fi
+}
+
+fm_backend_zellij_endpoint_confirmed_gone() {  # <target> <tab-id>
+  local target=$1 tab_id=$2 sessions tabs
+  fm_backend_zellij_parse_target "$target" || return 1
+  case "$tab_id" in ''|*[!0-9]*) return 1 ;; esac
+  sessions=$(zellij list-sessions --short --no-formatting 2>/dev/null) || return 1
+  printf '%s\n' "$sessions" | grep -qxF "$FM_BACKEND_ZELLIJ_SESSION" || return 0
+  tabs=$(fm_backend_zellij_cli "$FM_BACKEND_ZELLIJ_SESSION" action list-tabs --json 2>/dev/null) || return 1
+  printf '%s' "$tabs" | jq -e 'type == "array"' >/dev/null 2>&1 || return 1
+  ! printf '%s' "$tabs" | jq -e --argjson t "$tab_id" '.[]? | select(.tab_id == $t)' >/dev/null 2>&1
 }
 
 # fm_backend_zellij_list_live: recovery/orphan discovery. Lists every tab in

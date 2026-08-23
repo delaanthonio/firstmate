@@ -714,6 +714,18 @@ fm_backend_cmux_kill() {  # <target> [unused] [expected-label]
   fm_backend_cmux_cli close-workspace --workspace "$wsid" >/dev/null 2>&1 || true
 }
 
+fm_backend_cmux_endpoint_confirmed_gone() {  # <target> <expected-label>
+  local target=$1 expected_label=$2 scoped legacy matches
+  fm_backend_cmux_parse_target "$target" || return 1
+  scoped=$(fm_backend_cmux_scoped_title "$expected_label") || return 1
+  legacy=$(fm_backend_cmux_legacy_scoped_title "$expected_label") || return 1
+  matches=$(fm_backend_cmux_workspace_ids_for_label "$scoped") || return 1
+  [ -z "$matches" ] || return 1
+  [ "$legacy" = "$scoped" ] && return 0
+  matches=$(fm_backend_cmux_workspace_ids_for_label "$legacy") || return 1
+  [ -z "$matches" ]
+}
+
 # fm_backend_cmux_list_live: recovery/orphan discovery. Lists every workspace
 # whose title is scoped to this firstmate home, by TITLE - never by trusting a
 # stored uuid, since workspace ids do NOT survive an app relaunch (finding #5).

@@ -2267,10 +2267,24 @@ cleanup_firstmate_home_children() {
           echo "error: herdr pane $child_t for child $child_id is not confirmed gone; retaining that child's durable identity records and stopping forced cleanup" >&2
           return 1
         fi
-      elif [ "$child_backend" = zellij ] || [ "$child_backend" = cmux ]; then
+      elif [ "$child_backend" = zellij ]; then
         # Zellij titles are scoped by the owning home tag, so forced secondmate
         # cleanup must verify child tabs as that child home, not the parent.
-        ( unset FM_ROOT_OVERRIDE; FM_HOME=$home FM_ROOT=$home FM_STATE_OVERRIDE=$sub_state fm_backend_kill "$child_backend" "$child_t" "$(meta_value "$child_meta" zellij_tab_id)" "fm-$child_id" ) 2>/dev/null || true
+        if ! ( unset FM_ROOT_OVERRIDE; FM_HOME=$home FM_ROOT=$home FM_STATE_OVERRIDE=$sub_state
+          fm_backend_kill zellij "$child_t" "$(meta_value "$child_meta" zellij_tab_id)" "fm-$child_id" 2>/dev/null || true
+          fm_backend_zellij_endpoint_confirmed_gone "$child_t" "$(meta_value "$child_meta" zellij_tab_id)"
+        ); then
+          echo "error: zellij endpoint $child_t for child $child_id is not confirmed gone; retaining that child's durable identity records and stopping forced cleanup" >&2
+          return 1
+        fi
+      elif [ "$child_backend" = cmux ]; then
+        if ! ( unset FM_ROOT_OVERRIDE; FM_HOME=$home FM_ROOT=$home FM_STATE_OVERRIDE=$sub_state
+          fm_backend_kill cmux "$child_t" "" "fm-$child_id" 2>/dev/null || true
+          fm_backend_cmux_endpoint_confirmed_gone "$child_t" "fm-$child_id"
+        ); then
+          echo "error: cmux endpoint $child_t for child $child_id is not confirmed gone; retaining that child's durable identity records and stopping forced cleanup" >&2
+          return 1
+        fi
       else
         fm_backend_kill "$child_backend" "$child_t" "$(meta_value "$child_meta" zellij_tab_id)" "fm-$child_id" 2>/dev/null || true
       fi
@@ -2590,6 +2604,20 @@ if [ "$BACKEND" = herdr ]; then
   fi
   if ! fm_backend_herdr_endpoint_confirmed_gone "$T"; then
     echo "error: herdr pane $T for $ID is not confirmed gone after its close was refused, skipped, or failed; retaining every durable task record - rerun teardown once the close can run under the session lock" >&2
+    exit 1
+  fi
+fi
+if [ "$BACKEND" = zellij ]; then
+  if ! declare -F fm_backend_zellij_endpoint_confirmed_gone >/dev/null 2>&1 \
+    || ! fm_backend_zellij_endpoint_confirmed_gone "$T" "$(meta_value "$META" zellij_tab_id)"; then
+    echo "error: zellij endpoint $T for $ID is not confirmed gone; retaining every durable task record" >&2
+    exit 1
+  fi
+fi
+if [ "$BACKEND" = cmux ]; then
+  if ! declare -F fm_backend_cmux_endpoint_confirmed_gone >/dev/null 2>&1 \
+    || ! fm_backend_cmux_endpoint_confirmed_gone "$T" "fm-$ID"; then
+    echo "error: cmux endpoint $T for $ID is not confirmed gone; retaining every durable task record" >&2
     exit 1
   fi
 fi

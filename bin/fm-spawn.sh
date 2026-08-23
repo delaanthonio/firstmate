@@ -2161,6 +2161,10 @@ EOF
     ;;
   zellij)
     ZELLIJ_SES=$(fm_backend_zellij_container_ensure) || exit 1
+    ZELLIJ_SESSION_FINGERPRINT=$(fm_backend_zellij_session_fingerprint "$ZELLIJ_SES") || {
+      echo "error: could not establish a stable incarnation fingerprint for zellij session '$ZELLIJ_SES'" >&2
+      exit 1
+    }
     ZELLIJ_TASK_IDS=$(fm_backend_zellij_create_task "$ZELLIJ_SES" "$W" "$PROJ_ABS") || exit 1
     read -r ZELLIJ_TAB_ID ZELLIJ_PANE_ID <<EOF
 $ZELLIJ_TASK_IDS
@@ -2383,6 +2387,16 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
 fi
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
   freshen_spawn_worktree_base "$WT" || exit 1
+fi
+
+if [ "$RELAUNCH" -eq 1 ] && [ "$BACKEND" = zellij ]; then
+  ZELLIJ_SES=$(meta_value "$RELAUNCH_META" zellij_session)
+  ZELLIJ_TAB_ID=$(meta_value "$RELAUNCH_META" zellij_tab_id)
+  ZELLIJ_PANE_ID=$(meta_value "$RELAUNCH_META" zellij_pane_id)
+  ZELLIJ_SESSION_FINGERPRINT=$(fm_backend_zellij_session_fingerprint "$ZELLIJ_SES") || {
+    echo "error: could not establish a stable incarnation fingerprint for zellij session '$ZELLIJ_SES'" >&2
+    exit 1
+  }
 fi
 
 # Per-task temp root: /tmp/fm-<home-tag>/<id>/ with Go's build temp nested at
@@ -2774,7 +2788,7 @@ fi
 preserve_relaunch_meta() {
   awk -F= '
     BEGIN {
-      split("window endpoint_task_id worktree project harness kind mode yolo tasktmp model effort busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx", keys, " ")
+      split("window endpoint_task_id worktree project harness kind mode yolo tasktmp model effort busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id zellij_session_fingerprint orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx", keys, " ")
       for (i in keys) owned[keys[i]] = 1
     }
     !($1 in owned)
@@ -2809,6 +2823,7 @@ preserve_relaunch_meta() {
     echo "zellij_session=$ZELLIJ_SES"
     echo "zellij_tab_id=$ZELLIJ_TAB_ID"
     echo "zellij_pane_id=$ZELLIJ_PANE_ID"
+    echo "zellij_session_fingerprint=$ZELLIJ_SESSION_FINGERPRINT"
   fi
   if [ "$BACKEND" = orca ]; then
     echo "orca_worktree_id=$ORCA_WORKTREE_ID"

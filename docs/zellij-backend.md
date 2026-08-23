@@ -56,7 +56,7 @@ zellij_pane_id=<pane-id>
 ```
 
 Recorded pane ids are numeric and are never trusted alone after a session recreation.
-Metadata-routed operations verify the owning tab's expected scoped title, or require an unambiguous legacy title whose recorded task ids and spawn generation belong to the current Zellij session incarnation.
+Metadata-routed operations verify the owning tab's expected scoped title, or require an unambiguous legacy title whose recorded task ids and stable session fingerprint belong to the current Zellij session incarnation.
 An explicit raw `session:pane` target remains a pane-existence-only operator escape hatch.
 
 ## Current operation and safety

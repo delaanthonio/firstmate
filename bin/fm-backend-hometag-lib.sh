@@ -28,8 +28,8 @@
 
 FM_BACKEND_HOMETAG_SECONDMATE_MARKER=".fm-secondmate-home"
 
-fm_backend_tag_for_path() {
-  local path=$1 marker="$1/$FM_BACKEND_HOMETAG_SECONDMATE_MARKER" id prefix resolved hash
+fm_backend_tag_for_paths() {
+  local prefix_path=$1 hash_path=$2 marker="$1/$FM_BACKEND_HOMETAG_SECONDMATE_MARKER" id prefix resolved hash
   if [ -f "$marker" ]; then
     IFS= read -r id < "$marker" 2>/dev/null || return 1
     id=${id//[[:space:]]/}
@@ -42,7 +42,7 @@ fm_backend_tag_for_path() {
   else
     prefix="firstmate"
   fi
-  resolved=$(cd "$path" 2>/dev/null && pwd -P) || resolved=$path
+  resolved=$(cd "$hash_path" 2>/dev/null && pwd -P) || resolved=$hash_path
   if command -v shasum >/dev/null 2>&1; then
     hash=$(printf '%s' "$resolved" | shasum -a 256 | awk '{print substr($1,1,8)}')
   elif command -v sha256sum >/dev/null 2>&1; then
@@ -53,10 +53,14 @@ fm_backend_tag_for_path() {
   printf '%s-%s' "$prefix" "$hash"
 }
 
+fm_backend_tag_for_path() {
+  fm_backend_tag_for_paths "$1" "$1"
+}
+
 fm_backend_hometag() {
   fm_backend_tag_for_path "$FM_HOME"
 }
 
 fm_backend_legacy_roottag() {
-  fm_backend_tag_for_path "$FM_ROOT"
+  fm_backend_tag_for_paths "$FM_HOME" "$FM_ROOT"
 }
