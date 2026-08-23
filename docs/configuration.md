@@ -24,6 +24,14 @@ Wake, watcher, away-mode, and Relay-specific state mechanics remain with their n
 `AGENTS.md` retains the run-once and read-once operator rules, lock-refusal safety, installation consent, and direct-report recovery boundaries because those facts apply at every session start.
 Ordinary dead-direct-report recovery is owned by `stuck-crewmate-recovery`, while persistent-secondmate recovery is owned by `secondmate-provisioning`.
 
+## Watcher arm confirmation timeout (config/arm-confirm-timeout / FM_ARM_CONFIRM_TIMEOUT)
+
+The optional local, gitignored `config/arm-confirm-timeout` file sets how many seconds `bin/fm-watch-arm.sh` waits for a newly launched watcher to publish a healthy lock and beacon before its bounded live-child grace check.
+The effective value resolves in this order: a non-empty `FM_ARM_CONFIRM_TIMEOUT`, then `config/arm-confirm-timeout` under the effective config directory, then the platform default of 10 seconds or 30 seconds on Git Bash/MSYS.
+The file must be a regular, non-symlink file containing one non-negative base-10 integer with no surrounding whitespace or additional lines.
+A malformed selected file or environment value makes the arm refuse loudly before launching a watcher instead of silently using a default.
+When the initial confirmation budget expires but the launched watcher process still exists, the arm grants exactly one additional five-second grace window before reporting one loud failure and exiting nonzero.
+
 ## Pi Calm preference (config/calm)
 
 The Pi Calm extension stores the captain's home-local presentation choice in gitignored `config/calm` under the effective Firstmate home, resolved from `FM_HOME`, then `FM_ROOT_OVERRIDE`, then the tracked code root derived from the extension path, or under `FM_CONFIG_OVERRIDE` when that test and specialized-setup override is present.
@@ -579,7 +587,7 @@ FM_CLAUDE_AUTOARM_ATTEMPTS=2   # bounded Stop-owned arm attempts per Claude auto
 FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=800   # milliseconds the --claude turn-end guard waits for watcher health, a role-verified Stop auto-arm claim, or a fresh epoch before deciding recovery ownership or failure progression
 FM_CLAUDE_AUTOARM_EPOCH_FRESH=15   # seconds a recorded auto-arm outcome remains eligible for the current event epoch's recovery or failure decision
 FM_CLAUDE_TURNEND_BLOCK_BUDGET=3   # consecutive --claude guard re-blocks before the verified one-time attended fail-open; safely below Claude Code's 8-block override
-FM_ARM_CONFIRM_TIMEOUT=10   # seconds fm-watch-arm waits to confirm a fresh watcher before reporting FAILED; default 30 on Git Bash/MSYS
+FM_ARM_CONFIRM_TIMEOUT=10   # non-empty override for config/arm-confirm-timeout; seconds fm-watch-arm waits before its bounded live-child grace check; default 30 on Git Bash/MSYS
 FM_ARM_ATTACH_POLL=0.5  # seconds between checks while fm-watch-arm is attached to an existing healthy watcher cycle
 FM_OPENCODE_ARM_READY_TIMEOUT_MS=12000   # milliseconds the OpenCode primary watcher plugin waits for an arm attempt to report started, healthy, wake, or failure; default 35000 on Windows to stay above the MSYS confirm budget
 FM_PI_ARM_READY_TIMEOUT_MS=12000   # milliseconds the Pi watcher extension waits for a successor arm to report started or attached; default 35000 on Windows to stay above the MSYS confirm budget

@@ -44,6 +44,14 @@
 # so the failure is loud. A live cycle already present means re-arm attaches - do
 # not start a second watcher.
 #
+# A non-empty FM_ARM_CONFIRM_TIMEOUT is the highest-precedence confirmation
+# budget. Otherwise, config/arm-confirm-timeout under the effective config
+# directory overrides the platform default. The file must be a regular,
+# non-symlink file containing only one non-negative base-10 integer; malformed
+# selected environment or file values fail loudly before a watcher is launched.
+# If the launched watcher child still exists when that initial budget expires,
+# arm grants exactly one additional five-second grace window before failing.
+#
 # Every observed watcher cycle appends one tab-separated lifecycle record to
 # state/.watch-cycle-exits.log. The arm layer owns that bounded ledger; it records
 # arm/watcher identities, timestamps, exit/signal classification, beacon age,
@@ -67,6 +75,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WATCH="$SCRIPT_DIR/fm-watch.sh"
 WATCH_LOCK="$STATE/.watch.lock"
 BEAT="$STATE/.last-watcher-beat"
+CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 # "Fresh" reuses the guard's threshold so there is one definition of liveness.
 GRACE=${FM_GUARD_GRACE:-300}
 # How long to wait for a freshly forked watcher to acquire the lock and beat.
@@ -76,7 +85,37 @@ case "${OSTYPE:-}" in
   msys*|mingw*|cygwin*) ARM_CONFIRM_DEFAULT=30 ;;
   *) ARM_CONFIRM_DEFAULT=10 ;;
 esac
-CONFIRM_TIMEOUT=${FM_ARM_CONFIRM_TIMEOUT:-$ARM_CONFIRM_DEFAULT}
+CONFIRM_TIMEOUT=$ARM_CONFIRM_DEFAULT
+if [ -n "${FM_ARM_CONFIRM_TIMEOUT:-}" ]; then
+  CONFIRM_TIMEOUT=$FM_ARM_CONFIRM_TIMEOUT
+elif [ -e "$CONFIG/arm-confirm-timeout" ] || [ -L "$CONFIG/arm-confirm-timeout" ]; then
+  if [ ! -f "$CONFIG/arm-confirm-timeout" ] || [ -L "$CONFIG/arm-confirm-timeout" ]; then
+    echo "watcher: FAILED - config/arm-confirm-timeout must be a regular non-symlink file containing one non-negative base-10 integer" >&2
+    exit 2
+  fi
+  CONFIRM_TIMEOUT=$(cat "$CONFIG/arm-confirm-timeout") || {
+    echo "watcher: FAILED - config/arm-confirm-timeout could not be read" >&2
+    exit 2
+  }
+fi
+case "$CONFIRM_TIMEOUT" in
+  ''|*[!0-9]*)
+    if [ -n "${FM_ARM_CONFIRM_TIMEOUT:-}" ]; then
+      echo "watcher: FAILED - FM_ARM_CONFIRM_TIMEOUT must be one non-negative base-10 integer" >&2
+    else
+      echo "watcher: FAILED - config/arm-confirm-timeout must contain one non-negative base-10 integer" >&2
+    fi
+    exit 2
+    ;;
+esac
+# Normalize leading zeros so every accepted value remains decimal in Bash
+# arithmetic instead of acquiring the shell's legacy octal interpretation.
+while [ "${CONFIRM_TIMEOUT#0}" != "$CONFIRM_TIMEOUT" ]; do
+  CONFIRM_TIMEOUT=${CONFIRM_TIMEOUT#0}
+done
+[ -n "$CONFIRM_TIMEOUT" ] || CONFIRM_TIMEOUT=0
+# A live launched child earns this one bounded defense-in-depth extension.
+ARM_CONFIRM_LIVE_GRACE=5
 # Poll interval while attached to an existing healthy watcher.
 ATTACH_POLL=${FM_ARM_ATTACH_POLL:-0.5}
 CYCLE_LOG="$STATE/.watch-cycle-exits.log"
@@ -546,6 +585,7 @@ owned_child_finished() {
 # date(1) exposes whole seconds. Keep the configured confirmation budget from
 # collapsing when startup begins just before the next second boundary.
 deadline=$(( $(date +%s) + CONFIRM_TIMEOUT + 1 ))
+confirm_grace_used=0
 while :; do
   if healthy_watcher; then
     if [ "$HEALTHY_PID" = "$child" ]; then
@@ -581,7 +621,15 @@ while :; do
     owned_child_finished "$rc"
     exit $?
   fi
-  [ "$(date +%s)" -ge "$deadline" ] && break
+  now=$(date +%s)
+  if [ "$now" -ge "$deadline" ]; then
+    if [ "$confirm_grace_used" -eq 0 ] && fm_pid_alive "$child"; then
+      confirm_grace_used=1
+      deadline=$((now + ARM_CONFIRM_LIVE_GRACE))
+    else
+      break
+    fi
+  fi
   sleep 0.2
 done
 

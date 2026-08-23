@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# tests/fm-watch-arm.test.sh - the arm layer's cycle-close contract when the arm
-# did not own the cycle.
+# tests/fm-watch-arm.test.sh - the arm layer's confirmation and cycle-close
+# contracts.
 #
 # The watcher prints its one reason line to its OWN stdout, so only the arm that
 # forked it ever reads that line. An arm that ATTACHED to an existing cycle holds
@@ -27,6 +27,99 @@ TMP_ROOT=$(fm_test_tmproot fm-watch-arm-tests)
 # a subshell this shell can no longer wait for.
 SEED_PID=
 ARM_PID=
+
+# Build a minimal executable arm fixture around the production script and wake
+# library so confirmation timing can be driven deterministically through a fake
+# clock while liveness still uses real processes and process identities.
+make_confirmation_fixture() {  # <name>
+  local name=$1 dir
+  dir="$TMP_ROOT/$name"
+  mkdir -p "$dir/bin" "$dir/config" "$dir/fakebin" "$dir/state"
+  cp "$WATCH_ARM" "$dir/bin/fm-watch-arm.sh"
+  cp "$ROOT/bin/fm-wake-lib.sh" "$dir/bin/fm-wake-lib.sh"
+  cat > "$dir/bin/fm-watch.sh" <<'SH'
+#!/usr/bin/env bash
+set -u
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=bin/fm-wake-lib.sh
+. "$SCRIPT_DIR/fm-wake-lib.sh"
+WATCH_LOCK="$STATE/.watch.lock"
+WATCH_PATH="$SCRIPT_DIR/fm-watch.sh"
+printf 'launched\n' >> "$FM_TEST_WATCHER_LOG"
+if [ "${FM_TEST_WATCHER_READY_DELAY:-never}" = never ]; then
+  while :; do sleep 1; done
+fi
+sleep "$FM_TEST_WATCHER_READY_DELAY"
+mkdir "$WATCH_LOCK"
+watcher_pid=${BASHPID:-$$}
+printf '%s\n' "$watcher_pid" > "$WATCH_LOCK/pid"
+printf '%s\n' "$FM_HOME" > "$WATCH_LOCK/fm-home"
+printf '%s\n' "$WATCH_PATH" > "$WATCH_LOCK/watcher-path"
+fm_pid_identity "$watcher_pid" > "$WATCH_LOCK/pid-identity"
+touch "$STATE/.last-watcher-beat"
+cleanup_lock() {
+  rm -f "$WATCH_LOCK/pid" "$WATCH_LOCK/fm-home" "$WATCH_LOCK/watcher-path" "$WATCH_LOCK/pid-identity"
+  rmdir "$WATCH_LOCK" 2>/dev/null || true
+}
+trap cleanup_lock EXIT
+trap 'exit 0' HUP INT TERM
+while :; do sleep 1; done
+SH
+  cat > "$dir/fakebin/date" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = +%s ]; then
+  cat "$FM_TEST_NOW_FILE"
+  exit 0
+fi
+exec /bin/date "$@"
+SH
+  chmod +x "$dir/bin/fm-watch-arm.sh" "$dir/bin/fm-watch.sh" "$dir/bin/fm-wake-lib.sh" "$dir/fakebin/date"
+  printf '0\n' > "$dir/now"
+  printf '%s\n' "$dir"
+}
+
+start_confirmation_arm() {  # <fixture> <output> <ready-delay> [environment-timeout]
+  local dir=$1 out=$2 delay=$3 timeout=${4:-}
+  if [ -n "$timeout" ]; then
+    PATH="$dir/fakebin:$PATH" FM_HOME="$dir" FM_ARM_CONFIRM_TIMEOUT="$timeout" \
+      FM_TEST_NOW_FILE="$dir/now" FM_TEST_WATCHER_LOG="$dir/watcher.log" \
+      FM_TEST_WATCHER_READY_DELAY="$delay" "$dir/bin/fm-watch-arm.sh" > "$out" 2>&1 &
+  else
+    env -u FM_ARM_CONFIRM_TIMEOUT PATH="$dir/fakebin:$PATH" FM_HOME="$dir" \
+      FM_TEST_NOW_FILE="$dir/now" FM_TEST_WATCHER_LOG="$dir/watcher.log" \
+      FM_TEST_WATCHER_READY_DELAY="$delay" "$dir/bin/fm-watch-arm.sh" > "$out" 2>&1 &
+  fi
+  ARM_PID=$!
+}
+
+wait_for_watcher_launch() {  # <fixture>
+  local dir=$1 i=0
+  while [ "$i" -lt 100 ]; do
+    if [ -s "$dir/watcher.log" ]; then
+      sleep 0.3
+      return 0
+    fi
+    is_live_non_zombie "$ARM_PID" || return 1
+    sleep 0.02
+    i=$((i + 1))
+  done
+  return 1
+}
+
+advance_confirmation_clock() {  # <fixture> <epoch>
+  printf '%s\n' "$2" > "$1/now"
+  sleep 0.4
+}
+
+assert_single_confirmation_failure() {  # <pid> <output> <label>
+  local pid=$1 out=$2 label=$3 status failures
+  wait_for_exit "$pid" 80
+  status=$?
+  [ "$status" -ne 124 ] || fail "$label did not fail within its bounded confirmation window"
+  [ "$status" -ne 0 ] || fail "$label exited successfully without a confirmed watcher"
+  failures=$(grep -c '^watcher: FAILED' "$out" 2>/dev/null || true)
+  [ "$failures" -eq 1 ] || fail "$label emitted $failures failure lines instead of one: $(cat "$out")"
+}
 
 # Start the real watcher as the singleton holder.
 start_seed_watcher() {  # <state> <fakebin> <watch-out>
@@ -153,6 +246,78 @@ start_rearm_arm() {  # <home> <state> <fakebin> <arm-out> [predecessor-arm-pid]
     i=$((i + 1))
   done
   return 0
+}
+
+test_confirmation_timeout_precedence() {
+  local default_dir file_dir env_dir out
+
+  default_dir=$(make_confirmation_fixture confirm-default)
+  out="$default_dir/arm.out"
+  start_confirmation_arm "$default_dir" "$out" never
+  wait_for_watcher_launch "$default_dir" || fail "default confirmation fixture did not launch its watcher"
+  advance_confirmation_clock "$default_dir" 31
+  is_live_non_zombie "$ARM_PID" || fail "default confirmation arm skipped its one live-child grace window"
+  advance_confirmation_clock "$default_dir" 37
+  assert_single_confirmation_failure "$ARM_PID" "$out" "default confirmation arm"
+
+  file_dir=$(make_confirmation_fixture confirm-file)
+  printf '40\n' > "$file_dir/config/arm-confirm-timeout"
+  out="$file_dir/arm.out"
+  start_confirmation_arm "$file_dir" "$out" never
+  wait_for_watcher_launch "$file_dir" || fail "file confirmation fixture did not launch its watcher"
+  advance_confirmation_clock "$file_dir" 37
+  is_live_non_zombie "$ARM_PID" || fail "config/arm-confirm-timeout did not override the lower platform default"
+  advance_confirmation_clock "$file_dir" 41
+  advance_confirmation_clock "$file_dir" 47
+  assert_single_confirmation_failure "$ARM_PID" "$out" "file confirmation arm"
+
+  env_dir=$(make_confirmation_fixture confirm-env)
+  printf '40\n' > "$env_dir/config/arm-confirm-timeout"
+  out="$env_dir/arm.out"
+  start_confirmation_arm "$env_dir" "$out" never 50
+  wait_for_watcher_launch "$env_dir" || fail "environment confirmation fixture did not launch its watcher"
+  advance_confirmation_clock "$env_dir" 47
+  is_live_non_zombie "$ARM_PID" || fail "FM_ARM_CONFIRM_TIMEOUT did not override config/arm-confirm-timeout"
+  advance_confirmation_clock "$env_dir" 51
+  advance_confirmation_clock "$env_dir" 57
+  assert_single_confirmation_failure "$ARM_PID" "$out" "environment confirmation arm"
+
+  pass "watch-arm: confirmation timeout precedence is platform default, then config file, then environment"
+}
+
+test_malformed_confirmation_timeout_file_refuses() {
+  local dir out status
+  dir=$(make_confirmation_fixture confirm-malformed)
+  printf 'not-an-integer\n' > "$dir/config/arm-confirm-timeout"
+  out="$dir/arm.out"
+  status=0
+  env -u FM_ARM_CONFIRM_TIMEOUT PATH="$dir/fakebin:$PATH" FM_HOME="$dir" \
+    FM_TEST_NOW_FILE="$dir/now" FM_TEST_WATCHER_LOG="$dir/watcher.log" \
+    FM_TEST_WATCHER_READY_DELAY=never "$dir/bin/fm-watch-arm.sh" > "$out" 2>&1 || status=$?
+  expect_code 2 "$status" "malformed config/arm-confirm-timeout"
+  grep -F 'config/arm-confirm-timeout must contain one non-negative base-10 integer' "$out" >/dev/null \
+    || fail "malformed timeout refusal did not name the file contract: $(cat "$out")"
+  [ ! -e "$dir/watcher.log" ] || fail "malformed timeout file launched a watcher before refusing"
+  pass "watch-arm: malformed config/arm-confirm-timeout refuses loudly before watcher launch"
+}
+
+test_live_child_gets_one_bounded_confirmation_grace() {
+  local dir out started_pid
+  dir=$(make_confirmation_fixture confirm-live-grace)
+  printf '0\n' > "$dir/config/arm-confirm-timeout"
+  out="$dir/arm.out"
+  start_confirmation_arm "$dir" "$out" 1
+  wait_for_watcher_launch "$dir" || fail "grace confirmation fixture did not launch its watcher"
+  advance_confirmation_clock "$dir" 1
+  wait_for_file_text "$out" 'watcher: started pid=' \
+    || fail "live watcher child was failed at the initial bound instead of confirming in grace: $(cat "$out")"
+  started_pid=$(cat "$dir/state/.watch.lock/pid" 2>/dev/null || true)
+  grep -F "watcher: started pid=$started_pid (beacon fresh)" "$out" >/dev/null \
+    || fail "grace-confirmed arm did not report the verified child: $(cat "$out")"
+  is_live_non_zombie "$ARM_PID" || fail "grace-confirmed arm exited instead of following its watcher"
+  kill -TERM "$ARM_PID" 2>/dev/null || fail "could not stop grace-confirmed arm fixture"
+  wait "$ARM_PID" 2>/dev/null || true
+  pass "watch-arm: a live slow-starting child receives one bounded grace window and confirms"
 }
 
 test_attached_arm_reports_the_delivered_wake() {
@@ -797,6 +962,9 @@ test_downtime_marker_does_not_follow_symlink() {
   pass "watch-arm: downtime marker publication does not follow symlinks"
 }
 
+test_confirmation_timeout_precedence
+test_malformed_confirmation_timeout_file_refuses
+test_live_child_gets_one_bounded_confirmation_grace
 test_attached_arm_reports_the_delivered_wake
 test_attached_arm_reports_the_delivered_wake_after_drain
 test_attached_arm_still_fails_on_a_wake_it_did_not_deliver
