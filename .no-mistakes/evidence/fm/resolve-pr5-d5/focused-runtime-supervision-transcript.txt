@@ -1,0 +1,604 @@
+FM_TEST_BEGIN 2026-08-23T08:32:31Z tests/fm-backend-zellij-smoke.test.sh family=zellij expected_gate_skip=optional-binary
+ok - real zellij: version_check accepts the installed binary's version
+ok - real zellij: container_ensure starts the isolated background session (fm-backend-smoke-52382)
+ok - real zellij: container_ensure is idempotent (reuses the existing session)
+ok - real zellij: live socket carries a durable incarnation proof
+ok - real zellij: create_task creates a tab/pane and refuses a duplicate name
+ok - real zellij: expected task label verification accepts the matching tab and rejects a mismatch
+ok - real zellij: send_literal (paste) + send_key Enter submit as two steps and the output is capturable
+ok - real zellij: send_text_line composes paste+Enter and its output is capturable
+ok - real zellij: capture supports viewport-sized reads and larger full-scrollback reads
+ok - real zellij: current_path reads the pane's live cwd after a direct cd
+ok - real zellij: current_path reconstructs a long cwd that can wrap in the terminal
+ok - real zellij: current_path tracks a NESTED SUBSHELL's own cd (the treehouse-get-shaped case a bare pane_cwd read cannot see)
+ok - real zellij: send_key Escape (normalized to the verified 'Esc' name) succeeds
+ok - real zellij: send_key C-c (normalized to the verified 'Ctrl c' name) succeeds
+ok - real zellij: fm_backend_busy_state reports unknown (D5 - watcher falls back to pane-regex, same as tmux)
+ok - real zellij: kill removes the pane+tab and is idempotent/best-effort
+ok - real zellij: container_ensure recovers a missing session before the next task
+ok - real zellij: session recreation invalidates the prior incarnation proof
+ok - real zellij: list_live discovers a live task tab by fm-<id> name
+FM_TEST_END 2026-08-23T08:33:01Z tests/fm-backend-zellij-smoke.test.sh exit=0 duration_ms=30003 gate_skip=false
+FM_TEST_BEGIN 2026-08-23T08:33:01Z tests/fm-backend-zellij.test.sh family=zellij expected_gate_skip=optional-binary
+ok - fm_backend_zellij_version_check: accepts the verified minimum (0.44.0)
+ok - fm_backend_zellij_version_check: accepts a newer version (0.45.2)
+ok - fm_backend_zellij_version_check: refuses an old version loudly
+ok - fm_backend_zellij_version_check: refuses loudly when zellij is not installed
+ok - fm_backend_zellij_session: defaults to 'firstmate' when FM_ZELLIJ_SESSION is unset
+ok - fm_backend_zellij_session: honors the FM_ZELLIJ_SESSION test-isolation override
+ok - fm_backend_zellij_parse_target: splits '<session>:<pane_id>' on the first colon
+ok - fm_backend_zellij_normalize_key: Enter/Escape/C-c map to zellij's verified Enter/Esc/'Ctrl c'
+ok - fm_backend_zellij_scoped_title: scopes a primary task title with firstmate plus home hash
+ok - fm_backend_zellij_scoped_title: scopes a secondmate task title with the home marker plus home hash
+ok - fm_backend_zellij_scoped_title: includes the resolved FM_HOME hash in the home label
+ok - fm_backend_zellij_legacy_scoped_title: reconstructs split home-prefix and root-hash titles
+ok - fm_backend_zellij_tab_matches_label: accepts an untagged legacy fm-<id> title when it is the only live tab carrying it
+ok - fm_backend_zellij_tab_matches_label: refuses an untagged legacy label match when 2+ live tabs share it (migration ambiguity guard)
+ok - fm_backend_zellij_tab_matches_label: preserves owned current-main root-tagged tabs
+ok - fm_backend_zellij_tab_matches_label: refuses reused root-tagged ids from a later session
+ok - fm_backend_zellij_tab_matches_label: refuses ambiguous legacy root-tagged tabs
+ok - fm_backend_zellij_tab_matches_label: refuses reused bare ids from a later session
+ok - fm_backend_zellij_legacy_ownership_proven: migrates pre-upgrade metadata from owned live-process evidence
+ok - fm_backend_zellij_legacy_ownership_proven: refuses foreign reused panes without persisting proof
+ok - fm_backend_zellij_legacy_ownership_proven: inactive pre-upgrade tabs fail closed with lifecycle records intact
+ok - fm_backend_zellij_sidecar_fingerprint: accepts only one validated durable token
+ok - zellij relaunch: retries independent metadata and sidecar fingerprint retirements
+ok - fm-spawn zellij abort: retires the unpublished session-incarnation proof
+ok - fm_backend_zellij_list_live: scopes to this home's own tag - excludes a different installation's tagged tab and unrelated tabs
+ok - fm_backend_zellij_resolve_bare_selector: matches the home-scoped tagged title first
+ok - fm_backend_zellij_resolve_bare_selector: refuses an ambiguous untagged legacy label shared by 2+ live tabs
+ok - fm_backend_zellij_resolve_bare_selector: checks every session for the scoped title before legacy fallback
+ok - fm_backend_zellij_resolve_bare_selector: requires untagged legacy labels to be globally unique across sessions
+ok - fm_backend_zellij_session_exists: true when the session name is listed
+ok - fm_backend_zellij_session_exists: false when the session name is not listed
+ok - fm_backend_zellij_server_ensure: reuses an existing session without calling attach
+ok - fm_backend_validate: zellij is a known backend (P3)
+ok - fm_backend_busy_state: zellij (no native primitive) always reports unknown, same as tmux
+ok - fm_backend_zellij_create_task: refuses a duplicate home-scoped tab title (zellij's own new-tab has no uniqueness check)
+ok - fm_backend_zellij_create_task: creates a home-scoped tab and parses tab_id/pane_id from the response
+ok - fm_backend_zellij_create_task: restores focus to the previously-active tab after the steal-focus new-tab call
+ok - fm_backend_zellij_create_task: skips the restore call when there was no previously-active tab
+ok - fm_backend_zellij_capture: small reads use viewport-only dump-screen and trim to N lines locally
+ok - fm_backend_zellij_capture: reads above the watcher-size threshold request --full scrollback
+ok - fm_backend_zellij_capture: fails when the specific pane is absent
+ok - fm_backend_zellij_capture: fails when the target session is not listed as active (session_exists pre-check)
+ok - fm_backend_zellij_send_key: normalizes the key (Escape -> Esc) and targets the explicit pane id
+ok - fm_backend_zellij_send_literal: calls paste with an explicit pane id and a -- separator
+ok - fm_backend_zellij_send_text_line: clears partial input when Enter fails
+ok - fm_backend_zellij_send_text_line: reports unsafe input when cleanup also fails
+ok - fm_backend_zellij_target_ready: expected labels allow matching fm-<id> tabs
+ok - fm_backend_zellij_target_ready: expected labels reject stale pane ids reused by another tab
+ok - fm_backend_zellij_current_path: actively probes with marked begin/end lines and reconstructs wrapped cwd output
+ok - fm_backend_zellij_current_path: never picks up a ~-prefixed banner line as the answer
+ok - fm_backend_zellij_kill: resolves the owning tab id fresh and calls close-tab-by-id (never a bare close-pane)
+ok - fm_backend_zellij_kill: falls back to close-pane when the owning tab cannot be resolved
+ok - fm_backend_zellij_kill: closes the recorded tab id only after label verification
+ok - fm_backend_zellij_kill: skips a stale recorded tab id whose label does not match
+ok - fm_backend_zellij_kill: never fails when the target session no longer exists
+ok - fm_backend_zellij_endpoint_confirmed_gone: refuses a live resolved pane despite stale tab metadata
+ok - fm-teardown.sh: passes recorded zellij_tab_id with the expected task label
+ok - fm-teardown.sh: inactive pre-upgrade zellij containment refuses before every mutation
+ok - fm-teardown.sh: force cleanup kills zellij children using the child home tag
+ok - fm-teardown.sh: descendant ownership refusal preserves every child lifecycle resource
+ok - fm_backend_zellij_send_text_submit: reports 'empty' once the composer classifies empty (submitted)
+ok - fm_backend_zellij_send_text_submit: reports 'pending' when the composer still holds the text after retried Enters (swallowed)
+ok - fm_backend_zellij_send_text_submit: an unrelated pane change is not a delivery confirmation (false-positive regression)
+ok - fm_backend_zellij_send_text_submit: refuses confirmation when paste exits successfully without typing
+ok - fm_backend_zellij_send_text_submit: transcript echoes outside the selected composer cannot prove typing
+ok - fm_backend_zellij_send_text_submit: pre-existing text cannot prove a no-op paste landed
+ok - fm_backend_zellij_send_text_submit: unrelated drafts and furniture cannot prove typing
+ok - fm_backend_zellij_send_text_submit: observes wrapped text replacing a shell-prompt placeholder
+ok - fm_backend_zellij_send_text_submit: observes wrapped text in a bare composer
+ok - fm_backend_zellij_send_text_submit: preserves agent glyphs within wrapped content
+ok - fm_backend_zellij_send_text_submit: refuses a live shell below a stale composer
+ok - fm_backend_zellij_composer_state: classifies the real claude-in-zellij --ansi dump as empty
+ok - fm_backend_zellij_composer_state: a dead pane (empty dumps) reads unknown, never a confirmation
+ok - fm_backend_zellij_send_text_submit: reports 'send-failed' when the target session is not active
+ok - fm_backend_zellij_send_text_submit: reports 'send-failed' when the target pane is absent
+ok - fm-peek/fm-send: explicit metadata-matched targets use the recorded zellij backend
+ok - fm-peek: fm-id zellij targets verify the owning tab label before capture
+ok - fm-send: fm-id zellij targets reject pane ids whose tab label no longer matches
+FM_TEST_END 2026-08-23T08:33:39Z tests/fm-backend-zellij.test.sh exit=0 duration_ms=37104 gate_skip=false
+FM_TEST_BEGIN 2026-08-23T08:33:39Z tests/fm-backend-cmux.test.sh family=cmux expected_gate_skip=optional-binary
+ok - fm_backend_cmux_version_check: accepts the verified minimum (0.64.17)
+ok - fm_backend_cmux_version_check: accepts a newer version (0.70.0)
+ok - fm_backend_cmux_version_check: refuses an old version loudly
+ok - fm_backend_cmux_version_check: refuses loudly when cmux is not found on PATH or at the bundle path
+ok - fm_backend_cmux_password: reads the first non-empty line of config/cmux-socket-password
+ok - fm_backend_cmux_password: preserves spaces and tabs in config/cmux-socket-password
+ok - fm_backend_cmux_password: respects FM_CONFIG_OVERRIDE
+ok - fm_backend_cmux_password: empty when config/cmux-socket-password is absent
+ok - fm_backend_cmux_cli: exports CMUX_SOCKET_PASSWORD when config/cmux-socket-password is set
+ok - fm_backend_cmux_parse_target: splits '<workspace_uuid>:<surface_uuid>' on the first colon
+ok - fm_backend_cmux_normalize_key: Enter/Escape/C-c map to cmux's verified enter/escape/ctrl-c
+ok - fm_backend_cmux_scoped_title: scopes a primary task title with firstmate plus home hash
+ok - fm_backend_cmux_scoped_title: scopes a secondmate task title with the home marker plus home hash
+ok - fm_backend_cmux_scoped_title: normalizes the first marker line before validation
+ok - fm_backend_cmux_scoped_title: includes the resolved FM_HOME hash in the home label
+ok - fm_backend_validate: cmux is a known backend
+ok - fm_backend_busy_state: cmux (no native primitive) always reports unknown, same as tmux/zellij/orca
+ok - fm_backend_composer_state: routes cmux to the cmux composer classifier
+ok - fm_backend_cmux_ping_state: reports 'ok' on PONG
+ok - fm_backend_cmux_ping_state: reports 'denied' when socketControlMode=cmuxOnly rejects the connection
+ok - fm_backend_cmux_ping_state: reports 'unauth' when password mode rejects a missing/wrong password
+ok - fm_backend_cmux_ping_state: reports 'unauth' when password mode rejects a wrong password (Invalid password)
+ok - fm_backend_cmux_ping_state: reports 'down' when the app is not running yet
+ok - fm_backend_cmux_ensure_running: returns immediately when cmux is already reachable
+ok - fm_backend_cmux_ensure_running: fails fast on a denied socket without attempting to launch, naming every viable mode
+ok - fm_backend_cmux_ensure_running: fails fast on an unauthenticated socket, naming the password config and the Automation mode alternative
+ok - fm_backend_cmux_create_task: refuses duplicate workspace titles across windows
+ok - fm_backend_cmux_create_task: creates a workspace and parses workspace_id/surface_id from list responses
+ok - fm_backend_cmux_create_task: durably recovers a workspace after post-create lookup failure
+ok - fm_backend_cmux_create_task: recovers a workspace committed before a create error
+ok - fm_backend_cmux_target_ready: fails when the workspace/surface is not found (list-panes structural check)
+ok - fm_backend_cmux_target_ready: verifies the workspace title against the expected label first
+ok - fm_backend_cmux_target_ready: rejects a workspace id reused under a different title
+ok - fm_backend_cmux_target_ready: accepts an exact legacy root-tagged workspace
+ok - fm_backend_cmux_target_ready: refuses cross-home legacy workspace adoption
+ok - fm_backend_cmux_target_ready: recovers current titles across windows
+ok - fm_backend_cmux_capture: fetches generously and trims to N lines locally
+ok - fm_backend_cmux_capture: propagates a read-screen failure even when stdout is empty
+ok - fm_backend_cmux_capture: fails when the target surface is absent
+ok - fm_backend_cmux_send_key: normalizes the key (Escape -> escape) and targets the explicit workspace/surface
+ok - fm_backend_cmux_send_key: recovers stale workspace/surface ids by expected label
+ok - fm_backend_cmux_send_literal: calls send with an explicit workspace/surface and a -- separator
+ok - fm_backend_cmux_send_text_line: clears partial input when Enter fails
+ok - fm_backend_cmux_send_text_line: reports unsafe input when cleanup also fails
+ok - fm_backend_cmux_current_path: actively probes with marked begin/end lines (zellij-shape frozen cwd)
+ok - fm_backend_cmux_composer_state: a bare '❯' composer row reads empty
+ok - fm_backend_cmux_composer_state: a borderless Claude '❯' composer row reads empty
+ok - fm_backend_cmux_composer_state: a borderless Claude row outranks stale bordered scrollback
+ok - fm_backend_cmux_composer_state: a borderless Claude '❯'+NBSP composer row reads empty under LC_ALL=C
+ok - fm_backend_cmux_composer_state: plain-capture text after a bare glyph degrades to unknown (never false pending)
+ok - fm_backend_cmux_composer_state: the ghost placeholder text reads empty, not pending
+ok - fm_backend_cmux_composer_state: real composer text reads pending
+ok - fm_backend_cmux_composer_state: a slash-command popup's argument-hint placeholder still reads pending (the incident fix)
+ok - fm_backend_cmux_composer_state: reports unknown when the surface cannot be captured
+ok - fm_backend_cmux_composer_state: reports unknown when no border-delimited composer row is found
+ok - fm_backend_cmux_send_text_submit: reports 'empty' once the composer row reads empty after one Enter
+ok - fm_backend_cmux_send_text_submit: reports 'pending' when the composer never clears after retried Enters (swallowed)
+ok - fm_backend_cmux_send_text_submit: retries past a popup-placeholder-fill Enter and lands the real second Enter (the incident fix)
+ok - fm_backend_cmux_send_text_submit: reports 'send-failed' when the target workspace/surface is absent
+ok - fm_backend_cmux_window_of_workspace: walks windows and counts the membership-confirming workspace list
+ok - fm_backend_cmux_window_of_workspace: echoes nothing when no window holds the workspace
+ok - fm_backend_cmux_kill: closes the task workspace directly when it is not the last in its window
+ok - fm_backend_cmux_kill: adds a throwaway sibling then closes the target when it is the last workspace in its window
+ok - fm_backend_cmux_kill: never fails even when close-workspace fails
+ok - fm_backend_cmux_kill: recovers stale workspace/surface ids by expected label
+ok - fm_backend_cmux_endpoint_confirmed_gone: refuses a renamed live recorded workspace
+ok - fm_backend_cmux_endpoint_confirmed_gone: confirms exact UUID and title absence
+ok - fm_backend_cmux_list_live: lists only this home's scoped task workspaces using plain fm-<id> labels
+ok - fm-teardown.sh: force cleanup kills cmux children using the child home tag
+ok - fm-teardown.sh: retains child lifecycle records until cmux closure is confirmed
+ok - fm-spawn.sh: refuses backend=cmux for --secondmate spawns (mirrors Orca's refusal; no secondmate launch design exists yet)
+FM_TEST_END 2026-08-23T08:34:04Z tests/fm-backend-cmux.test.sh exit=0 duration_ms=25224 gate_skip=false
+FM_TEST_BEGIN 2026-08-23T08:34:04Z tests/fm-backend-orca.test.sh family=orca expected_gate_skip=optional-binary
+ok - fm_backend_orca_capture: parses result.terminal.tail and calls terminal read
+ok - fm_backend_orca_capture: falls back to result text fields
+ok - fm_backend_orca_capture: fails closed on Orca read error JSON
+ok - fm_backend_orca_runtime_check: accepts reachable ready runtime
+ok - fm_backend_orca_runtime_check: fails closed when runtime is not ready
+ok - fm_backend_orca_send_text_submit: verifies empty composer after Enter with one bounded read
+ok - fm_backend_orca_send_text_submit: a borderless claude composer confirms delivery (the missing #2029 shape)
+ok - fm_backend_orca_composer_state: a stale startup banner cannot outrank the live composer row
+ok - fm_backend_orca_send_text_submit: retries Enter while composer remains pending
+ok - fm_backend_orca_composer_state: a slash-command popup's argument-hint placeholder still reads pending
+ok - fm_backend_orca_composer_state: a bare dead-shell prompt reads unknown (unsafe-for-injection), never empty
+ok - fm_backend_orca_send_text_submit: a slash-command popup's placeholder fill on Enter #1 does not short-circuit as submitted; Enter #2 is retried and lands it
+ok - fm_backend_orca_send_literal: sends text without submitting
+ok - fm_backend_orca_send_text_submit: reports send-failed when Orca send fails
+ok - Orca send helpers: fail closed on ok:false JSON
+ok - fm_backend_orca_send_key: Enter maps to empty enter, C-c maps to interrupt
+ok - fm_backend_orca_send_key: refuses unsupported keys loudly
+ok - fm_backend_orca_send_key: refuses Escape instead of mapping it to interrupt
+ok - fm_backend_orca_kill: calls terminal close and stays best-effort
+ok - fm_backend_orca_remove_worktree: refuses empty worktree ids
+ok - fm_backend_orca_remove_worktree: fails closed on ok:false JSON
+ok - fm_backend_orca_worktree_path: resolves an Orca worktree id to its path
+ok - fm-backend dispatcher: accepts orca and routes capture through bin/backends/orca.sh
+ok - fm_backend_orca_json_get: ignores undocumented terminal id shapes
+ok - Orca lifecycle helpers: register repo, create worktree, create terminal, parse stable ids
+ok - fm_backend_orca_worktree_create: removes created worktree when path is missing
+ok - fm-spawn.sh --backend orca: preserves metadata when pathless cleanup fails
+ok - fm-spawn.sh --backend orca: reuses implicit terminal, records metadata, launches harness
+ok - fm-spawn.sh --backend orca --secondmate: refuses before secondmate-home mutation
+ok - fm-spawn.sh --backend orca: refuses before mutation when Orca runtime is not ready
+ok - fm-spawn.sh --backend orca: refuses non-isolated worktrees and closes implicit terminals
+ok - fm-spawn.sh --backend orca: removes worktree when terminal creation fails
+ok - fm-spawn.sh --backend orca: preserves metadata when abort cleanup fails
+ok - fm-spawn.sh --backend orca: releases terminal and worktree on later aborts
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 0s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WARNING: watcher still down (same stale episode; last beat: 1s ago, grace 300s) - full banner already printed this episode.
+error: text not submitted to term-io (delivery unconfirmed; verdict=unknown; tried meta=/var/folders/63/v9mxgtb957zdylpw41cx6mj40000gn/T//fm-backend-orca-tests.rlv1jB/io-state/orcaiopathz2.meta; backend=from-meta)
+ok - fm-peek/fm-send/fm-crew-state route through backend=orca metadata
+ok - fm-peek/fm-crew-state: Orca read error JSON fails closed
+ok - fm_backend_target_exists: Orca ok:false read JSON is not live
+ok - fm-teardown.sh backend=orca: scout report gate then helper-backed worktree removal
+ok - fm-teardown.sh backend=orca: scout teardown refuses id/path mismatches
+ok - fm-teardown.sh backend=orca: releases terminal/worktree when path is absent
+ok - fm-teardown.sh backend=orca: preserves metadata on remove ok:false JSON
+ok - fm-teardown.sh backend=orca: scout report gate precedes pathless helper cleanup
+ok - fm-teardown.sh backend=orca: ship teardown fails closed when worktree path is missing
+ok - fm-teardown.sh backend=orca: ship teardown requires a matching Orca id path
+ok - fm-teardown.sh backend=orca: ship teardown fails closed when id resolution fails
+ok - fm-teardown.sh backend=orca: ship teardown refuses id/path mismatches
+ok - fm-teardown.sh backend=orca: refuses missing worktree ids before cleanup
+ok - fm-teardown.sh backend=orca: refuses incomplete worktree-only endpoint metadata before runtime dispatch
+ok - fm-teardown.sh --force: removes Orca secondmate children through Orca
+ok - fm-teardown.sh --force: refuses Orca child id/path mismatches
+ok - fm-teardown.sh --force: refuses partial Orca secondmate children before runtime dispatch
+FM_TEST_END 2026-08-23T08:34:50Z tests/fm-backend-orca.test.sh exit=0 duration_ms=46031 gate_skip=false
+FM_TEST_BEGIN 2026-08-23T08:34:50Z tests/fm-gotmp.test.sh family=session-bootstrap expected_gate_skip=none
+ok - task temp root is home-scoped
+ok - fm-teardown removes the dir pointed to by tasktmp= in meta
+ok - fm-teardown treats empty FM_HOME as unset for state-override temp isolation
+ok - fm-teardown skips gracefully when tasktmp= is absent (backward compat)
+ok - fm-teardown skips gracefully when tasktmp= points to a nonexistent dir
+ok - fm-teardown refuses unexpected tasktmp paths before cleanup
+ok - fm-teardown preserves legacy task temp roots while retiring their tasks
+FM_TEST_END 2026-08-23T08:34:57Z tests/fm-gotmp.test.sh exit=0 duration_ms=7411 gate_skip=false
+FM_TEST_BEGIN 2026-08-23T08:34:57Z tests/fm-kimi-harness.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - Kimi hook install is idempotent and removal restores every foreign config byte
+ok - Kimi hook removal preserves owned newline boundaries and pristine bytes
+ok - Kimi hook install refuses missing, malformed, and surprising config without writing
+ok - Kimi hook install refuses without jq before any config write
+ok - fm-spawn: kimi launches, delivers its brief, and registers a guarded turn-end token
+ok - fm-spawn: empty FM_HOME preserves state-override temp isolation for reused task IDs
+ok - fm-spawn: refuses unsafe secondmate home markers before runtime mutation
+ok - fm-spawn: validates the state-override task home before runtime mutation
+ok - Kimi hook stays silent and inert without a Firstmate registry token
+ok - fm-spawn: unsafe Kimi global config refuses before pane creation
+ok - fm-teardown: Kimi task pointer and registry token are removed
+ok - fm-spawn: Kimi fallback expands the active HOME
+ok - fm-spawn: missing Kimi executable refuses before pane creation
+ok - fm-spawn: kimi treats a silent pointer drop as a failed spawn
+ok - fm-spawn: kimi never sends the brief pointer before an observable ready signal
+ok - fm-harness: markerless kimi is detected by ancestry after env-marker precedence
+lock acquired: harness pid 65188
+ok - fm-lock recognizes Kimi ancestry and live lock holders
+ok - busy detection: real Kimi moon-plus-middot captures require its harness while idle labels stay idle
+ok - fm-watch classifies Kimi as unknown rather than from its spinner, and Grok's fallback stays isolated
+ok - composer classifier: kimi's existing bordered > shape is already safe without an override
+FM_TEST_END 2026-08-23T08:35:36Z tests/fm-kimi-harness.test.sh exit=0 duration_ms=38208 gate_skip=false
+FM_TEST_BEGIN 2026-08-23T08:35:36Z tests/fm-pr-check-security.test.sh family=pr-forge expected_gate_skip=none
+ok - raw-byte parser accepts canonical URLs and rejects the complete adversarial matrix
+ok - GitLab merge requests are followed on any instance and never wake falsely
+ok - validated merged polls notify once and retire before the next watcher cycle
+ok - merged poll retirement preserves every persistent secondmate lifecycle artifact
+ok - queue, receipt, and every fixed-path removal crash point recover without loss or repeated execution
+ok - open/red, closed-unmerged, malformed, and forge errors remain armed until an exact merged transition
+ok - replacement, nonterminal, tampered, and custom results receive no deletion authority
+ok - queue failure and untrusted receipts preserve canonical poll evidence
+ok - GitHub and GitLab exact merged results share one retirement path
+ok - PR and teardown entrypoints reject invalid arguments before every side effect
+ok - valid direct and merge flows record exact metadata and reject multiline head metadata
+ok - rejected metacharacter bytes remain inert at generation and watcher time
+ok - static poll is silent except for one merged line and remains watcher-bounded
+ok - interrupted atomic preparation cleans private temporaries and publishes nothing
+ok - concurrent watchers observe only complete private poll publications
+ok - post-rename poll validation faults revoke both names and allow a clean retry
+ok - migration creates and validates private state before watcher exclusion
+ok - migration pauses older watchers and acquires exclusion before its first scan or marker
+ok - poll, marker, diagnostic, and quarantine paths refuse symlinks and directories
+ok - marker and diagnostic rename errors and signals fail closed and recover durably on retry
+ok - post-rename marker, diagnostic, and obligation faults are revoked and reconstructed on retry
+ok - quarantine type and mode faults fail closed and recover only when a retry can validate them
+ok - canonical and ambiguous failure obligations block every retry until all task artifacts are repaired
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ok - ambiguous migration recovery accepts an explicitly validated replacement poll
+ok - ambiguous repair rejects copied, metadata- or task-mismatched, forged, and partial poll publications
+ok - all live, marker, diagnostic, X, custom-check, obligation, and teardown boundaries require single-link files
+ok - canonical publication failure remains incomplete until a later clean retry rebuilds the poll
+ok - legacy reserved obligations and delimiter-bearing task IDs retry without ambiguity
+ok - migration never executes legacy checks, preserves X mode, quarantines ambiguity, and is idempotent
+ok - historical X shims migrate only from the exact single-link mode-0755 identity
+ok - direct registration refreshes authenticated v1 X shims across marker states
+ok - bootstrap runs the non-executing migration at the locked session boundary
+ok - bootstrap isolates incomplete poll migration from unrelated recovery sweeps
+ok - watcher signals promptly stop custom checks and clean private state
+ok - returned custom check descendants are drained on installed and fallback timeout paths
+ok - teardown removes safe poll artifacts and refuses quarantine-directory symlinks without traversal
+FM_TEST_END 2026-08-23T08:42:10Z tests/fm-pr-check-security.test.sh exit=0 duration_ms=394498 gate_skip=false
+FM_TEST_BEGIN 2026-08-23T08:42:10Z tests/fm-secondmate-safety.test.sh family=secondmate expected_gate_skip=none
+ok - FM_HOME parameterizes data and state paths
+ok - fm-lock status is scoped per home
+ok - seed allows overlapping project clone lists and drops the owns/owner routing
+ok - home-seed validation rejects registry records no operational parser can consume
+ok - home seeding refuses broken registry symlinks before provisioning
+ok - home seeding refuses unreadable registries before provisioning
+ok - home seed validation rejects duplicate home routes
+ok - home seed validation rejects duplicate id routes
+ok - home seed validation rejects nested home routes
+leased worktree for dash
+ok - home seeding durably leases treehouse-acquired dash homes under the secondmate id
+ok - home seeding returns rejected acquired homes through treehouse
+ok - home seed rollback warns when treehouse-acquired return fails
+ok - home seeding leaves unsafe acquired active homes untouched
+ok - home seeding rolls back failed clone attempts without residue
+ok - home seeding refuses direct seed without filled charter text
+ok - home seeding refuses unfilled placeholder charters
+ok - home seeding refuses empty normalized charter fields
+ok - home seeding scaffolds, registers, and spawns a project-less home end to end
+ok - secondmate spawn resolves home validation and projects from punctuated registry fields
+ok - secondmate spawn refuses ambiguous, supplied-home, and metadata-home registry bindings
+ok - home seeding validates reused project-less charters before mutation
+ok - home seeding refuses project-less conversion of a populated home
+ok - home seeding refuses project-less homes whose projects directory cannot be inspected
+ok - home seeding refuses project-less homes with symlinked projects directories
+ok - home seeding refuses project-less homes with non-directory projects paths
+ok - home seeding refuses project-less homes whose project registry cannot be inspected
+ok - home seeding fails loudly on accidental project omission and rejects mixed --no-projects
+ok - home seeding refuses local-only projects
+ok - home seeding refuses registry delimiter home paths
+ok - home seeding refuses active home and repo root
+ok - home seeding refuses homes marked for another id
+ok - home seeding refuses homes registered to another id
+ok - home seeding refuses same-id reassignment to a different home
+ok - home seeding refuses registered home overlaps
+ok - remote-backed subhome seeding requires a source origin
+ok - remote-backed subhome seeding validates existing destination origins
+ok - home seeding resolves relative source origins against the source project
+ok - home seeding skips initialized existing no-mistakes clones
+ok - home seeding refuses uninitialized existing no-mistakes clones
+ok - home seeding refuses project destinations outside the subhome
+ok - home seeding refuses operational directories outside the subhome
+ok - home seeding refuses symlinked and non-regular leaf files
+ok - home reseeding preserves and enforces the durable parent binding
+ok - secondmate spawn validates homes before launch
+ok - secondmate spawn refuses operational directories outside the subhome
+ok - fm-send refuses a bare firstmate window with no metadata in this home
+ok - secondmate teardown retires empty homes and releases routing
+ok - secondmate teardown refuses ambiguous and identity-mismatched registry bindings
+ok - normal secondmate teardown sweeps process events before removal
+ok - secondmate teardown preserves state when process-event sweeping is unavailable
+ok - later teardown refusals preserve active process-event sources
+ok - force teardown sweeps nested secondmate homes before deletion
+ok - force teardown preserves nested process-event restoration status and recovery state
+ok - secondmate teardown refuses to hide failed leased-home return
+ok - secondmate teardown raw-removes plain-clone homes
+ok - secondmate force teardown discards child work
+ok - secondmate force teardown prevalidates child quarantine cleanup without following symlinks
+ok - secondmate force teardown preserves child worktree after unproven lock refusal
+ok - force teardown allows non-state operational directory symlinks inside the subhome
+ok - force teardown refuses operational directory symlinks outside the subhome
+ok - secondmate teardown refuses homes containing registered nested homes
+ok - secondmate teardown refuses nested homes from the child registry
+ok - force teardown validates subhome before child cleanup
+ok - force teardown validates child task temp roots before cleanup
+ok - forced teardown refuses a non-directory descendant state path
+ok - forced teardown refuses a symlinked descendant state path
+ok - forced teardown locks a descendant whose state directory was absent
+ok - forced teardown refuses while a fresh task is being published in the home
+ok - a fresh spawn refuses to publish while a forced teardown owns the task set
+ok - a fresh remote secondmate spawn refuses while the task set is owned
+ok - force teardown refuses child worktrees inside the active home
+ok - force teardown refuses child worktrees inside the firstmate repo
+ok - force teardown refuses unregistered child worktree paths
+ok - secondmate teardown path-boundary matrix refuses unmarked/ancestor/active-descendant/repo-descendant homes
+ok - idle kind=secondmate pane is healthy and not stale
+ok - secondmate charter brief is idle by default and does not self-initiate work
+ok - fm-backlog-handoff aborts atomically on unmatched, in-flight, and unregistered targets
+ok - fm-backlog-handoff refuses Done items under whitespace section headings and unsafe homes
+FM_TEST_END 2026-08-23T08:44:49Z tests/fm-secondmate-safety.test.sh exit=0 duration_ms=158891 gate_skip=false
+FM_TEST_BEGIN 2026-08-23T08:44:49Z tests/fm-standing-checks.test.sh family=unclassified expected_gate_skip=none
+ok - fm_supervision_run_due_checks: due actionable check appends wake and stamps schedule
+ok - fm_supervision_run_due_checks: not-due check does not double-run
+ok - fm_supervision_run_due_checks: missing and silent checks stay quiet
+ok - fm_supervision_run_due_checks: erroring check fails open
+ok - fm_supervision_run_due_checks: timeout fails open without wedging
+ok - fm_supervision_run_due_checks: held lock prevents concurrent check execution
+ok - fm_supervision_run_due_checks: unauthenticated custom checks are rejected without execution
+ok - fm_supervision_run_due_checks: merged PR retirement follows durable wake append
+ok - fm_supervision_run_due_checks: rejected checks advance cadence after durable wake
+FM_TEST_END 2026-08-23T08:44:54Z tests/fm-standing-checks.test.sh exit=0 duration_ms=4380 gate_skip=false
+FM_TEST_BEGIN 2026-08-23T08:44:54Z tests/fm-turnend-guard.test.sh family=watcher-wake-lock expected_gate_skip=none
+ok - fm_supervision_unhealthy: false with no state/*.meta at all
+ok - fm_supervision_unhealthy: true with in-flight task and no beacon ever
+ok - fm_supervision_unhealthy: true with in-flight task and a beacon far outside the grace window
+ok - fm_supervision_unhealthy: false with in-flight task and a fresh beacon
+ok - fm_supervision_status: FM_SUP_QUEUE_PENDING tracks state/.wake-queue
+ok - fm_supervision_needed: X-mode relay poll needs supervision
+ok - fm_supervision_unhealthy: source-only home needs supervision
+ok - fm-turnend-guard: silent no-op with nothing in flight
+ok - fm-turnend-guard: blocks when a fresh beacon has no live watcher lock
+ok - fm-turnend-guard: non-Claude path blocks a source-only home
+ok - fm-turnend-guard: blocks on a dead watcher lock even when the beacon is fresh
+ok - fm-turnend-guard: silent no-op with a live watcher lock and fresh beacon
+ok - fm-turnend-guard: healthy non-Claude harness paths ignore Claude episode contention
+ok - fm-turnend-guard: blocks on a live watcher lock with an ancient beacon
+ok - fm-turnend-guard: blocks with the exact required reason in the primary when unhealthy
+ok - fm-turnend-guard: blocks from active FM_HOME state, not only repo-root state
+ok - fm-turnend-guard: X-mode repair reason sources the cadence config
+ok - fm-turnend-guard: X-mode-only supervision remains guarded in default mode
+ok - fm-turnend-guard: ignores stale repo-root state when FM_HOME is set
+ok - fm-turnend-guard: uses FM_STATE_OVERRIDE ahead of FM_HOME/state
+ok - fm-turnend-guard: stop_hook_active=true always allows the stop (never blocks twice in one turn)
+ok - fm-turnend-guard: due actionable check queues a wake and blocks only once
+ok - fm-turnend-guard: secondmate primary runs the shared due-check backstop
+ok - fm-turnend-guard: standing checks stay scoped out of child task worktrees
+ok - fm-turnend-guard: blocks a blind turn end in a secondmate's own home (.fm-secondmate-home no longer excludes it)
+ok - fm-turnend-guard: idle-by-default - silent in a secondmate home with nothing in flight
+ok - fm-turnend-guard: stop_hook_active=true allows the stop in a secondmate home (never blocks twice in one turn)
+ok - fm-turnend-guard: secondmate deferred-death recovery - silent while watched, forces re-arm once the watcher exits
+ok - fm-turnend-guard: inert in a secondmate's own child worktree (linked git worktree) even when unhealthy
+ok - fm-turnend-guard: blocks a blind turn end in a treehouse-leased LINKED secondmate home (marker force-include)
+ok - fm-turnend-guard: an invalid (empty) marker cannot spoof inclusion; linked worktree stays exempt
+ok - fm-turnend-guard: a non-ASCII marker cannot spoof inclusion; linked worktree stays exempt
+ok - fm-turnend-guard: inert in a crewmate/scout task worktree (linked git worktree) even when unhealthy
+ok - fm-turnend-guard: fails open (never blocks) when jq is missing
+ok - fm-turnend-guard: silent no-op on empty stdin
+ok - fm-turnend-guard: runs well under the generous timing margin (1s)
+ok - fm-turnend-guard-grok: forces one explicitly marked same-session resume when the shared predicate blocks
+ok - fm-turnend-guard-grok: legacy environment loop guard prevents a nested resume loop
+ok - fm-turnend-guard-grok: native false delegates blocking feedback with zero resume processes
+ok - fm-turnend-guard-grok: native true remains bounded and starts no resume process
+ok - fm-turnend-guard-grok: both spellings are typed and camelCase has deterministic precedence
+ok - fm-turnend-guard-grok: malformed, invalidly typed, and missing-prerequisite payloads start neither path
+ok - fm-turnend-guard-grok: missing jq and no-supervision-needed stops stay silent and bounded
+ok - tracked .claude/settings.json entries: 5 inert under grok, the documented subagent exception still armed, all live under Claude
+ok - .codex/hooks.json: Stop hook uses hook process root when payload cwd is outside
+ok - .codex/hooks.json: Stop hook ignores nested git root guard scripts
+ok - .opencode primary plugin: guard path is anchored to worktree, not directory
+ok - .pi primary extension: no-tool and multi-tool runs each inject exactly one guard follow-up
+ok - .pi primary extension: delivery failure resets the logical-run latch
+ok - fm-turnend-guard --claude: re-blocks a loop-guarded stop while unhealthy and unclaimed (incident regression)
+ok - fm-turnend-guard --claude: X-mode-only homes re-block when auto-arm recovery is absent
+ok - fm-turnend-guard --claude: a live arming epoch advances once and repeated observation is idempotent
+ok - fm-turnend-guard --claude: repeated failed-to-arming races make bounded monotonic progress
+ok - fm-turnend-guard --claude: terminal owner boundary excludes a concurrent start without deadlock
+ok - fm-turnend-guard --claude: fresh rewake epoch prevents a duplicate continuation for the same event
+ok - fm-turnend-guard --claude: fresh failed epochs preserve and advance monotonic fail-open progression
+ok - fm-turnend-guard --claude: integrated fresh failures reach one bounded fail-open, stop continuation, and reset on recovery
+ok - fm-turnend-guard --claude: reset contention preserves all episode state until retry
+ok - fm-turnend-guard --claude: concurrent auto-arm and guard resets are idempotent and deadlock-free
+ok - fm-turnend-guard --claude: stale rewake epoch does not allow a blind stop
+ok - fm-turnend-guard --claude: budget exhaustion alone cannot permit a blind stop
+ok - fm-turnend-guard --claude: verified fail-open is loud, bounded, attended, and non-repeating
+ok - fm-turnend-guard --claude: fail-open requires both exhausted retries and consumed notice
+ok - fm-turnend-guard --claude: away ownership excludes the Stop-autoarm fail-open
+ok - fm-turnend-guard --claude: positive watcher recovery resets failure episode state
+ok - fm-turnend-guard --claude: bounded claim wait avoids a token-consuming forced continuation
+ok - fm-turnend-guard --claude: secondmate home re-blocks unclaimed and allows auto-arm-claimed stops
+FM_TEST_END 2026-08-23T08:45:55Z tests/fm-turnend-guard.test.sh exit=0 duration_ms=61220 gate_skip=false
+FM_TEST_BEGIN 2026-08-23T08:45:55Z tests/fm-x-mode.test.sh family=pr-forge expected_gate_skip=none
+ok - fm-x-poll is a hard no-op without a token (inert default)
+ok - fm-x-poll treats an explicitly empty env token as configured
+ok - fm-x-poll stays silent on HTTP 204 (the common case)
+ok - fm-x-poll lets an explicitly empty relay env override .env
+ok - fm-x-poll surfaces auth/config errors once and clears on recovery
+ok - fm-x-poll diagnostic markers use private guarded publication
+ok - fm-x-poll stashes the question and prints the compact marker
+ok - fm-x-poll wakes once per durable request offer across inbox cleanup
+ok - fm-x-poll retains offer claim diagnostics until recovery
+ok - fm-x-poll preserves in_reply_to conversation context in the inbox
+ok - fm-x-poll reports inbox commit failures without emitting a mention wake
+ok - fm-x-poll publishes inbox records only through private guarded artifacts
+ok - fm-x-poll requires a non-empty question before waking
+ok - fm-x-poll rejects an unsafe request_id (path-traversal guard)
+ok - fm-x-reply posts a request-bound answer and echoes only the request_id
+ok - fm-x-reply accepts the reply via --text-file and stdin (safe, unexpanded)
+ok - fm-x-reply exits non-zero on a non-2xx relay response
+ok - fm-x-reply cleans up auth header temp files on interrupted posts
+ok - fm-x-reply rejects missing arguments with a usage error
+ok - fm-x-reply --help makes image support discoverable
+ok - fm-x-reply rejects whitespace-only reply text
+ok - fm-x-reply dry-run records the would-be reply and never posts
+ok - fm-x-reply dry-run works without a token
+ok - fm-x-reply honors FMX_DRY_RUN from .env
+ok - fm-x-reply lets an explicitly empty dry-run env override .env
+ok - fm-x-reply dry-run fails when it cannot record the preview
+ok - fm-x-reply dry-run publishes outbox records only through private guarded artifacts
+ok - fmx_split_thread: word-boundary, fence-aware, within-limit, numbered, lossless, capped
+ok - fm-x-reply keeps a concise reply as a single unnumbered tweet
+ok - fm-x-reply auto-splits a long reply into a numbered thread (texts[])
+ok - fm-x-reply uses the Discord inbox platform budget instead of the X tweet budget
+ok - fm-x-reply keeps numeric X requests on the X tweet budget
+ok - fm-x-reply prefers an explicit relay-provided reply limit
+ok - fm-x-reply rejects unsafe inbox context artifacts
+ok - fm-x-reply clamps a below-floor max to 50 characters
+ok - fm-x-reply posts a thread payload (texts[]) to the relay
+ok - fm-x-reply --image posts an image object on answer
+ok - fm-x-reply streams large image payloads outside curl argv
+ok - fm-x-reply dry-run records compact image metadata for threaded replies
+ok - fm-x-reply cleans image and payload temp files
+ok - fm-x-reply --image rejects missing and unsupported image paths clearly
+ok - fm-x-reply --followup posts to /connector/followup with the same request-bound body
+ok - fm-x-reply maps a followup_unavailable follow-up 409 to exit 9
+ok - fm-x-reply maps every follow-up 409 to exit 9 even without the marker
+ok - fm-x-reply treats answer-endpoint 409 as a generic failure
+ok - fm-x-reply --followup --image posts an image object
+ok - fm-x-reply --followup is accepted in any position and leaves the answer path default
+ok - fm-x-reply --followup dry-run marks the endpoint without changing the answer path
+ok - fm-x-reply --followup auto-splits a long follow-up into a marked thread
+ok - fm-x-reply followup dry-run keeps endpoint marker and compact image metadata
+ok - fm-x-poll records the durable per-request reply context from the relay payload
+ok - context registry publishes records only through private guarded artifacts
+ok - context registry reads only private single-link artifacts
+ok - private artifact publisher is compatible with the system bash path
+ok - context registry retention is bounded to the seven-day follow-up window
+ok - context registry rewrites preserve the first-seen timestamp
+ok - context retention starts only when a live initial answer succeeds
+ok - a delayed Discord follow-up stays one message after inbox cleanup via the durable registry
+ok - an X follow-up over 280 still splits correctly after inbox cleanup
+ok - every unresolved follow-up is refused before posting
+ok - a partial registry platform combines with the relay's authoritative budget
+ok - concurrent requests each recover their own platform/budget with no cross-overwrite
+ok - fm-x-dismiss clears the durable per-request context (a dismissed mention gets no follow-up)
+ok - fm-x-dismiss posts a request-bound dismiss and echoes only the request_id
+ok - fm-x-dismiss dry-run records the would-be body and never posts
+ok - fm-x-dismiss dry-run works without a token
+ok - fm-x-dismiss dry-run publishes outbox records only through private guarded artifacts
+ok - fm-x-dismiss exits non-zero on a non-2xx relay response
+ok - fm-x-dismiss exits non-zero on a transport failure
+ok - fm-x-dismiss rejects an unsafe request_id (path-traversal guard)
+ok - fm-x-dismiss rejects missing or extra arguments with a usage error
+ok - fm-x-link records and refreshes the X-request link without disturbing meta
+ok - fm-x-link records Discord platform context so follow-ups keep the Discord budget
+ok - fm-x-link resolves the platform by request_id so a post-cleanup link keeps the Discord budget
+ok - fm-x-link warns loudly and the follow-up is held (not wrongly split) when the platform is unknown
+ok - fm-x-link paired carry flags preserve a prior task's follow-up binding onto a successor
+ok - fm-x-link recovery relink preserves Discord platform context after inbox drain
+ok - fm-x-link rejects malformed or unpaired carry flags
+ok - meta rewrites are independent of TMPDIR
+ok - fm-x-link rejects unsafe ids, missing meta, and missing arguments
+ok - fm-x-link keeps the plain missing-task error when no second mate is registered
+ok - fm-x-link refuses a second-mate-routed task and points at the promised-final path
+ok - fm-x-link points an unlocatable task at the promised-final path when second mates exist
+ok - fm-x-followup --check reports postable / not-linked correctly
+ok - fm-x-followup --check prunes a link past the 7-day window
+ok - fm-x-followup --check prunes a link that already reached the follow-up cap
+ok - fm-x-followup posts a follow-up, increments the counter, and keeps the link under the cap
+ok - fm-x-followup --final clears the link after one post regardless of the remaining count
+ok - fm-x-followup clears the link once the third follow-up reaches the cap
+ok - fm-x-followup --image forwards the attachment through fm-x-reply --followup
+ok - fm-x-followup keeps the link and counter when the post fails
+ok - fm-x-followup tombstones the link when a post-success counter write fails
+ok - fm-x-followup treats a relay cap/window rejection as an already-exhausted link, not a retry
+ok - fm-x-followup skips silently and clears the link past the 7-day window
+ok - fm-x-followup is a no-op for a task with no X link
+ok - fm-x-followup dry-run records the follow-up and increments the counter, keeping the link
+ok - fm-x-followup dry-run --final clears the link just as a live post would
+ok - fm-x-followup rejects malformed invocations
+ok - bootstrap activates X mode from an .env token, idempotently
+ok - bootstrap poll shim preserves state and config overrides
+ok - bootstrap ignores CDPATH when writing absolute FM_HOME into the durable X-mode poll shim
+ok - bootstrap reports missing X-mode dependencies before arming
+ok - bootstrap does not report X mode on when activation artifacts cannot be written
+ok - bootstrap rejects linked X artifacts without touching their targets
+ok - bootstrap is inert without a non-empty .env token (non-X users unaffected)
+ok - bootstrap cleans up X artifacts on opt-out and is silent once off
+ok - bootstrap reports failed X artifact cleanup on opt-out
+FM_TEST_END 2026-08-23T08:47:11Z tests/fm-x-mode.test.sh exit=0 duration_ms=76238 gate_skip=false
+FM_TEST_SUMMARY total=11 failed=0 skipped_gate=0 duration_ms=879982
+FM_TEST_SUMMARY_FAMILY family=cmux count=1 duration_ms=25224 failed=0
+FM_TEST_SUMMARY_FAMILY family=orca count=1 duration_ms=46031 failed=0
+FM_TEST_SUMMARY_FAMILY family=pr-forge count=2 duration_ms=470736 failed=0
+FM_TEST_SUMMARY_FAMILY family=pure-contract-unit count=1 duration_ms=38208 failed=0
+FM_TEST_SUMMARY_FAMILY family=secondmate count=1 duration_ms=158891 failed=0
+FM_TEST_SUMMARY_FAMILY family=session-bootstrap count=1 duration_ms=7411 failed=0
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=4380 failed=0
+FM_TEST_SUMMARY_FAMILY family=watcher-wake-lock count=1 duration_ms=61220 failed=0
+FM_TEST_SUMMARY_FAMILY family=zellij count=2 duration_ms=67107 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-pr-check-security.test.sh duration_ms=394498
+FM_TEST_SLOWEST rank=2 script=tests/fm-secondmate-safety.test.sh duration_ms=158891
+FM_TEST_SLOWEST rank=3 script=tests/fm-x-mode.test.sh duration_ms=76238
+FM_TEST_SLOWEST rank=4 script=tests/fm-turnend-guard.test.sh duration_ms=61220
+FM_TEST_SLOWEST rank=5 script=tests/fm-backend-orca.test.sh duration_ms=46031
+FM_TEST_SLOWEST rank=6 script=tests/fm-kimi-harness.test.sh duration_ms=38208
+FM_TEST_SLOWEST rank=7 script=tests/fm-backend-zellij.test.sh duration_ms=37104
+FM_TEST_SLOWEST rank=8 script=tests/fm-backend-zellij-smoke.test.sh duration_ms=30003
+FM_TEST_SLOWEST rank=9 script=tests/fm-backend-cmux.test.sh duration_ms=25224
+FM_TEST_SLOWEST rank=10 script=tests/fm-gotmp.test.sh duration_ms=7411
+FM_TEST_SLOWEST rank=11 script=tests/fm-standing-checks.test.sh duration_ms=4380
