@@ -120,8 +120,8 @@ zellij_expected_home_hash() {  # <home>
   fi
 }
 
-zellij_expected_home_label() {  # [home]
-  local home=${1:-$ROOT} marker id prefix
+zellij_expected_home_label() {  # [home] [root]
+  local home=${1:-$ROOT} root=${2:-${1:-$ROOT}} marker id prefix
   marker="$home/.fm-secondmate-home"
   if [ -f "$marker" ]; then
     id=$(tr -d '[:space:]' < "$marker" 2>/dev/null)
@@ -133,16 +133,16 @@ zellij_expected_home_label() {  # [home]
   else
     prefix="firstmate"
   fi
-  printf '%s-%s' "$prefix" "$(zellij_expected_home_hash "$home")"
+  printf '%s-%s' "$prefix" "$(zellij_expected_home_hash "$root")"
 }
 
-zellij_expected_scoped_title() {  # <fm-task-label> [home]
-  local label=$1 home=${2:-$ROOT} rest
+zellij_expected_scoped_title() {  # <fm-task-label> [home] [root]
+  local label=$1 home=${2:-$ROOT} root=${3:-${2:-$ROOT}} rest
   case "$label" in
     fm-*) rest=${label#fm-} ;;
     *) rest=$label ;;
   esac
-  printf 'fm-%s-%s' "$(zellij_expected_home_label "$home")" "$rest"
+  printf 'fm-%s-%s' "$(zellij_expected_home_label "$home" "$root")" "$rest"
 }
 
 zellij_write_legacy_owner_meta() {  # <state> <id> <tab> <pane> <spawn-epoch> <session-fingerprint>
@@ -1252,9 +1252,20 @@ SH
 }
 
 test_forced_secondmate_teardown_kills_zellij_children_with_child_home_tag() {
-  local dir state data config home project fb out status child_title
+  local dir state data config home project fb out status child_title socket_root socket server_pid token
+  command -v python3 >/dev/null 2>&1 || { echo "skip: python3 not found (required for zellij socket lifecycle fixture)"; return; }
   dir="$TMP_ROOT/teardown-zellij-secondmate-child"; state="$dir/state"; data="$dir/data"; config="$dir/config"; home="$dir/secondmate-home"; project="$dir/project"
-  mkdir -p "$state" "$data" "$config" "$home/state" "$home/data" "$home/config" "$home/projects" "$project" "$dir/responses"
+  socket_root=$(mktemp -d /tmp/fmz-teardown.XXXXXX); socket="$socket_root/contract_version_1/firstmate"
+  token=fmz-44444444444444444444444444444444
+  mkdir -p "$state" "$data" "$config" "$home/state" "$home/data" "$home/config" "$home/projects" "$project" "$dir/responses" "${socket%/*}" "${socket%/*}/.firstmate-incarnations"
+  python3 -c 'import socket,sys,time; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(); time.sleep(30)' "$socket" &
+  server_pid=$!
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    [ -S "$socket" ] && break
+    sleep 0.1
+  done
+  [ -S "$socket" ] || { kill "$server_pid" 2>/dev/null || true; wait "$server_pid" 2>/dev/null || true; fail "zellij socket fixture did not start"; }
+  ln "$socket" "${socket%/*}/.firstmate-incarnations/$token"
   printf 'smz\n' > "$home/.fm-secondmate-home"
   fm_write_meta "$state/smz.meta" \
     "window=firstmate:99" \
@@ -1275,10 +1286,11 @@ test_forced_secondmate_teardown_kills_zellij_children_with_child_home_tag() {
     "zellij_session=firstmate" \
     "zellij_tab_id=4" \
     "zellij_pane_id=7" \
+    "zellij_session_fingerprint=$token" \
     "worktree=$dir/missing-child-worktree" \
     "project=$project" \
     "kind=scout"
-  child_title=$(zellij_expected_scoped_title fm-childz "$home" "$home")
+  child_title=$(zellij_expected_scoped_title fm-childz "$home" "$ROOT")
   printf '[]\n' > "$dir/responses/1.out"
   printf '[]\n' > "$dir/responses/2.out"
   zellij_pane_response "$dir" 3 7 4
@@ -1293,14 +1305,17 @@ test_forced_secondmate_teardown_kills_zellij_children_with_child_home_tag() {
   printf '[]\n' > "$dir/responses/13.out"
   fb=$(make_zellij_fakebin "$dir")
   out=$( PATH="$fb:$PATH" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$data" FM_CONFIG_OVERRIDE="$config" \
-    FM_ROOT_OVERRIDE="$ROOT" \
+    FM_ROOT_OVERRIDE="$ROOT" ZELLIJ_SOCKET_DIR="$socket_root" \
     FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" FM_ZELLIJ_SESSION_LIST="firstmate" \
     "$ROOT/bin/fm-teardown.sh" smz --force 2>&1 )
   status=$?
+  kill "$server_pid" 2>/dev/null || true
+  wait "$server_pid" 2>/dev/null || true
+  rm -rf -- "$socket_root"
   expect_code 0 "$status" "fm-teardown should force-retire a secondmate with a zellij child: $out"
   assert_contains "$(cat "$dir/log")" $'\x1f''close-tab-by-id'$'\x1f''4' \
     "forced secondmate teardown did not close a child zellij tab scoped to the child home"
-  pass "fm-teardown.sh: force cleanup kills zellij children using the child home tag"
+  pass "fm-teardown.sh: force cleanup reconstructs split-input legacy zellij child tags"
 }
 
 test_forced_secondmate_teardown_retains_unconfirmed_zellij_child() {

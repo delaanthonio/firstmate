@@ -2245,7 +2245,7 @@ preflight_task_backend_ownership() {
 }
 
 preflight_firstmate_home_backend_ownership() {
-  local home=$1 sub_state child_meta child_id child_backend child_target child_kind child_wt child_home
+  local home=$1 root=$2 sub_state child_meta child_id child_backend child_target child_kind child_wt child_home
   sub_state="$home/state"
   [ -d "$sub_state" ] || return 0
   for child_meta in "$sub_state"/*.meta; do
@@ -2254,7 +2254,7 @@ preflight_firstmate_home_backend_ownership() {
     fm_backend_validate_task_endpoint "$child_meta" "$child_id" || return 1
     child_backend=$FM_BACKEND_VALIDATED_BACKEND
     child_target=$FM_BACKEND_VALIDATED_TARGET
-    preflight_task_backend_ownership "$home" "$home" "$sub_state" "$child_backend" "$child_target" \
+    preflight_task_backend_ownership "$home" "$root" "$sub_state" "$child_backend" "$child_target" \
       "$(meta_value "$child_meta" zellij_tab_id)" "$child_id" || return 1
     child_kind=$(meta_value "$child_meta" kind)
     [ -n "$child_kind" ] || child_kind=ship
@@ -2262,28 +2262,28 @@ preflight_firstmate_home_backend_ownership() {
       child_wt=$(meta_value "$child_meta" worktree)
       child_home=$(meta_value "$child_meta" home)
       [ -n "$child_home" ] || child_home=$child_wt
-      preflight_firstmate_home_backend_ownership "$child_home" || return 1
+      preflight_firstmate_home_backend_ownership "$child_home" "$root" || return 1
     fi
   done
 }
 
 cleanup_firstmate_child_backend_endpoint() {
-  local home=$1 sub_state=$2 backend=$3 target=$4 tab_id=$5 child_id=$6
+  local home=$1 root=$2 sub_state=$3 backend=$4 target=$5 tab_id=$6 child_id=$7
   if [ "$backend" = zellij ]; then
-    FM_ROOT_OVERRIDE='' FM_HOME=$home FM_ROOT=$home FM_STATE_OVERRIDE=$sub_state \
+    FM_ROOT_OVERRIDE='' FM_HOME=$home FM_ROOT=$root FM_STATE_OVERRIDE=$sub_state \
       fm_backend_kill zellij "$target" "$tab_id" "fm-$child_id" 2>/dev/null || true
-    FM_ROOT_OVERRIDE='' FM_HOME=$home FM_ROOT=$home FM_STATE_OVERRIDE=$sub_state \
+    FM_ROOT_OVERRIDE='' FM_HOME=$home FM_ROOT=$root FM_STATE_OVERRIDE=$sub_state \
       fm_backend_zellij_endpoint_confirmed_gone "$target" "$tab_id" "fm-$child_id"
   else
-    FM_ROOT_OVERRIDE='' FM_HOME=$home FM_ROOT=$home FM_STATE_OVERRIDE=$sub_state \
+    FM_ROOT_OVERRIDE='' FM_HOME=$home FM_ROOT=$root FM_STATE_OVERRIDE=$sub_state \
       fm_backend_kill cmux "$target" "" "fm-$child_id" 2>/dev/null || true
-    FM_ROOT_OVERRIDE='' FM_HOME=$home FM_ROOT=$home FM_STATE_OVERRIDE=$sub_state \
+    FM_ROOT_OVERRIDE='' FM_HOME=$home FM_ROOT=$root FM_STATE_OVERRIDE=$sub_state \
       fm_backend_cmux_endpoint_confirmed_gone "$target" "fm-$child_id"
   fi
 }
 
 cleanup_firstmate_home_children() {
-  local home=$1 sub_state child_meta child_id child_t child_wt child_proj child_kind child_home child_backend child_orca_worktree_id child_tmp child_return_rc child_busy_gen child_zellij_session child_zellij_fingerprint child_zellij_sidecar_fingerprint
+  local home=$1 root=$2 sub_state child_meta child_id child_t child_wt child_proj child_kind child_home child_backend child_orca_worktree_id child_tmp child_return_rc child_busy_gen child_zellij_session child_zellij_fingerprint child_zellij_sidecar_fingerprint
   sub_state="$home/state"
   [ -d "$sub_state" ] || return 0
   for child_meta in "$sub_state"/*.meta; do
@@ -2321,12 +2321,12 @@ cleanup_firstmate_home_children() {
       elif [ "$child_backend" = zellij ]; then
         # Zellij titles are scoped by the owning home tag, so forced secondmate
         # cleanup must verify child tabs as that child home, not the parent.
-        if ! cleanup_firstmate_child_backend_endpoint "$home" "$sub_state" zellij "$child_t" "$(meta_value "$child_meta" zellij_tab_id)" "$child_id"; then
+        if ! cleanup_firstmate_child_backend_endpoint "$home" "$root" "$sub_state" zellij "$child_t" "$(meta_value "$child_meta" zellij_tab_id)" "$child_id"; then
           echo "error: zellij endpoint $child_t for child $child_id is not confirmed gone; retaining that child's durable identity records and stopping forced cleanup" >&2
           return 1
         fi
       elif [ "$child_backend" = cmux ]; then
-        if ! cleanup_firstmate_child_backend_endpoint "$home" "$sub_state" cmux "$child_t" "" "$child_id"; then
+        if ! cleanup_firstmate_child_backend_endpoint "$home" "$root" "$sub_state" cmux "$child_t" "" "$child_id"; then
           echo "error: cmux endpoint $child_t for child $child_id is not confirmed gone; retaining that child's durable identity records and stopping forced cleanup" >&2
           return 1
         fi
@@ -2338,7 +2338,7 @@ cleanup_firstmate_home_children() {
       child_home=$(meta_value "$child_meta" home)
       [ -n "$child_home" ] || child_home=$child_wt
       if [ -n "$child_home" ] && [ -d "$child_home" ]; then
-        cleanup_firstmate_home_children "$child_home" || return $?
+        cleanup_firstmate_home_children "$child_home" "$root" || return $?
         remove_firstmate_home "$child_home" "child firstmate home" "$child_id" || return $?
       fi
     elif [ "$child_backend" = orca ]; then
@@ -2428,7 +2428,7 @@ if ! preflight_task_backend_ownership "$FM_HOME" "$FM_ROOT" "$STATE" "$BACKEND" 
   exit 1
 fi
 if [ "$KIND" = secondmate ] && [ "$FORCE" = "--force" ]; then
-  preflight_firstmate_home_backend_ownership "${HOME_PATH:-$WT}" || {
+  preflight_firstmate_home_backend_ownership "${HOME_PATH:-$WT}" "$FM_ROOT" || {
     echo "error: descendant endpoint ownership is not proven; forced teardown changed nothing" >&2
     exit 1
   }
@@ -2545,7 +2545,7 @@ elif [ "$BACKEND" = cmux ]; then
 fi
 
 if [ "$KIND" = secondmate ] && [ "$FORCE" = "--force" ]; then
-  cleanup_firstmate_home_children "$HOME_PATH" || exit $?
+  cleanup_firstmate_home_children "$HOME_PATH" "$FM_ROOT" || exit $?
 fi
 
 # Every landed/discard-work refusal above has now passed (or --force skipped

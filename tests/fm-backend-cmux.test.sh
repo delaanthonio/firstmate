@@ -118,8 +118,8 @@ cmux_expected_home_hash() {  # <home>
   fi
 }
 
-cmux_expected_home_label() {  # [home]
-  local home=${1:-$ROOT} marker id prefix
+cmux_expected_home_label() {  # [home] [root]
+  local home=${1:-$ROOT} root=${2:-${1:-$ROOT}} marker id prefix
   marker="$home/.fm-secondmate-home"
   if [ -f "$marker" ]; then
     id=$(tr -d '[:space:]' < "$marker" 2>/dev/null)
@@ -131,16 +131,16 @@ cmux_expected_home_label() {  # [home]
   else
     prefix="firstmate"
   fi
-  printf '%s-%s' "$prefix" "$(cmux_expected_home_hash "$home")"
+  printf '%s-%s' "$prefix" "$(cmux_expected_home_hash "$root")"
 }
 
-cmux_expected_scoped_title() {  # <fm-task-label> [home]
-  local label=$1 home=${2:-$ROOT} rest
+cmux_expected_scoped_title() {  # <fm-task-label> [home] [root]
+  local label=$1 home=${2:-$ROOT} root=${3:-${2:-$ROOT}} rest
   case "$label" in
     fm-*) rest=${label#fm-} ;;
     *) rest=$label ;;
   esac
-  printf 'fm-%s-%s' "$(cmux_expected_home_label "$home")" "$rest"
+  printf 'fm-%s-%s' "$(cmux_expected_home_label "$home" "$root")" "$rest"
 }
 
 cmux_assert_call_order() {
@@ -1262,7 +1262,7 @@ test_forced_secondmate_teardown_kills_cmux_children_with_child_home_tag() {
     "worktree=$dir/missing-child-worktree" \
     "project=$project" \
     "kind=scout"
-  child_title=$(cmux_expected_scoped_title fm-childc "$home")
+  child_title=$(cmux_expected_scoped_title fm-childc "$home" "$ROOT")
   parent_title=$(cmux_expected_scoped_title fm-smc "$ROOT")
   cmux_workspace_list_response "$dir" 1 "aaaaaaaa-0000-0000-0000-000000000000" "$parent_title"
   cmux_panes_response "$dir" 2 "bbbbbbbb-1111-1111-1111-111111111111"
@@ -1284,6 +1284,8 @@ test_forced_secondmate_teardown_kills_cmux_children_with_child_home_tag() {
   cmux_workspace_list_response "$dir" 20
   cmux_windows_response "$dir" 21 "e1111111-0000-0000-0000-000000000000" 1
   cmux_workspace_list_response "$dir" 22
+  cmux_windows_response "$dir" 23 "e1111111-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 24
   fb=$(make_cmux_fakebin "$dir")
   out=$( PATH="$fb:$PATH" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$data" FM_CONFIG_OVERRIDE="$config" \
     FM_ROOT_OVERRIDE="$ROOT" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
@@ -1292,7 +1294,7 @@ test_forced_secondmate_teardown_kills_cmux_children_with_child_home_tag() {
   expect_code 0 "$status" "fm-teardown should force-retire a secondmate with a cmux child: $out"
   assert_contains "$(cat "$dir/log")" $'\x1f''close-workspace'$'\x1f''--workspace'$'\x1f''cccccccc-2222-2222-2222-222222222222' \
     "forced secondmate teardown did not close a child cmux workspace scoped to the child home"
-  pass "fm-teardown.sh: force cleanup kills cmux children using the child home tag"
+  pass "fm-teardown.sh: force cleanup reconstructs split-input legacy cmux child tags"
 }
 
 test_forced_secondmate_teardown_retains_unconfirmed_cmux_child() {
