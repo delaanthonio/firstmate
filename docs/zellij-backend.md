@@ -43,7 +43,9 @@ Zellij does not enforce tab-name uniqueness, so the adapter performs its own dup
 Create, recover, list, and cleanup paths all use the same scoped title owner in `bin/fm-backend-hometag-lib.sh`.
 Moving a Firstmate home changes its path hash and leaves old titles unmatched, consistent with worktree paths also becoming stale after a move.
 
-A pre-home-tag task remains reachable through its recorded metadata only when exactly one live tab has the old title and its recorded ids and session fingerprint prove that the task belongs to the current session incarnation.
+A pre-home-tag task remains reachable through its recorded metadata only when exactly one live tab has the old title and its recorded ids plus stable session fingerprint prove that the task belongs to the current session incarnation.
+When that legacy task predates recorded fingerprints, Firstmate may reconstruct the proof only from a positively identified live task process and then persists it in a private sidecar before use.
+An older task that already has the current home-scoped title must already carry stable incarnation proof; a missing or unverifiable fingerprint stops safely without touching its lifecycle records.
 Multiple old tabs with the same title cause a refusal rather than a guess.
 Bulk recovery never adopts unscoped legacy tabs because it has no safe home identity for them.
 
@@ -102,7 +104,7 @@ Real test cleanup uses only an isolated non-`firstmate` session and the guard in
 - New-tab focus restoration has a narrow visible race.
 - CLI exit status is not meaningful; a target can still disappear after structural readiness checks.
 - Worktree cwd discovery requires the spawn-time marker probe.
-- An ambiguous unscoped legacy title requires manual cleanup and respawn.
+- An ambiguous legacy title or missing stable incarnation proof requires manual cleanup and respawn.
 
 ## Regression entry points
 

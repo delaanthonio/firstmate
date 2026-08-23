@@ -131,8 +131,9 @@ fm_supervision_log_check_failure() {  # <script> <status> <stderr-file>
 # watcher from running the same checks concurrently or back-to-back. Checks use
 # the same authenticated shapes as the watcher: the byte-static X shim dispatches
 # the tracked poller, PR polls use their validated registration snapshot, and a
-# custom check runs only from its registered immutable snapshot. On the first
-# actionable stdout line (or an authentication rejection), appends the wake to
+# custom check runs only from its registered immutable snapshot. The due sweep
+# retains the first actionable stdout result, scans every remaining candidate
+# for authentication rejection, then appends one combined wake to
 # state/.wake-queue, stamps .last-check, and returns 0 with:
 #   FM_SUP_CHECK_REASON    "check: <script>: <output>"
 #   FM_SUP_CHECK_SCRIPT    script path
