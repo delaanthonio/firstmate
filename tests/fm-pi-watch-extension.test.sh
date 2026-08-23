@@ -566,8 +566,20 @@ if [ "$count" -eq 1 ]; then
   exit 0
 fi
 if [ "$count" -eq 2 ]; then
-  trap 'sleep 2.1; exit 0' TERM INT
-  while :; do sleep 0.02; done
+  stop_owned_child_bounded() {
+    sleep 1
+    sleep 1
+  }
+  cycle_log_append() {
+    sleep 0.4
+  }
+  handle_signal() {
+    stop_owned_child_bounded
+    cycle_log_append
+    exit 0
+  }
+  trap handle_signal TERM INT
+  while :; do sleep 0.2; done
 fi
 printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
 while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
@@ -1809,8 +1821,20 @@ if [ "$count" -eq 1 ]; then
   exit 0
 fi
 if [ "$count" -eq 2 ]; then
-  trap 'sleep 2.1; exit 0' TERM INT
-  while :; do sleep 0.02; done
+  stop_owned_child_bounded() {
+    sleep 1
+    sleep 1
+  }
+  cycle_log_append() {
+    sleep 0.4
+  }
+  handle_signal() {
+    stop_owned_child_bounded
+    cycle_log_append
+    exit 0
+  }
+  trap handle_signal TERM INT
+  while :; do sleep 0.2; done
 fi
 printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
 while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
