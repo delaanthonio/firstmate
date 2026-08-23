@@ -1266,20 +1266,24 @@ test_forced_secondmate_teardown_kills_cmux_children_with_child_home_tag() {
   parent_title=$(cmux_expected_scoped_title fm-smc "$ROOT")
   cmux_workspace_list_response "$dir" 1 "aaaaaaaa-0000-0000-0000-000000000000" "$parent_title"
   cmux_panes_response "$dir" 2 "bbbbbbbb-1111-1111-1111-111111111111"
-  cmux_windows_response "$dir" 3 "e2222222-0000-0000-0000-000000000000" 2
-  cmux_workspace_list_response "$dir" 4 "aaaaaaaa-0000-0000-0000-000000000000" "$parent_title" "ffffffff-5555-5555-5555-555555555555" other
-  cmux_windows_response "$dir" 6 "e2222222-0000-0000-0000-000000000000" 1
-  cmux_workspace_list_response "$dir" 7
-  cmux_windows_response "$dir" 8 "e2222222-0000-0000-0000-000000000000" 1
-  cmux_workspace_list_response "$dir" 9
-  cmux_workspace_list_response "$dir" 10 "cccccccc-2222-2222-2222-222222222222" "$child_title"
-  cmux_panes_response "$dir" 11 "dddddddd-3333-3333-3333-333333333333"
-  cmux_windows_response "$dir" 12 "e1111111-0000-0000-0000-000000000000" 2
-  cmux_workspace_list_response "$dir" 13 "cccccccc-2222-2222-2222-222222222222" "$child_title" "ffffffff-4444-4444-4444-444444444444" other
-  cmux_windows_response "$dir" 15 "e1111111-0000-0000-0000-000000000000" 1
-  cmux_workspace_list_response "$dir" 16
-  cmux_windows_response "$dir" 17 "e1111111-0000-0000-0000-000000000000" 1
-  cmux_workspace_list_response "$dir" 18
+  cmux_workspace_list_response "$dir" 3 "cccccccc-2222-2222-2222-222222222222" "$child_title"
+  cmux_panes_response "$dir" 4 "dddddddd-3333-3333-3333-333333333333"
+  cmux_workspace_list_response "$dir" 5 "aaaaaaaa-0000-0000-0000-000000000000" "$parent_title"
+  cmux_panes_response "$dir" 6 "bbbbbbbb-1111-1111-1111-111111111111"
+  cmux_windows_response "$dir" 7 "e2222222-0000-0000-0000-000000000000" 2
+  cmux_workspace_list_response "$dir" 8 "aaaaaaaa-0000-0000-0000-000000000000" "$parent_title" "ffffffff-5555-5555-5555-555555555555" other
+  cmux_windows_response "$dir" 10 "e2222222-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 11
+  cmux_windows_response "$dir" 12 "e2222222-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 13
+  cmux_workspace_list_response "$dir" 14 "cccccccc-2222-2222-2222-222222222222" "$child_title"
+  cmux_panes_response "$dir" 15 "dddddddd-3333-3333-3333-333333333333"
+  cmux_windows_response "$dir" 16 "e1111111-0000-0000-0000-000000000000" 2
+  cmux_workspace_list_response "$dir" 17 "cccccccc-2222-2222-2222-222222222222" "$child_title" "ffffffff-4444-4444-4444-444444444444" other
+  cmux_windows_response "$dir" 19 "e1111111-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 20
+  cmux_windows_response "$dir" 21 "e1111111-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 22
   fb=$(make_cmux_fakebin "$dir")
   out=$( PATH="$fb:$PATH" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$data" FM_CONFIG_OVERRIDE="$config" \
     FM_ROOT_OVERRIDE="$ROOT" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
@@ -1307,18 +1311,22 @@ test_forced_secondmate_teardown_retains_unconfirmed_cmux_child() {
   parent_title=$(cmux_expected_scoped_title fm-smc "$ROOT")
   cmux_workspace_list_response "$dir" 1 "aaaaaaaa-0000-0000-0000-000000000000" "$parent_title"
   cmux_panes_response "$dir" 2 "bbbbbbbb-1111-1111-1111-111111111111"
-  cmux_windows_response "$dir" 3 "e2222222-0000-0000-0000-000000000000" 2
-  cmux_workspace_list_response "$dir" 4 "aaaaaaaa-0000-0000-0000-000000000000" "$parent_title" "ffffffff-5555-5555-5555-555555555555" other
-  cmux_windows_response "$dir" 6 "e2222222-0000-0000-0000-000000000000" 1
-  cmux_workspace_list_response "$dir" 7
-  cmux_windows_response "$dir" 8 "e2222222-0000-0000-0000-000000000000" 1
-  cmux_workspace_list_response "$dir" 9
-  cmux_workspace_list_response "$dir" 10 "cccccccc-2222-2222-2222-222222222222" "$child_title"
-  cmux_panes_response "$dir" 11 "dddddddd-3333-3333-3333-333333333333"
-  cmux_windows_response "$dir" 12 "e1111111-0000-0000-0000-000000000000" 2
-  cmux_workspace_list_response "$dir" 13 "cccccccc-2222-2222-2222-222222222222" "$child_title" "ffffffff-4444-4444-4444-444444444444" other
-  cmux_windows_response "$dir" 15 "e1111111-0000-0000-0000-000000000000" 1
-  cmux_workspace_list_response "$dir" 16 "cccccccc-2222-2222-2222-222222222222" "$child_title"
+  cmux_workspace_list_response "$dir" 3 "cccccccc-2222-2222-2222-222222222222" "$child_title"
+  cmux_panes_response "$dir" 4 "dddddddd-3333-3333-3333-333333333333"
+  cmux_workspace_list_response "$dir" 5 "aaaaaaaa-0000-0000-0000-000000000000" "$parent_title"
+  cmux_panes_response "$dir" 6 "bbbbbbbb-1111-1111-1111-111111111111"
+  cmux_windows_response "$dir" 7 "e2222222-0000-0000-0000-000000000000" 2
+  cmux_workspace_list_response "$dir" 8 "aaaaaaaa-0000-0000-0000-000000000000" "$parent_title" "ffffffff-5555-5555-5555-555555555555" other
+  cmux_windows_response "$dir" 10 "e2222222-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 11
+  cmux_windows_response "$dir" 12 "e2222222-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 13
+  cmux_workspace_list_response "$dir" 14 "cccccccc-2222-2222-2222-222222222222" "$child_title"
+  cmux_panes_response "$dir" 15 "dddddddd-3333-3333-3333-333333333333"
+  cmux_windows_response "$dir" 16 "e1111111-0000-0000-0000-000000000000" 2
+  cmux_workspace_list_response "$dir" 17 "cccccccc-2222-2222-2222-222222222222" "$child_title" "ffffffff-4444-4444-4444-444444444444" other
+  cmux_windows_response "$dir" 19 "e1111111-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 20 "cccccccc-2222-2222-2222-222222222222" "$child_title"
   fb=$(make_cmux_fakebin "$dir")
   out=$( PATH="$fb:$PATH" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$data" FM_CONFIG_OVERRIDE="$config" FM_ROOT_OVERRIDE="$ROOT" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" "$ROOT/bin/fm-teardown.sh" smc --force 2>&1 )
   status=$?

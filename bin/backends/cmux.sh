@@ -742,6 +742,11 @@ fm_backend_cmux_endpoint_confirmed_gone() {  # <target> <expected-label>
   [ -z "$matches" ]
 }
 
+fm_backend_cmux_endpoint_ownership_preflight() {  # <target> <expected-label>
+  fm_backend_cmux_target_ready "$1" "$2" && return 0
+  fm_backend_cmux_endpoint_confirmed_gone "$1" "$2"
+}
+
 # fm_backend_cmux_list_live: recovery/orphan discovery. Lists every workspace
 # whose title is scoped to this firstmate home, by TITLE - never by trusting a
 # stored uuid, since workspace ids do NOT survive an app relaunch (finding #5).

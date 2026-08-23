@@ -2231,13 +2231,49 @@ preflight_firstmate_home_herdr_children() {  # <home>
   done
 }
 
+preflight_task_backend_ownership() {
+  local home=$1 root=$2 state=$3 backend=$4 target=$5 tab_id=$6 task_id=$7
+  fm_backend_source "$backend" || return 1
+  if [ "$backend" = zellij ]; then
+    FM_ROOT_OVERRIDE='' FM_HOME="$home" FM_ROOT="$root" FM_STATE_OVERRIDE="$state" \
+      fm_backend_zellij_endpoint_ownership_preflight "$target" "$tab_id" "fm-$task_id" || return 1
+  elif [ "$backend" = cmux ]; then
+    FM_ROOT_OVERRIDE='' FM_HOME="$home" FM_ROOT="$root" FM_STATE_OVERRIDE="$state" \
+      fm_backend_cmux_endpoint_ownership_preflight "$target" "fm-$task_id" || return 1
+  fi
+  return 0
+}
+
+preflight_firstmate_home_backend_ownership() {
+  local home=$1 sub_state child_meta child_id child_backend child_target child_kind child_wt child_home
+  sub_state="$home/state"
+  [ -d "$sub_state" ] || return 0
+  for child_meta in "$sub_state"/*.meta; do
+    [ -e "$child_meta" ] || continue
+    child_id=$(basename "$child_meta" .meta)
+    fm_backend_validate_task_endpoint "$child_meta" "$child_id" || return 1
+    child_backend=$FM_BACKEND_VALIDATED_BACKEND
+    child_target=$FM_BACKEND_VALIDATED_TARGET
+    preflight_task_backend_ownership "$home" "$home" "$sub_state" "$child_backend" "$child_target" \
+      "$(meta_value "$child_meta" zellij_tab_id)" "$child_id" || return 1
+    child_kind=$(meta_value "$child_meta" kind)
+    [ -n "$child_kind" ] || child_kind=ship
+    if [ "$child_kind" = secondmate ]; then
+      child_wt=$(meta_value "$child_meta" worktree)
+      child_home=$(meta_value "$child_meta" home)
+      [ -n "$child_home" ] || child_home=$child_wt
+      preflight_firstmate_home_backend_ownership "$child_home" || return 1
+    fi
+  done
+}
+
 cleanup_firstmate_child_backend_endpoint() {
   local home=$1 sub_state=$2 backend=$3 target=$4 tab_id=$5 child_id=$6
   if [ "$backend" = zellij ]; then
     FM_ROOT_OVERRIDE='' FM_HOME=$home FM_ROOT=$home FM_STATE_OVERRIDE=$sub_state \
       fm_backend_kill zellij "$target" "$tab_id" "fm-$child_id" 2>/dev/null || true
     FM_ROOT_OVERRIDE='' FM_HOME=$home FM_ROOT=$home FM_STATE_OVERRIDE=$sub_state \
-      fm_backend_zellij_endpoint_confirmed_gone "$target" "$tab_id"
+      fm_backend_zellij_endpoint_confirmed_gone "$target" "$tab_id" "fm-$child_id"
   else
     FM_ROOT_OVERRIDE='' FM_HOME=$home FM_ROOT=$home FM_STATE_OVERRIDE=$sub_state \
       fm_backend_kill cmux "$target" "" "fm-$child_id" 2>/dev/null || true
@@ -2386,6 +2422,18 @@ validate_pr_poll_cleanup "$STATE" "$ID" || exit 1
 # teardown makes any partial destructive progress.
 [ -z "$TASK_TMP" ] || validate_task_tmp_for_removal "$TASK_TMP" "task temp root" "$ID" "$TASK_HOME" >/dev/null || exit 1
 
+if ! preflight_task_backend_ownership "$FM_HOME" "$FM_ROOT" "$STATE" "$BACKEND" "$T" \
+  "$(meta_value "$META" zellij_tab_id)" "$ID"; then
+  echo "error: $BACKEND endpoint ownership for $ID is not proven; teardown changed nothing" >&2
+  exit 1
+fi
+if [ "$KIND" = secondmate ] && [ "$FORCE" = "--force" ]; then
+  preflight_firstmate_home_backend_ownership "${HOME_PATH:-$WT}" || {
+    echo "error: descendant endpoint ownership is not proven; forced teardown changed nothing" >&2
+    exit 1
+  }
+fi
+
 if [ "$KIND" = secondmate ]; then
   [ -n "$HOME_PATH" ] || HOME_PATH=$WT
   validate_firstmate_home_for_removal "$HOME_PATH" "secondmate home" "$ID" >/dev/null || exit 1
@@ -2481,7 +2529,7 @@ TEARDOWN_ENDPOINT_CLOSE_CONFIRMED=0
 if [ "$BACKEND" = zellij ]; then
   fm_backend_kill "$BACKEND" "$T" "$(meta_value "$META" zellij_tab_id)" "fm-$ID" 2>/dev/null || true
   if ! declare -F fm_backend_zellij_endpoint_confirmed_gone >/dev/null 2>&1 \
-    || ! fm_backend_zellij_endpoint_confirmed_gone "$T" "$(meta_value "$META" zellij_tab_id)"; then
+    || ! fm_backend_zellij_endpoint_confirmed_gone "$T" "$(meta_value "$META" zellij_tab_id)" "fm-$ID"; then
     echo "error: zellij endpoint $T for $ID is not confirmed gone; retaining endpoint records, processes, worktree, and temporary runtime state" >&2
     exit 1
   fi

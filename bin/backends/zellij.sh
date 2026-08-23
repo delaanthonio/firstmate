@@ -350,8 +350,8 @@ fm_backend_zellij_migrate_session_fingerprint() {  # <session> <pane-id> <meta> 
   printf '%s' "$fingerprint"
 }
 
-fm_backend_zellij_legacy_ownership_proven() {  # <session> <tab-id> <label>
-  local session=$1 tab_id=$2 label=$3 id state meta sidecar backend endpoint meta_session meta_tab meta_pane window recorded_fingerprint
+fm_backend_zellij_legacy_ownership_proven() {  # <session> <tab-id> <label> [allow-migration]
+  local session=$1 tab_id=$2 label=$3 allow_migration=${4:-1} id state meta sidecar backend endpoint meta_session meta_tab meta_pane window recorded_fingerprint
   case "$label" in fm-*) id=${label#fm-} ;; *) id=$label ;; esac
   case "$id" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac
   state=${FM_STATE_OVERRIDE:-$FM_HOME/state}
@@ -375,6 +375,9 @@ fm_backend_zellij_legacy_ownership_proven() {  # <session> <tab-id> <label>
     sidecar="$state/$id.zellij-session-fingerprint"
     if [ -f "$sidecar" ] && [ ! -L "$sidecar" ]; then
       recorded_fingerprint=$(fm_backend_zellij_sidecar_fingerprint "$session" "$sidecar") || return 1
+    elif [ "$allow_migration" != 1 ]; then
+      fm_backend_zellij_preupgrade_ownership_proven "$session" "$meta_pane" "$meta"
+      return $?
     else
       recorded_fingerprint=$(fm_backend_zellij_migrate_session_fingerprint "$session" "$meta_pane" "$meta" "$sidecar") || return 1
     fi
@@ -517,8 +520,8 @@ fm_backend_zellij_pane_exists() {  # <session> <pane_id>
 # scoped check, the legacy checks, and the ambiguity count all read the SAME
 # already-fetched JSON), so a caller whose fake-CLI fixture supplies exactly
 # one list-tabs response keeps working unchanged.
-fm_backend_zellij_tab_matches_label() {  # <session> <tab_id> <label>
-  local session=$1 tab_id=$2 label=$3 scoped legacy_scoped tabs candidate count
+fm_backend_zellij_tab_matches_label() {  # <session> <tab_id> <label> [allow-migration]
+  local session=$1 tab_id=$2 label=$3 allow_migration=${4:-1} scoped legacy_scoped tabs candidate count
   scoped=$(fm_backend_zellij_scoped_title "$label") || return 1
   legacy_scoped=$(fm_backend_zellij_legacy_scoped_title "$label") || return 1
   tabs=$(fm_backend_zellij_cli "$session" action list-tabs --json 2>/dev/null)
@@ -530,7 +533,7 @@ fm_backend_zellij_tab_matches_label() {  # <session> <tab_id> <label>
       '[.[]? | select(.tab_id == $t and .name == $want)] | length > 0' >/dev/null 2>&1 || continue
     count=$(printf '%s' "$tabs" | jq -r --arg want "$candidate" '[.[]? | select(.name == $want)] | length' 2>/dev/null)
     [ "$count" = "1" ] || return 1
-    fm_backend_zellij_legacy_ownership_proven "$session" "$tab_id" "$label"
+    fm_backend_zellij_legacy_ownership_proven "$session" "$tab_id" "$label" "$allow_migration"
     return $?
   done
   return 1
@@ -607,6 +610,25 @@ fm_backend_zellij_target_ready() {  # <target> [expected-label]
     return $?
   fi
   fm_backend_zellij_pane_exists "$FM_BACKEND_ZELLIJ_SESSION" "$FM_BACKEND_ZELLIJ_PANE"
+}
+
+fm_backend_zellij_endpoint_ownership_preflight() {  # <target> <tab-id> <expected-label>
+  local target=$1 tab_id=$2 expected_label=$3 resolved_tab tabs
+  fm_backend_zellij_parse_target "$target" || return 1
+  case "$tab_id" in ''|*[!0-9]*) return 1 ;; esac
+  fm_backend_zellij_session_exists "$FM_BACKEND_ZELLIJ_SESSION" || return 0
+  resolved_tab=$(fm_backend_zellij_tab_for_pane "$FM_BACKEND_ZELLIJ_SESSION" "$FM_BACKEND_ZELLIJ_PANE" 2>/dev/null)
+  if [ -n "$resolved_tab" ]; then
+    fm_backend_zellij_tab_matches_label "$FM_BACKEND_ZELLIJ_SESSION" "$resolved_tab" "$expected_label" 0
+    return $?
+  fi
+  tabs=$(fm_backend_zellij_cli "$FM_BACKEND_ZELLIJ_SESSION" action list-tabs --json 2>/dev/null) || return 1
+  printf '%s' "$tabs" | jq -e 'type == "array"' >/dev/null 2>&1 || return 1
+  if printf '%s' "$tabs" | jq -e --argjson t "$tab_id" '.[]? | select(.tab_id == $t)' >/dev/null 2>&1; then
+    fm_backend_zellij_tab_matches_label "$FM_BACKEND_ZELLIJ_SESSION" "$tab_id" "$expected_label" 0
+    return $?
+  fi
+  return 0
 }
 
 # fm_backend_zellij_current_path: the live pane's cwd, or empty on any error.
@@ -836,15 +858,33 @@ fm_backend_zellij_kill() {  # <target> [tab_id] [expected_label]
   fi
 }
 
-fm_backend_zellij_endpoint_confirmed_gone() {  # <target> <tab-id>
-  local target=$1 tab_id=$2 sessions tabs
+fm_backend_zellij_endpoint_confirmed_gone() {  # <target> <tab-id> <expected-label>
+  local target=$1 tab_id=$2 expected_label=$3 sessions panes tabs scoped legacy candidate candidate_ids candidate_id
   fm_backend_zellij_parse_target "$target" || return 1
   case "$tab_id" in ''|*[!0-9]*) return 1 ;; esac
   sessions=$(zellij list-sessions --short --no-formatting 2>/dev/null) || return 1
   printf '%s\n' "$sessions" | grep -qxF "$FM_BACKEND_ZELLIJ_SESSION" || return 0
+  panes=$(fm_backend_zellij_cli "$FM_BACKEND_ZELLIJ_SESSION" action list-panes --json 2>/dev/null) || return 1
+  printf '%s' "$panes" | jq -e 'type == "array"' >/dev/null 2>&1 || return 1
+  printf '%s' "$panes" | jq -e --argjson p "$FM_BACKEND_ZELLIJ_PANE" \
+    '.[]? | select(.id == $p and .is_plugin == false)' >/dev/null 2>&1 && return 1
   tabs=$(fm_backend_zellij_cli "$FM_BACKEND_ZELLIJ_SESSION" action list-tabs --json 2>/dev/null) || return 1
   printf '%s' "$tabs" | jq -e 'type == "array"' >/dev/null 2>&1 || return 1
-  ! printf '%s' "$tabs" | jq -e --argjson t "$tab_id" '.[]? | select(.tab_id == $t)' >/dev/null 2>&1
+  printf '%s' "$tabs" | jq -e --argjson t "$tab_id" '.[]? | select(.tab_id == $t)' >/dev/null 2>&1 && return 1
+  scoped=$(fm_backend_zellij_scoped_title "$expected_label") || return 1
+  printf '%s' "$tabs" | jq -e --arg want "$scoped" '.[]? | select(.name == $want)' >/dev/null 2>&1 && return 1
+  legacy=$(fm_backend_zellij_legacy_scoped_title "$expected_label") || return 1
+  for candidate in "$legacy" "$expected_label"; do
+    [ "$candidate" != "$scoped" ] || continue
+    candidate_ids=$(printf '%s' "$tabs" | jq -r --arg want "$candidate" '.[]? | select(.name == $want) | .tab_id' 2>/dev/null) || return 1
+    while IFS= read -r candidate_id; do
+      [ -n "$candidate_id" ] || continue
+      fm_backend_zellij_legacy_ownership_proven "$FM_BACKEND_ZELLIJ_SESSION" "$candidate_id" "$expected_label" 0 && return 1
+    done <<FMEOF
+$candidate_ids
+FMEOF
+  done
+  return 0
 }
 
 # fm_backend_zellij_list_live: recovery/orphan discovery. Lists every tab in
