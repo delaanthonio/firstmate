@@ -304,25 +304,27 @@ test_expected_label_refuses_ambiguous_untagged_tab() {
   pass "fm_backend_zellij_tab_matches_label: refuses an untagged legacy label match when 2+ live tabs share it (migration ambiguity guard)"
 }
 
-test_expected_label_accepts_unique_legacy_root_tag() {
+test_expected_label_refuses_unique_legacy_root_tag() {
   local dir home checkout fb legacy_title
   dir="$TMP_ROOT/label-legacy-root-tag"; home="$dir/home"; checkout="$dir/checkout"
   mkdir -p "$dir/responses" "$home" "$checkout"
-  legacy_title=$(FM_HOME="$home" FM_ROOT_OVERRIDE="$checkout" bash -c '. "$0/bin/backends/zellij.sh"; fm_backend_zellij_legacy_scoped_title fm-legacy' "$ROOT")
+  legacy_title=$(zellij_expected_scoped_title fm-legacy "$checkout")
   zellij_pane_response "$dir" 1 7 3
   zellij_tab_response "$dir" 2 3 "$legacy_title"
   fb=$(make_zellij_fakebin "$dir")
   PATH="$fb:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$checkout" FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" \
     FM_ZELLIJ_SESSION_LIST=firstmate bash -c '. "$0/bin/backends/zellij.sh"; fm_backend_zellij_send_key firstmate:7 Escape fm-legacy' "$ROOT"
-  expect_code 0 $? "send_key should accept a unique root-tagged title from the prior release"
-  pass "fm_backend_zellij_tab_matches_label: accepts a unique legacy root-tagged tab"
+  [ "$?" -ne 0 ] || fail "send_key should refuse a unique root-tagged title without durable home ownership"
+  assert_not_contains "$(cat "$dir/log")" $'\x1f''send-keys' \
+    "send_key targeted a root-tagged tab whose reused id did not prove home ownership"
+  pass "fm_backend_zellij_tab_matches_label: refuses unique legacy root-tagged tabs without durable ownership"
 }
 
 test_expected_label_refuses_ambiguous_legacy_root_tag() {
   local dir home checkout fb legacy_title status
   dir="$TMP_ROOT/label-ambiguous-legacy-root-tag"; home="$dir/home"; checkout="$dir/checkout"
   mkdir -p "$dir/responses" "$home" "$checkout"
-  legacy_title=$(FM_HOME="$home" FM_ROOT_OVERRIDE="$checkout" bash -c '. "$0/bin/backends/zellij.sh"; fm_backend_zellij_legacy_scoped_title fm-legacy' "$ROOT")
+  legacy_title=$(zellij_expected_scoped_title fm-legacy "$checkout")
   zellij_pane_response "$dir" 1 7 3
   zellij_multi_tab_response "$dir" 2 3 "$legacy_title" 9 "$legacy_title"
   fb=$(make_zellij_fakebin "$dir")
@@ -1336,7 +1338,7 @@ test_scoped_title_uses_secondmate_home_label
 test_scoped_title_changes_with_home_path
 test_expected_label_accepts_unambiguous_untagged_legacy_tab
 test_expected_label_refuses_ambiguous_untagged_tab
-test_expected_label_accepts_unique_legacy_root_tag
+test_expected_label_refuses_unique_legacy_root_tag
 test_expected_label_refuses_ambiguous_legacy_root_tag
 test_list_live_scopes_to_own_home_tag
 test_resolve_bare_selector_prefers_scoped_title
