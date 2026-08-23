@@ -555,6 +555,7 @@ OWNED_CHILD_RC=0
 owned_child_active() {
   local active_pid active_pids
   [ -n "$child" ] || return 1
+  fm_pid_alive "$child" || return 1
   active_pids=$(jobs -p)
   for active_pid in $active_pids; do
     [ "$active_pid" = "$child" ] && return 0
@@ -773,13 +774,13 @@ if ! fm_pid_alive "$child"; then
   wait "$child" 2>/dev/null
   rc=$?
   child_done=1
-  if [ "$rc" -eq 0 ] && watch_output_has_wake "$child_out"; then
-    owned_child_finished "$rc"
-    exit $?
-  fi
 else
   stop_owned_child_bounded || true
   rc=$OWNED_CHILD_RC
+fi
+if [ "$rc" -eq 0 ] && watch_output_has_wake "$child_out"; then
+  owned_child_finished "$rc"
+  exit $?
 fi
 print_watch_output "$child_out"
 cleanup_child

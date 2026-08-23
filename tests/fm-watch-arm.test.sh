@@ -50,6 +50,10 @@ printf '%s\n' "${BASHPID:-$$}" > "$FM_TEST_WATCHER_PID_FILE"
 if [ "${FM_TEST_WATCHER_TERM_RESISTANT:-0}" = 1 ]; then
   trap '' TERM
 fi
+if [ "${FM_TEST_WATCHER_ACTIONABLE_ON_TERM:-0}" = 1 ]; then
+  trap 'printf "signal: synthetic cleanup-race wake\n"; printf "ready\n" > "$FM_TEST_WATCHER_ACTIONABLE_READY"; exit 0' TERM
+  while :; do sleep 0.02; done
+fi
 if [ "${FM_TEST_WATCHER_ACTIONABLE:-0}" = 1 ]; then
   while [ ! -e "$FM_TEST_WATCHER_ACTIONABLE_TRIGGER" ]; do sleep 0.02; done
   printf 'signal: synthetic startup-race wake\n'
@@ -88,8 +92,8 @@ SH
   printf '%s\n' "$dir"
 }
 
-start_confirmation_arm() {  # <fixture> <output> <ready-delay> [environment-timeout] [term-resistant] [actionable]
-  local dir=$1 out=$2 delay=$3 timeout=${4:-} term_resistant=${5:-0} actionable=${6:-0}
+start_confirmation_arm() {  # <fixture> <output> <ready-delay> [environment-timeout] [term-resistant] [actionable] [actionable-on-term]
+  local dir=$1 out=$2 delay=$3 timeout=${4:-} term_resistant=${5:-0} actionable=${6:-0} actionable_on_term=${7:-0}
   if [ -n "$timeout" ]; then
     PATH="$dir/fakebin:$PATH" FM_HOME="$dir" FM_ARM_CONFIRM_TIMEOUT="$timeout" \
       FM_ARM_READY_FD=4 \
@@ -97,6 +101,7 @@ start_confirmation_arm() {  # <fixture> <output> <ready-delay> [environment-time
       FM_TEST_WATCHER_PID_FILE="$dir/watcher.pid" FM_TEST_WATCHER_TERM_RESISTANT="$term_resistant" \
       FM_TEST_WATCHER_ACTIONABLE="$actionable" FM_TEST_WATCHER_ACTIONABLE_TRIGGER="$dir/actionable-trigger" \
       FM_TEST_WATCHER_ACTIONABLE_READY="$dir/actionable-ready" \
+      FM_TEST_WATCHER_ACTIONABLE_ON_TERM="$actionable_on_term" \
       FM_TEST_WATCHER_READY_DELAY="$delay" "$dir/bin/fm-watch-arm.sh" > "$out" 2>&1 4>"$dir/boundary" &
   else
     env -u FM_ARM_CONFIRM_TIMEOUT PATH="$dir/fakebin:$PATH" FM_HOME="$dir" \
@@ -105,6 +110,7 @@ start_confirmation_arm() {  # <fixture> <output> <ready-delay> [environment-time
       FM_TEST_WATCHER_PID_FILE="$dir/watcher.pid" FM_TEST_WATCHER_TERM_RESISTANT="$term_resistant" \
       FM_TEST_WATCHER_ACTIONABLE="$actionable" FM_TEST_WATCHER_ACTIONABLE_TRIGGER="$dir/actionable-trigger" \
       FM_TEST_WATCHER_ACTIONABLE_READY="$dir/actionable-ready" \
+      FM_TEST_WATCHER_ACTIONABLE_ON_TERM="$actionable_on_term" \
       FM_TEST_WATCHER_READY_DELAY="$delay" "$dir/bin/fm-watch-arm.sh" > "$out" 2>&1 4>"$dir/boundary" &
   fi
   ARM_PID=$!
@@ -270,15 +276,20 @@ start_rearm_arm() {  # <home> <state> <fakebin> <arm-out> [predecessor-arm-pid]
 }
 
 test_confirmation_timeout_precedence() {
-  local default_dir file_dir env_dir out
+  local default_dir file_dir env_dir out initial_deadline grace_deadline
+
+  case "${OSTYPE:-}" in
+    msys*|mingw*|cygwin*) initial_deadline=31; grace_deadline=37 ;;
+    *) initial_deadline=11; grace_deadline=17 ;;
+  esac
 
   default_dir=$(make_confirmation_fixture confirm-default)
   out="$default_dir/arm.out"
   start_confirmation_arm "$default_dir" "$out" never
   wait_for_watcher_launch "$default_dir" || fail "default confirmation fixture did not launch its watcher"
-  advance_confirmation_clock "$default_dir" 31
+  advance_confirmation_clock "$default_dir" "$initial_deadline"
   is_live_non_zombie "$ARM_PID" || fail "default confirmation arm skipped its one live-child grace window"
-  advance_confirmation_clock "$default_dir" 37
+  advance_confirmation_clock "$default_dir" "$grace_deadline"
   assert_single_confirmation_failure "$ARM_PID" "$out" "default confirmation arm"
 
   file_dir=$(make_confirmation_fixture confirm-file)
@@ -569,6 +580,25 @@ test_confirmation_timeout_returns_finished_actionable_wake() {
   ! grep -q '^watcher: FAILED' "$out" \
     || fail "expired confirmation appended a false failure after an actionable wake: $(cat "$out")"
   pass "watch-arm: an actionable wake wins over expired confirmation cleanup"
+}
+
+test_confirmation_cleanup_returns_actionable_wake() {
+  local dir out status
+  dir=$(make_confirmation_fixture confirm-cleanup-actionable)
+  printf '0\n' > "$dir/config/arm-confirm-timeout"
+  out="$dir/arm.out"
+  start_confirmation_arm "$dir" "$out" never '' 0 0 1
+  wait_for_watcher_launch "$dir" || fail "cleanup-actionable fixture did not launch its watcher"
+  advance_confirmation_clock "$dir" 1
+  advance_confirmation_clock "$dir" 6
+  wait_for_exit "$ARM_PID" 80
+  status=$?
+  expect_code 0 "$status" "confirmation cleanup must return a delivered actionable wake: $(cat "$out")"
+  grep -F 'signal: synthetic cleanup-race wake' "$out" >/dev/null \
+    || fail "confirmation cleanup did not return its actionable wake: $(cat "$out")"
+  ! grep -q '^watcher: FAILED' "$out" \
+    || fail "confirmation cleanup appended a false failure after an actionable wake: $(cat "$out")"
+  pass "watch-arm: a cleanup-race actionable wake returns without failure"
 }
 
 test_startup_race_boundedly_retires_owned_child() {
@@ -1289,6 +1319,7 @@ test_live_child_gets_one_bounded_confirmation_grace
 test_confirmation_rejects_health_after_grace_deadline
 test_confirmation_grace_uses_initial_deadline
 test_confirmation_timeout_returns_finished_actionable_wake
+test_confirmation_cleanup_returns_actionable_wake
 test_startup_race_boundedly_retires_owned_child
 test_startup_race_returns_owned_actionable_wake
 test_attached_arm_reports_the_delivered_wake

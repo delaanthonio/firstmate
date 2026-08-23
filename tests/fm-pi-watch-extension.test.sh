@@ -2220,7 +2220,10 @@ if [ "$count" -eq 1 ]; then
 fi
 trap 'printf "retired\n" > "${FM_RETIRED_FILE:?}"; exit 0' TERM INT
 sleep 0.4
-printf 'watcher-confirmation-boundary\n' >&4
+printf 'watcher-conf' >&4
+sleep 0.05
+printf 'irmation-boundary' >&4
+exec 4>&-
 sleep 0.4
 printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
 while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
@@ -2259,7 +2262,7 @@ EOF
   status=$?
   expect_code 0 "$status" "Pi must grant the complete arm interval after delayed startup"
   [ -z "$out" ] || fail "Pi delayed-start arm-bound test printed output: $out"
-  pass "Pi grants a delayed successor its complete arm-owned readiness interval"
+  pass "Pi grants a split-boundary delayed successor its complete arm-owned readiness interval"
 }
 
 test_opencode_delayed_start_preserves_arm_bound() {
@@ -2285,7 +2288,10 @@ if [ "$count" -eq 1 ]; then
 fi
 trap 'printf "retired\n" > "${FM_RETIRED_FILE:?}"; exit 0' TERM INT
 sleep 0.4
-printf 'watcher-confirmation-boundary\n' >&4
+printf 'watcher-conf' >&4
+sleep 0.05
+printf 'irmation-boundary' >&4
+exec 4>&-
 sleep 0.4
 printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
 while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
@@ -2324,7 +2330,7 @@ EOF
   status=$?
   expect_code 0 "$status" "OpenCode must grant the complete arm interval after delayed startup"
   [ -z "$out" ] || fail "OpenCode delayed-start arm-bound test printed output: $out"
-  pass "OpenCode grants a delayed successor its complete arm-owned readiness interval"
+  pass "OpenCode grants a split-boundary delayed successor its complete arm-owned readiness interval"
 }
 
 test_adapter_arm_ready_timeout_resolution

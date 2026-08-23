@@ -491,6 +491,17 @@ export default function (pi: ExtensionAPI) {
     const releaseChild = (): void => {
       if (owner.child === armChild) owner.child = null;
     };
+    let boundaryBuffer = "";
+    const observeBoundary = (text: string, flush = false): void => {
+      boundaryBuffer += text;
+      const lines = boundaryBuffer.split(/\r?\n/);
+      boundaryBuffer = lines.pop() ?? "";
+      if (flush && boundaryBuffer) {
+        lines.push(boundaryBuffer);
+        boundaryBuffer = "";
+      }
+      if (lines.includes("watcher-confirmation-boundary")) settleBoundary();
+    };
     armChild.stdout.on("data", (chunk: Buffer) => {
       stdout += chunk.toString();
       observeEstablishedArm();
@@ -500,8 +511,9 @@ export default function (pi: ExtensionAPI) {
       observeEstablishedArm();
     });
     armChild.stdio[4]?.on("data", (chunk: Buffer) => {
-      if (chunk.toString().split(/\r?\n/).includes("watcher-confirmation-boundary")) settleBoundary();
+      observeBoundary(chunk.toString());
     });
+    armChild.stdio[4]?.on("end", () => observeBoundary("", true));
     armChild.on("close", (code: number | null, signal: NodeJS.Signals | null) => {
       if (settled) return;
       settled = true;

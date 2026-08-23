@@ -393,6 +393,17 @@ function spawnArm(paths, sessionID, client, predecessorArmPid = "") {
   const releaseChild = () => {
     if (child === armChild) child = null;
   };
+  let boundaryBuffer = "";
+  const observeBoundary = (text, flush = false) => {
+    boundaryBuffer += text;
+    const lines = boundaryBuffer.split(/\r?\n/);
+    boundaryBuffer = lines.pop() ?? "";
+    if (flush && boundaryBuffer) {
+      lines.push(boundaryBuffer);
+      boundaryBuffer = "";
+    }
+    if (lines.includes("watcher-confirmation-boundary")) settleBoundary();
+  };
   const observeRecovery = () => {
     const recovery = `${stdout}\n${stderr}`.match(/^watcher: started pid=([0-9]+).* recovery-generation=([A-Za-z0-9._-]+)$/m);
     if (recovery) armRecovery.set(armChild, { watcherPid: recovery[1], generation: recovery[2] });
@@ -408,8 +419,9 @@ function spawnArm(paths, sessionID, client, predecessorArmPid = "") {
     observeArmOutput(stdout, stderr, settleReadiness);
   });
   armChild.stdio[4]?.on("data", (chunk) => {
-    if (chunk.toString().split(/\r?\n/).includes("watcher-confirmation-boundary")) settleBoundary();
+    observeBoundary(chunk.toString());
   });
+  armChild.stdio[4]?.on("end", () => observeBoundary("", true));
   armChild.on("close", (code, signal) => {
     if (settled) return;
     settled = true;
