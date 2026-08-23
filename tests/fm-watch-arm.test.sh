@@ -352,6 +352,44 @@ test_confirmation_timeout_range_is_bounded() {
   pass "watch-arm: confirmation timeout accepts its maximum and refuses larger values"
 }
 
+test_confirmation_timeout_raw_length_is_bounded() {
+  local accepted_dir file_dir env_dir out status
+  accepted_dir=$(make_confirmation_fixture confirm-leading-zeros-accepted)
+  printf '0000000000\n' > "$accepted_dir/config/arm-confirm-timeout"
+  out="$accepted_dir/arm.out"
+  start_confirmation_arm "$accepted_dir" "$out" never
+  wait_for_watcher_launch "$accepted_dir" || fail "ten-digit zero-padded timeout did not launch its watcher"
+  advance_confirmation_clock "$accepted_dir" 1
+  advance_confirmation_clock "$accepted_dir" 7
+  assert_single_confirmation_failure "$ARM_PID" "$out" "ten-digit zero-padded confirmation arm"
+
+  file_dir=$(make_confirmation_fixture confirm-file-overlong-zeros)
+  printf '00000000000\n' > "$file_dir/config/arm-confirm-timeout"
+  out="$file_dir/arm.out"
+  status=0
+  env -u FM_ARM_CONFIRM_TIMEOUT PATH="$file_dir/fakebin:$PATH" FM_HOME="$file_dir" \
+    FM_TEST_NOW_FILE="$file_dir/now" FM_TEST_WATCHER_LOG="$file_dir/watcher.log" \
+    FM_TEST_WATCHER_PID_FILE="$file_dir/watcher.pid" FM_TEST_WATCHER_READY_DELAY=never \
+    "$file_dir/bin/fm-watch-arm.sh" > "$out" 2>&1 || status=$?
+  expect_code 2 "$status" "overlong all-zero config/arm-confirm-timeout"
+  grep -F 'config/arm-confirm-timeout must contain at most 10 base-10 digits' "$out" >/dev/null \
+    || fail "overlong all-zero file refusal did not report the representation bound: $(cat "$out")"
+  [ ! -e "$file_dir/watcher.log" ] || fail "overlong all-zero timeout file launched a watcher before refusing"
+
+  env_dir=$(make_confirmation_fixture confirm-env-overlong-zeros)
+  out="$env_dir/arm.out"
+  status=0
+  PATH="$env_dir/fakebin:$PATH" FM_HOME="$env_dir" FM_ARM_CONFIRM_TIMEOUT=00000000000 \
+    FM_TEST_NOW_FILE="$env_dir/now" FM_TEST_WATCHER_LOG="$env_dir/watcher.log" \
+    FM_TEST_WATCHER_PID_FILE="$env_dir/watcher.pid" FM_TEST_WATCHER_READY_DELAY=never \
+    "$env_dir/bin/fm-watch-arm.sh" > "$out" 2>&1 || status=$?
+  expect_code 2 "$status" "overlong all-zero FM_ARM_CONFIRM_TIMEOUT"
+  grep -F 'FM_ARM_CONFIRM_TIMEOUT must use at most 10 base-10 digits' "$out" >/dev/null \
+    || fail "overlong all-zero environment refusal did not report the representation bound: $(cat "$out")"
+  [ ! -e "$env_dir/watcher.log" ] || fail "overlong all-zero environment timeout launched a watcher before refusing"
+  pass "watch-arm: timeout representations are bounded before leading-zero normalization"
+}
+
 test_confirmation_timeout_reaps_term_resistant_child() {
   local dir out watcher_pid
   dir=$(make_confirmation_fixture confirm-term-resistant)
@@ -1059,6 +1097,7 @@ test_downtime_marker_does_not_follow_symlink() {
 test_confirmation_timeout_precedence
 test_malformed_confirmation_timeout_file_refuses
 test_confirmation_timeout_range_is_bounded
+test_confirmation_timeout_raw_length_is_bounded
 test_confirmation_timeout_reaps_term_resistant_child
 test_confirmation_timeout_reaps_stopped_child
 test_live_child_gets_one_bounded_confirmation_grace

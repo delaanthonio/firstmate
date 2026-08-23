@@ -134,13 +134,22 @@ if [ "$CONFIRM_TIMEOUT_FILE_INVALID" -eq 1 ]; then
   echo "watcher: FAILED - config/arm-confirm-timeout must contain one non-negative base-10 integer" >&2
   exit 2
 fi
+ARM_CONFIRM_MAX=2147483647
+ARM_CONFIRM_RAW_MAX_DIGITS=${#ARM_CONFIRM_MAX}
+if [ "${#CONFIRM_TIMEOUT}" -gt "$ARM_CONFIRM_RAW_MAX_DIGITS" ]; then
+  if [ -n "${FM_ARM_CONFIRM_TIMEOUT:-}" ]; then
+    echo "watcher: FAILED - FM_ARM_CONFIRM_TIMEOUT must use at most $ARM_CONFIRM_RAW_MAX_DIGITS base-10 digits" >&2
+  else
+    echo "watcher: FAILED - config/arm-confirm-timeout must contain at most $ARM_CONFIRM_RAW_MAX_DIGITS base-10 digits" >&2
+  fi
+  exit 2
+fi
 # Normalize leading zeros so every accepted value remains decimal in Bash
 # arithmetic instead of acquiring the shell's legacy octal interpretation.
 while [ "${CONFIRM_TIMEOUT#0}" != "$CONFIRM_TIMEOUT" ]; do
   CONFIRM_TIMEOUT=${CONFIRM_TIMEOUT#0}
 done
 [ -n "$CONFIRM_TIMEOUT" ] || CONFIRM_TIMEOUT=0
-ARM_CONFIRM_MAX=2147483647
 confirm_timeout_exceeds_max=0
 if [ "${#CONFIRM_TIMEOUT}" -gt "${#ARM_CONFIRM_MAX}" ]; then
   confirm_timeout_exceeds_max=1

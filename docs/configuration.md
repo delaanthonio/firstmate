@@ -28,7 +28,7 @@ Ordinary dead-direct-report recovery is owned by `stuck-crewmate-recovery`, whil
 
 The optional local, gitignored `config/arm-confirm-timeout` file sets how many seconds `bin/fm-watch-arm.sh` waits for a newly launched watcher to publish a healthy lock and beacon before its bounded live-child grace check.
 The effective value resolves in this order: a non-empty `FM_ARM_CONFIRM_TIMEOUT`, then `config/arm-confirm-timeout` under the effective config directory, then the platform default of 10 seconds or 30 seconds on Git Bash/MSYS.
-The file and environment override must select a base-10 integer from 0 through 2147483647, and the file must be regular and non-symlinked with no surrounding whitespace or additional lines.
+The file and environment override must use at most ten base-10 digits and select an integer from 0 through 2147483647, and the file must be regular and non-symlinked with no surrounding whitespace or additional lines.
 A malformed selected file or environment value makes the arm refuse loudly before launching a watcher instead of silently using a default.
 When the initial confirmation budget expires but the launched watcher process still exists, the arm grants exactly one additional five-second grace window before reporting one loud failure and exiting nonzero.
 
