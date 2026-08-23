@@ -226,8 +226,9 @@ test_spawn_refuses_unsafe_secondmate_home_marker() {
   rc=$?
   [ "$rc" -ne 0 ] || fail "spawn accepted an unsafe secondmate home marker"
   [ ! -s "$CASE_DIR/launch.log" ] || fail "spawn launched the harness after rejecting an unsafe home marker"
+  [ ! -s "$CASE_DIR/tmux-calls.log" ] || fail "spawn mutated the runtime before rejecting an unsafe home marker"
   assert_absent "$HOME_DIR/state/$id.meta" "spawn published task metadata after rejecting an unsafe home marker"
-  pass "fm-spawn: refuses unsafe secondmate home markers before temp-root creation"
+  pass "fm-spawn: refuses unsafe secondmate home markers before runtime mutation"
 }
 
 test_kimi_hook_install_is_surgical_idempotent_and_removable() {

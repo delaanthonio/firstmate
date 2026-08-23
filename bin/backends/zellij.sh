@@ -158,7 +158,7 @@ fm_backend_zellij_home_label() {
 # scopes its own-home matches through this.
 fm_backend_zellij_scoped_title() {  # <fm-task-label>
   local label=$1 rest home
-  home=$(fm_backend_zellij_home_label)
+  home=$(fm_backend_zellij_home_label) || return 1
   case "$label" in
     fm-*) rest=${label#fm-} ;;
     *) rest=$label ;;
@@ -168,7 +168,7 @@ fm_backend_zellij_scoped_title() {  # <fm-task-label>
 
 fm_backend_zellij_legacy_scoped_title() {  # <fm-task-label>
   local label=$1 rest root_tag
-  root_tag=$(fm_backend_legacy_roottag)
+  root_tag=$(fm_backend_legacy_roottag) || return 1
   case "$label" in
     fm-*) rest=${label#fm-} ;;
     *) rest=$label ;;
@@ -313,8 +313,8 @@ fm_backend_zellij_pane_exists() {  # <session> <pane_id>
 # one list-tabs response keeps working unchanged.
 fm_backend_zellij_tab_matches_label() {  # <session> <tab_id> <label>
   local session=$1 tab_id=$2 label=$3 scoped legacy_scoped tabs count
-  scoped=$(fm_backend_zellij_scoped_title "$label")
-  legacy_scoped=$(fm_backend_zellij_legacy_scoped_title "$label")
+  scoped=$(fm_backend_zellij_scoped_title "$label") || return 1
+  legacy_scoped=$(fm_backend_zellij_legacy_scoped_title "$label") || return 1
   tabs=$(fm_backend_zellij_cli "$session" action list-tabs --json 2>/dev/null)
   printf '%s' "$tabs" | jq -e --argjson t "$tab_id" --arg want "$scoped" \
     '[.[]? | select(.tab_id == $t and .name == $want)] | length > 0' >/dev/null 2>&1 && return 0
@@ -353,7 +353,7 @@ fm_backend_zellij_tab_matches_label() {  # <session> <tab_id> <label>
 fm_backend_zellij_create_task() {  # <session> <label> <cwd>
   local session=$1 label=$2 cwd=$3 title tabs dup prev_active tab_id pane_id
   fm_backend_zellij_session_exists "$session" || { echo "error: zellij session '$session' does not exist; run container_ensure first" >&2; return 1; }
-  title=$(fm_backend_zellij_scoped_title "$label")
+  title=$(fm_backend_zellij_scoped_title "$label") || return 1
   tabs=$(fm_backend_zellij_cli "$session" action list-tabs --json 2>/dev/null)
   dup=$(printf '%s' "$tabs" | jq -r --arg want "$title" '.[]? | select(.name == $want) | .tab_id' 2>/dev/null | head -1)
   if [ -n "$dup" ]; then
@@ -651,7 +651,7 @@ fm_backend_zellij_kill() {  # <target> [tab_id] [expected_label]
 fm_backend_zellij_list_live() {  # <session>
   local session=$1 home prefix tabs tab_id name pane_id plain
   fm_backend_zellij_session_exists "$session" || return 0
-  home=$(fm_backend_zellij_home_label)
+  home=$(fm_backend_zellij_home_label) || return 1
   prefix="fm-$home-"
   tabs=$(fm_backend_zellij_cli "$session" action list-tabs --json 2>/dev/null) || return 0
   while IFS=$'\t' read -r tab_id name; do
@@ -678,7 +678,7 @@ fm_backend_zellij_list_live() {  # <session>
 # meta or an explicit recorded target.
 fm_backend_zellij_resolve_bare_selector() {  # <name>
   local name=$1 scoped sessions session tabs tab_id count=0 pane_id bare_session='' bare_tab_id=''
-  scoped=$(fm_backend_zellij_scoped_title "$name")
+  scoped=$(fm_backend_zellij_scoped_title "$name") || return 1
   sessions=$(zellij list-sessions --short --no-formatting 2>/dev/null)
   while IFS= read -r session; do
     [ -n "$session" ] || continue

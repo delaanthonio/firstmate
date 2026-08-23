@@ -317,7 +317,7 @@ fm_backend_cmux_home_label() {
 
 fm_backend_cmux_scoped_title() {  # <fm-task-label>
   local label=$1 rest home
-  home=$(fm_backend_cmux_home_label)
+  home=$(fm_backend_cmux_home_label) || return 1
   case "$label" in
     fm-*) rest=${label#fm-} ;;
     *) rest=$label ;;
@@ -327,7 +327,7 @@ fm_backend_cmux_scoped_title() {  # <fm-task-label>
 
 fm_backend_cmux_legacy_scoped_title() {  # <fm-task-label>
   local label=$1 rest root_tag
-  root_tag=$(fm_backend_legacy_roottag)
+  root_tag=$(fm_backend_legacy_roottag) || return 1
   case "$label" in
     fm-*) rest=${label#fm-} ;;
     *) rest=$label ;;
@@ -385,7 +385,7 @@ fm_backend_cmux_surface_id_for_workspace() {  # <workspace_id>
 # <surface_id>" on success.
 fm_backend_cmux_create_task() {  # <label> <cwd>
   local label=$1 cwd=$2 title matches out wsid sfid
-  title=$(fm_backend_cmux_scoped_title "$label")
+  title=$(fm_backend_cmux_scoped_title "$label") || return 1
   matches=$(fm_backend_cmux_workspace_ids_for_label "$title") || return 1
   if [ -n "$matches" ]; then
     echo "error: cmux workspace '$title' already exists" >&2
@@ -395,8 +395,9 @@ fm_backend_cmux_create_task() {  # <label> <cwd>
     echo "error: cmux new-workspace failed for '$title': $out" >&2
     return 1
   }
-  wsid=$(fm_backend_cmux_unique_workspace_id_for_label "$title") \
-    || { echo "error: could not resolve a unique cmux workspace id for '$title' after creation" >&2; return 1; }
+  wsid=$(fm_backend_cmux_workspace_id_for_label "$title")
+  [ -n "$wsid" ] \
+    || { echo "error: could not resolve the cmux workspace id for '$title' after creation" >&2; return 1; }
   sfid=$(fm_backend_cmux_surface_id_for_workspace "$wsid")
   [ -n "$sfid" ] || { echo "error: could not resolve the default surface for cmux workspace '$title' ($wsid)" >&2; return 1; }
   printf '%s %s' "$wsid" "$sfid"
@@ -444,8 +445,8 @@ fm_backend_cmux_target_ready() {  # <target> [expected-label]
   local expected_label=${2:-} expected_title legacy_title title wsid sfid matches match_count
   fm_backend_cmux_parse_target "$1" || return 1
   if [ -n "$expected_label" ]; then
-    expected_title=$(fm_backend_cmux_scoped_title "$expected_label")
-    legacy_title=$(fm_backend_cmux_legacy_scoped_title "$expected_label")
+    expected_title=$(fm_backend_cmux_scoped_title "$expected_label") || return 1
+    legacy_title=$(fm_backend_cmux_legacy_scoped_title "$expected_label") || return 1
     title=$(fm_backend_cmux_cli workspace list --json --id-format uuids 2>/dev/null | jq -r --arg id "$FM_BACKEND_CMUX_WORKSPACE" '.workspaces[]? | select(.id == $id) | .title' 2>/dev/null)
     if [ "$title" = "$expected_title" ]; then
       fm_backend_cmux_surface_exists "$FM_BACKEND_CMUX_WORKSPACE" "$FM_BACKEND_CMUX_SURFACE" && return 0
@@ -682,7 +683,7 @@ fm_backend_cmux_kill() {  # <target> [unused] [expected-label]
 # Read-only: an unreachable cmux simply lists nothing.
 fm_backend_cmux_list_live() {
   local wss wsid title sfid home prefix plain
-  home=$(fm_backend_cmux_home_label)
+  home=$(fm_backend_cmux_home_label) || return 1
   prefix="fm-$home-"
   wss=$(fm_backend_cmux_cli workspace list --json --id-format uuids 2>/dev/null) || return 0
   while IFS=$'\t' read -r wsid title; do

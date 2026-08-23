@@ -254,6 +254,10 @@ SUB_HOME_MARKER=".fm-secondmate-home"
 . "$SCRIPT_DIR/fm-control-lib.sh"
 # shellcheck source=bin/fm-backend-hometag-lib.sh
 . "$SCRIPT_DIR/fm-backend-hometag-lib.sh"
+if ! fm_backend_hometag >/dev/null; then
+  echo "error: invalid $FM_BACKEND_HOMETAG_SECONDMATE_MARKER marker in $FM_HOME" >&2
+  exit 1
+fi
 # shellcheck source=bin/fm-gate-refuse-lib.sh
 . "$SCRIPT_DIR/fm-gate-refuse-lib.sh"
 # shellcheck source=bin/fm-busy-lib.sh

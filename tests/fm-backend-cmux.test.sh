@@ -295,6 +295,16 @@ test_scoped_title_uses_secondmate_home_label() {
   pass "fm_backend_cmux_scoped_title: scopes a secondmate task title with the home marker plus home hash"
 }
 
+test_scoped_title_normalizes_secondmate_marker_whitespace() {
+  local dir out expected
+  dir="$TMP_ROOT/scoped-title-secondmate-whitespace"; mkdir -p "$dir"
+  printf ' sm-one \nignored\n' > "$dir/.fm-secondmate-home"
+  expected="fm-2ndmate-sm-one-$(cmux_expected_home_hash "$dir")-task1"
+  out=$( FM_HOME="$dir" bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_scoped_title fm-task1' "$ROOT" )
+  [ "$out" = "$expected" ] || fail "secondmate scoped title should normalize marker whitespace to $expected, got '$out'"
+  pass "fm_backend_cmux_scoped_title: normalizes the first marker line before validation"
+}
+
 test_scoped_title_changes_with_home_path() {
   local dir checkout home_one home_two out_one out_two expected_one expected_two
   dir="$TMP_ROOT/scoped-title-home-hash"; checkout="$dir/shared-checkout"; home_one="$dir/home-one"; home_two="$dir/home-two"
@@ -478,14 +488,13 @@ test_create_task_refuses_duplicate_label() {
 }
 
 test_create_task_creates_and_parses_ids() {
-  local dir fb out title
+  local dir fb out title list_windows_count
   dir="$TMP_ROOT/create-task"; mkdir -p "$dir/responses"
   title=$(cmux_expected_scoped_title fm-newtask)
   cmux_windows_response "$dir" 1 "e1111111-0000-0000-0000-000000000000" 1
   printf '{"workspaces":[]}' > "$dir/responses/2.out"
-  cmux_windows_response "$dir" 4 "e1111111-0000-0000-0000-000000000000" 1
-  cmux_workspace_list_response "$dir" 5 "bbbbbbbb-1111-1111-1111-111111111111" "$title"
-  cmux_panes_response "$dir" 6 "cccccccc-2222-2222-2222-222222222222"
+  cmux_workspace_list_response "$dir" 4 "bbbbbbbb-1111-1111-1111-111111111111" "$title"
+  cmux_panes_response "$dir" 5 "cccccccc-2222-2222-2222-222222222222"
   fb=$(make_cmux_fakebin "$dir")
   out=$( PATH="$fb:$PATH" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
     bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_create_task fm-newtask /tmp/proj' "$ROOT" )
@@ -495,6 +504,8 @@ test_create_task_creates_and_parses_ids() {
     "create_task did not call new-workspace with the right name/cwd"
   assert_contains "$(cat "$dir/log")" $'\x1f''--focus'$'\x1f''false' \
     "create_task did not pass --focus false"
+  list_windows_count=$(grep -c $'\x1f''list-windows' "$dir/log" || true)
+  [ "$list_windows_count" = 1 ] || fail "create_task should not rescan unrelated windows after successful creation"
   pass "fm_backend_cmux_create_task: creates a workspace and parses workspace_id/surface_id from list responses"
 }
 
@@ -1218,6 +1229,7 @@ test_parse_target
 test_normalize_key
 test_scoped_title_uses_primary_home_label
 test_scoped_title_uses_secondmate_home_label
+test_scoped_title_normalizes_secondmate_marker_whitespace
 test_scoped_title_changes_with_home_path
 test_dispatch_routes_cmux_backend
 test_dispatch_busy_state_unknown_for_cmux
