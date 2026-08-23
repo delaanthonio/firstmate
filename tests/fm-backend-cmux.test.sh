@@ -541,38 +541,38 @@ test_target_ready_rejects_label_mismatch() {
   pass "fm_backend_cmux_target_ready: rejects a workspace id reused under a different title"
 }
 
-test_target_ready_accepts_unique_legacy_root_tag() {
+test_target_ready_accepts_exact_legacy_root_tag() {
   local dir home checkout fb legacy_title
   dir="$TMP_ROOT/ready-legacy-root-tag"; home="$dir/home"; checkout="$dir/checkout"
   mkdir -p "$dir/responses" "$home" "$checkout"
   legacy_title=$(FM_HOME="$home" FM_ROOT_OVERRIDE="$checkout" bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_legacy_scoped_title fm-label' "$ROOT")
   cmux_workspace_list_response "$dir" 1 "aaaaaaaa-0000-0000-0000-000000000000" "$legacy_title"
-  cmux_windows_response "$dir" 2 "e1111111-0000-0000-0000-000000000000" 1 "e2222222-0000-0000-0000-000000000000" 1
-  cmux_workspace_list_response "$dir" 3 "aaaaaaaa-0000-0000-0000-000000000000" "$legacy_title"
-  cmux_workspace_list_response "$dir" 4 "dddddddd-3333-3333-3333-333333333333" "other"
-  cmux_panes_response "$dir" 5 "bbbbbbbb-1111-1111-1111-111111111111"
+  cmux_panes_response "$dir" 2 "bbbbbbbb-1111-1111-1111-111111111111"
   fb=$(make_cmux_fakebin "$dir")
   PATH="$fb:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$checkout" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
     bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_target_ready "aaaaaaaa-0000-0000-0000-000000000000:bbbbbbbb-1111-1111-1111-111111111111" fm-label' "$ROOT"
-  expect_code 0 $? "target_ready should accept the unique root-tagged title from the prior release"
-  pass "fm_backend_cmux_target_ready: accepts a unique legacy root-tagged workspace"
+  expect_code 0 $? "target_ready should accept the exact root-tagged workspace from the prior release"
+  pass "fm_backend_cmux_target_ready: accepts an exact legacy root-tagged workspace"
 }
 
-test_target_ready_refuses_ambiguous_legacy_root_tag() {
+test_target_ready_refuses_different_legacy_workspace_id() {
   local dir home checkout fb legacy_title status
   dir="$TMP_ROOT/ready-ambiguous-legacy-root-tag"; home="$dir/home"; checkout="$dir/checkout"
   mkdir -p "$dir/responses" "$home" "$checkout"
   legacy_title=$(FM_HOME="$home" FM_ROOT_OVERRIDE="$checkout" bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_legacy_scoped_title fm-label' "$ROOT")
-  cmux_workspace_list_response "$dir" 1 "aaaaaaaa-0000-0000-0000-000000000000" "$legacy_title"
-  cmux_windows_response "$dir" 2 "e1111111-0000-0000-0000-000000000000" 1 "e2222222-0000-0000-0000-000000000000" 1
-  cmux_workspace_list_response "$dir" 3 "aaaaaaaa-0000-0000-0000-000000000000" "$legacy_title"
-  cmux_workspace_list_response "$dir" 4 "cccccccc-2222-2222-2222-222222222222" "$legacy_title"
+  cmux_workspace_list_response "$dir" 1 "cccccccc-2222-2222-2222-222222222222" "$legacy_title"
+  cmux_windows_response "$dir" 2 "e1111111-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 3 "cccccccc-2222-2222-2222-222222222222" "$legacy_title"
+  cmux_windows_response "$dir" 4 "e1111111-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 5 "cccccccc-2222-2222-2222-222222222222" "$legacy_title"
   fb=$(make_cmux_fakebin "$dir")
   PATH="$fb:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$checkout" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
     bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_target_ready "aaaaaaaa-0000-0000-0000-000000000000:bbbbbbbb-1111-1111-1111-111111111111" fm-label' "$ROOT"
   status=$?
-  [ "$status" -ne 0 ] || fail "target_ready should refuse an ambiguous legacy root-tagged title"
-  pass "fm_backend_cmux_target_ready: refuses ambiguous legacy root-tagged workspaces"
+  [ "$status" -ne 0 ] || fail "target_ready should refuse a different workspace with the same legacy title"
+  assert_not_contains "$(cat "$dir/log")" $'\x1f''list-panes' \
+    "target_ready should not inspect another home's legacy workspace surfaces"
+  pass "fm_backend_cmux_target_ready: refuses cross-home legacy workspace adoption"
 }
 
 test_target_ready_recovers_current_title_across_windows() {
@@ -1140,6 +1140,52 @@ test_list_live_filters_by_title_prefix() {
   pass "fm_backend_cmux_list_live: lists only this home's scoped task workspaces using plain fm-<id> labels"
 }
 
+test_forced_secondmate_teardown_kills_cmux_children_with_child_home_tag() {
+  local dir state data config home project fb out status child_title parent_title
+  dir="$TMP_ROOT/teardown-cmux-secondmate-child"; state="$dir/state"; data="$dir/data"; config="$dir/config"; home="$dir/secondmate-home"; project="$dir/project"
+  mkdir -p "$state" "$data" "$config" "$home/state" "$home/data" "$home/config" "$home/projects" "$project" "$dir/responses"
+  printf 'smc\n' > "$home/.fm-secondmate-home"
+  fm_write_meta "$state/smc.meta" \
+    "window=aaaaaaaa-0000-0000-0000-000000000000:bbbbbbbb-1111-1111-1111-111111111111" \
+    "endpoint_task_id=smc" \
+    "backend=cmux" \
+    "cmux_workspace_id=aaaaaaaa-0000-0000-0000-000000000000" \
+    "cmux_surface_id=bbbbbbbb-1111-1111-1111-111111111111" \
+    "worktree=$home" \
+    "project=$home" \
+    "kind=secondmate" \
+    "mode=secondmate" \
+    "home=$home"
+  fm_write_meta "$home/state/childc.meta" \
+    "window=cccccccc-2222-2222-2222-222222222222:dddddddd-3333-3333-3333-333333333333" \
+    "endpoint_task_id=childc" \
+    "backend=cmux" \
+    "cmux_workspace_id=cccccccc-2222-2222-2222-222222222222" \
+    "cmux_surface_id=dddddddd-3333-3333-3333-333333333333" \
+    "worktree=$dir/missing-child-worktree" \
+    "project=$project" \
+    "kind=scout"
+  child_title=$(cmux_expected_scoped_title fm-childc "$home")
+  parent_title=$(cmux_expected_scoped_title fm-smc "$ROOT")
+  cmux_workspace_list_response "$dir" 1 "cccccccc-2222-2222-2222-222222222222" "$child_title"
+  cmux_panes_response "$dir" 2 "dddddddd-3333-3333-3333-333333333333"
+  cmux_windows_response "$dir" 3 "e1111111-0000-0000-0000-000000000000" 2
+  cmux_workspace_list_response "$dir" 4 "cccccccc-2222-2222-2222-222222222222" "$child_title" "ffffffff-4444-4444-4444-444444444444" "other"
+  cmux_workspace_list_response "$dir" 6 "aaaaaaaa-0000-0000-0000-000000000000" "$parent_title"
+  cmux_panes_response "$dir" 7 "bbbbbbbb-1111-1111-1111-111111111111"
+  cmux_windows_response "$dir" 8 "e2222222-0000-0000-0000-000000000000" 2
+  cmux_workspace_list_response "$dir" 9 "aaaaaaaa-0000-0000-0000-000000000000" "$parent_title" "ffffffff-5555-5555-5555-555555555555" "other"
+  fb=$(make_cmux_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$data" FM_CONFIG_OVERRIDE="$config" \
+    FM_ROOT_OVERRIDE="$ROOT" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
+    "$ROOT/bin/fm-teardown.sh" smc --force 2>&1 )
+  status=$?
+  expect_code 0 "$status" "fm-teardown should force-retire a secondmate with a cmux child: $out"
+  assert_contains "$(cat "$dir/log")" $'\x1f''close-workspace'$'\x1f''--workspace'$'\x1f''cccccccc-2222-2222-2222-222222222222' \
+    "forced secondmate teardown did not close a child cmux workspace scoped to the child home"
+  pass "fm-teardown.sh: force cleanup kills cmux children using the child home tag"
+}
+
 # --- fm-spawn.sh: --secondmate refuses backend=cmux --------------------------
 
 test_secondmate_spawn_refuses_cmux_backend() {
@@ -1187,8 +1233,8 @@ test_create_task_creates_and_parses_ids
 test_target_ready_fails_when_target_absent
 test_target_ready_checks_expected_label
 test_target_ready_rejects_label_mismatch
-test_target_ready_accepts_unique_legacy_root_tag
-test_target_ready_refuses_ambiguous_legacy_root_tag
+test_target_ready_accepts_exact_legacy_root_tag
+test_target_ready_refuses_different_legacy_workspace_id
 test_target_ready_recovers_current_title_across_windows
 test_capture_trims_locally
 test_capture_fails_when_read_screen_fails_empty
@@ -1220,4 +1266,5 @@ test_kill_adds_sibling_when_last_in_window
 test_kill_is_best_effort_when_close_workspace_fails
 test_kill_recovers_stale_target_by_label
 test_list_live_filters_by_title_prefix
+test_forced_secondmate_teardown_kills_cmux_children_with_child_home_tag
 test_secondmate_spawn_refuses_cmux_backend

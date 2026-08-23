@@ -451,9 +451,8 @@ fm_backend_cmux_target_ready() {  # <target> [expected-label]
       fm_backend_cmux_surface_exists "$FM_BACKEND_CMUX_WORKSPACE" "$FM_BACKEND_CMUX_SURFACE" && return 0
       wsid=$FM_BACKEND_CMUX_WORKSPACE
     elif [ "$legacy_title" != "$expected_title" ] && [ "$title" = "$legacy_title" ]; then
-      wsid=$(fm_backend_cmux_unique_workspace_id_for_label "$legacy_title") || return 1
-      [ "$wsid" = "$FM_BACKEND_CMUX_WORKSPACE" ] || return 1
       fm_backend_cmux_surface_exists "$FM_BACKEND_CMUX_WORKSPACE" "$FM_BACKEND_CMUX_SURFACE" && return 0
+      wsid=$FM_BACKEND_CMUX_WORKSPACE
     elif [ -n "$title" ]; then
       return 1
     else
@@ -462,7 +461,9 @@ fm_backend_cmux_target_ready() {  # <target> [expected-label]
       case "$match_count" in
         0)
           [ "$legacy_title" != "$expected_title" ] || return 1
-          wsid=$(fm_backend_cmux_unique_workspace_id_for_label "$legacy_title") || return 1
+          matches=$(fm_backend_cmux_workspace_ids_for_label "$legacy_title") || return 1
+          printf '%s\n' "$matches" | grep -Fxq "$FM_BACKEND_CMUX_WORKSPACE" || return 1
+          wsid=$FM_BACKEND_CMUX_WORKSPACE
           ;;
         1) wsid=$matches ;;
         *) return 1 ;;
