@@ -374,6 +374,31 @@ fm_backend_cmux_surface_id_for_workspace() {  # <workspace_id>
     | jq -r '.panes[0] // {} | .selected_surface_id // (.surface_ids[0] // empty)' 2>/dev/null
 }
 
+fm_backend_cmux_create_record_path() {  # <label>
+  local label=$1 state
+  case "$label" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac
+  state="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
+  printf '%s/.cmux-create-%s.pending' "$state" "$label"
+}
+
+fm_backend_cmux_write_create_record() {  # <path> <title>
+  local path=$1 title=$2 dir tmp
+  dir=$(dirname "$path")
+  mkdir -p "$dir" || return 1
+  tmp=$(umask 077; mktemp "$dir/.cmux-create-pending.XXXXXX") || return 1
+  if ! printf '%s\n' "$title" > "$tmp" || ! mv -f -- "$tmp" "$path"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
+}
+
+fm_backend_cmux_create_record_matches() {  # <path> <title>
+  local path=$1 title=$2 recorded
+  [ -f "$path" ] && [ ! -L "$path" ] || return 1
+  IFS= read -r recorded < "$path" || return 1
+  [ "$recorded" = "$title" ]
+}
+
 # fm_backend_cmux_create_task: create the task's workspace (one surface),
 # refusing an existing live <label> (finding #6: cmux enforces no uniqueness
 # itself). Resolves the fresh workspace's default surface via one list-panes
@@ -384,14 +409,27 @@ fm_backend_cmux_surface_id_for_workspace() {  # <workspace_id>
 # focus-restore dance is needed, unlike zellij. Echoes "<workspace_id>
 # <surface_id>" on success.
 fm_backend_cmux_create_task() {  # <label> <cwd>
-  local label=$1 cwd=$2 title matches out wsid sfid
+  local label=$1 cwd=$2 title matches match_count out wsid sfid record
   title=$(fm_backend_cmux_scoped_title "$label") || return 1
+  record=$(fm_backend_cmux_create_record_path "$label") || return 1
   matches=$(fm_backend_cmux_workspace_ids_for_label "$title") || return 1
   if [ -n "$matches" ]; then
+    match_count=$(printf '%s\n' "$matches" | sed '/^$/d' | wc -l | tr -d ' ')
+    if [ "$match_count" = 1 ] && fm_backend_cmux_create_record_matches "$record" "$title"; then
+      wsid=$matches
+      sfid=$(fm_backend_cmux_surface_id_for_workspace "$wsid")
+      if [ -n "$sfid" ]; then
+        rm -f -- "$record"
+        printf '%s %s' "$wsid" "$sfid"
+        return 0
+      fi
+    fi
     echo "error: cmux workspace '$title' already exists" >&2
     return 1
   fi
+  fm_backend_cmux_write_create_record "$record" "$title" || return 1
   out=$(fm_backend_cmux_cli new-workspace --name "$title" --cwd "$cwd" --focus false --id-format uuids 2>&1) || {
+    rm -f -- "$record"
     echo "error: cmux new-workspace failed for '$title': $out" >&2
     return 1
   }
@@ -400,6 +438,7 @@ fm_backend_cmux_create_task() {  # <label> <cwd>
     || { echo "error: could not resolve the cmux workspace id for '$title' after creation" >&2; return 1; }
   sfid=$(fm_backend_cmux_surface_id_for_workspace "$wsid")
   [ -n "$sfid" ] || { echo "error: could not resolve the default surface for cmux workspace '$title' ($wsid)" >&2; return 1; }
+  rm -f -- "$record"
   printf '%s %s' "$wsid" "$sfid"
 }
 

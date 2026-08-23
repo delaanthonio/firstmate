@@ -231,6 +231,31 @@ test_spawn_refuses_unsafe_secondmate_home_marker() {
   pass "fm-spawn: refuses unsafe secondmate home markers before runtime mutation"
 }
 
+test_spawn_refuses_unsafe_state_override_home_marker() {
+  local id rec out rc
+  id="kimi-unsafe-state-home-marker-$$"
+  rec=$(make_spawn_case unsafe-state-home-marker "$id")
+  read_spawn_record "$rec"
+  printf 'x/../../../../escape\n' > "$HOME_DIR/.fm-secondmate-home"
+  out=$( HOME="$HOME_DIR" FM_ROOT_OVERRIDE='' \
+    FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
+    FM_PROJECTS_OVERRIDE="$HOME_DIR/projects" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
+    FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$WT_DIR" TMUX="fake,1,0" \
+    FM_FAKE_LAUNCH_LOG="$CASE_DIR/launch.log" FM_FAKE_POINTER_LOG="$CASE_DIR/pointer.log" \
+    FM_FAKE_KIMI_STATE="$CASE_DIR/kimi.state" FM_FAKE_KIMI_SWALLOWED="$CASE_DIR/kimi.swallowed" \
+    FM_FAKE_TMUX_CALL_LOG="$CASE_DIR/tmux-calls.log" \
+    FM_FAKE_BRIEF_REAL="$(cd "$HOME_DIR/data/$id" && pwd -P)/brief.md" \
+    FM_KIMI_READY_POLLS=2 FM_KIMI_DELIVERY_POLLS=2 FM_KIMI_POLL_INTERVAL=0 \
+    PATH="$FAKEBIN_DIR:$BASE_PATH" env -u FM_HOME \
+    "$SPAWN" "$id" "$PROJ_DIR" --harness kimi --mode no-mistakes --yolo off 2>&1 )
+  rc=$?
+  [ "$rc" -ne 0 ] || fail "spawn accepted an unsafe marker in the state-override task home"
+  [ ! -s "$CASE_DIR/tmux-calls.log" ] || fail "spawn mutated the runtime before validating the state-override task home"
+  [ ! -s "$CASE_DIR/launch.log" ] || fail "spawn launched the harness after rejecting the state-override task home"
+  assert_absent "$HOME_DIR/state/$id.meta" "spawn published metadata after rejecting the state-override task home"
+  pass "fm-spawn: validates the state-override task home before runtime mutation"
+}
+
 test_kimi_hook_install_is_surgical_idempotent_and_removable() {
   local home config original once stripped count
   home="$TMP_ROOT/config-surgery"
@@ -678,6 +703,7 @@ test_kimi_hook_fails_closed_on_missing_malformed_or_partial_config
 test_kimi_hook_install_refuses_without_jq
 test_kimi_launch_then_send_is_verified
 test_spawn_refuses_unsafe_secondmate_home_marker
+test_spawn_refuses_unsafe_state_override_home_marker
 test_kimi_hook_is_silent_and_requires_registered_workspace_token
 test_kimi_spawn_refuses_unsafe_global_config_before_pane_creation
 test_kimi_teardown_removes_pointer_and_registry_token

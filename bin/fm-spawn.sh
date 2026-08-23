@@ -239,6 +239,10 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 PROJECTS="${FM_PROJECTS_OVERRIDE:-$FM_HOME/projects}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
+TASK_HOME=$FM_HOME
+if [ -z "$FM_HOME_WAS_SET" ] && [ -n "${FM_STATE_OVERRIDE:-}" ] && [ "$(basename "$STATE")" = state ]; then
+  TASK_HOME=$(cd "$(dirname "$STATE")" 2>/dev/null && pwd -P) || TASK_HOME=$(dirname "$STATE")
+fi
 SUB_HOME_MARKER=".fm-secondmate-home"
 # shellcheck source=bin/fm-ff-lib.sh
 . "$SCRIPT_DIR/fm-ff-lib.sh"
@@ -256,6 +260,10 @@ SUB_HOME_MARKER=".fm-secondmate-home"
 . "$SCRIPT_DIR/fm-backend-hometag-lib.sh"
 if ! fm_backend_hometag >/dev/null; then
   echo "error: invalid $FM_BACKEND_HOMETAG_SECONDMATE_MARKER marker in $FM_HOME" >&2
+  exit 1
+fi
+if ! TASK_HOME_TAG=$(FM_HOME="$TASK_HOME" fm_backend_hometag); then
+  echo "error: invalid $FM_BACKEND_HOMETAG_SECONDMATE_MARKER marker in $TASK_HOME" >&2
   exit 1
 fi
 # shellcheck source=bin/fm-gate-refuse-lib.sh
@@ -2382,11 +2390,7 @@ fi
 # from sharing a temp tree. Go will not create GOTMPDIR, so create it before use;
 # fm-teardown validates and removes the recorded root. GOTMPDIR (not TMPDIR) is
 # the targeted knob because TMPDIR would affect every child program.
-TASK_HOME=$FM_HOME
-if [ -z "$FM_HOME_WAS_SET" ] && [ -n "${FM_STATE_OVERRIDE:-}" ] && [ "$(basename "$STATE")" = state ]; then
-  TASK_HOME=$(cd "$(dirname "$STATE")" 2>/dev/null && pwd -P) || TASK_HOME=$(dirname "$STATE")
-fi
-TASK_TMP="/tmp/fm-$(FM_HOME="$TASK_HOME" fm_backend_hometag)/$ID"
+TASK_TMP="/tmp/fm-$TASK_HOME_TAG/$ID"
 mkdir -p "$TASK_TMP/gotmp"
 
 # Per-harness turn-end hook where enabled: a file that touches

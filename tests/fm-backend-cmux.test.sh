@@ -477,7 +477,7 @@ test_create_task_refuses_duplicate_label() {
   cmux_workspace_list_response "$dir" 2 "ffffffff-0000-0000-0000-000000000000" "other"
   cmux_workspace_list_response "$dir" 3 "aaaaaaaa-0000-0000-0000-000000000000" "$title"
   fb=$(make_cmux_fakebin "$dir")
-  out=$( PATH="$fb:$PATH" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
+  out=$( PATH="$fb:$PATH" FM_STATE_OVERRIDE="$dir/state" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
     bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_create_task fm-dup1 /tmp/proj' "$ROOT" 2>&1 )
   status=$?
   [ "$status" -ne 0 ] || fail "create_task should refuse an existing workspace title (cmux itself does not enforce uniqueness)"
@@ -496,7 +496,7 @@ test_create_task_creates_and_parses_ids() {
   cmux_workspace_list_response "$dir" 4 "bbbbbbbb-1111-1111-1111-111111111111" "$title"
   cmux_panes_response "$dir" 5 "cccccccc-2222-2222-2222-222222222222"
   fb=$(make_cmux_fakebin "$dir")
-  out=$( PATH="$fb:$PATH" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
+  out=$( PATH="$fb:$PATH" FM_STATE_OVERRIDE="$dir/state" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
     bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_create_task fm-newtask /tmp/proj' "$ROOT" )
   [ "$out" = "bbbbbbbb-1111-1111-1111-111111111111 cccccccc-2222-2222-2222-222222222222" ] \
     || fail "create_task should echo '<workspace_id> <surface_id>', got '$out'"
@@ -506,7 +506,36 @@ test_create_task_creates_and_parses_ids() {
     "create_task did not pass --focus false"
   list_windows_count=$(grep -c $'\x1f''list-windows' "$dir/log" || true)
   [ "$list_windows_count" = 1 ] || fail "create_task should not rescan unrelated windows after successful creation"
+  [ ! -e "$dir/state/.cmux-create-fm-newtask.pending" ] || fail "create_task left its recovery record after publishing the endpoint"
   pass "fm_backend_cmux_create_task: creates a workspace and parses workspace_id/surface_id from list responses"
+}
+
+test_create_task_recovers_after_post_create_lookup_failure() {
+  local dir fb out status title log new_workspace_count
+  dir="$TMP_ROOT/create-task-recovery"; mkdir -p "$dir/responses"
+  title=$(cmux_expected_scoped_title fm-recover)
+  cmux_windows_response "$dir" 1 "e1111111-0000-0000-0000-000000000000" 1
+  printf '{"workspaces":[]}' > "$dir/responses/2.out"
+  cmux_windows_response "$dir" 5 "e1111111-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 6 "bbbbbbbb-1111-1111-1111-111111111111" "$title"
+  cmux_panes_response "$dir" 7 "cccccccc-2222-2222-2222-222222222222"
+  fb=$(make_cmux_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_STATE_OVERRIDE="$dir/state" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
+    bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_create_task fm-recover /tmp/proj' "$ROOT" 2>&1 )
+  status=$?
+  [ "$status" -ne 0 ] || fail "create_task should report a failed post-create workspace lookup"
+  [ -f "$dir/state/.cmux-create-fm-recover.pending" ] || fail "create_task did not retain a durable recovery record"
+  out=$( PATH="$fb:$PATH" FM_STATE_OVERRIDE="$dir/state" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
+    bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_create_task fm-recover /tmp/proj' "$ROOT" )
+  [ "$out" = "bbbbbbbb-1111-1111-1111-111111111111 cccccccc-2222-2222-2222-222222222222" ] \
+    || fail "create_task should recover its recorded workspace, got '$out'"
+  [ ! -e "$dir/state/.cmux-create-fm-recover.pending" ] || fail "create_task retained its recovery record after adoption"
+  log=$(cat "$dir/log")
+  new_workspace_count=$(grep -c $'\x1f''new-workspace' "$dir/log" || true)
+  [ "$new_workspace_count" = 1 ] || fail "create_task created a second workspace instead of recovering the recorded one"
+  assert_contains "$log" $'\x1f''list-panes'$'\x1f''--workspace'$'\x1f''bbbbbbbb-1111-1111-1111-111111111111' \
+    "create_task did not resolve the recovered workspace surface"
+  pass "fm_backend_cmux_create_task: durably recovers a workspace after post-create lookup failure"
 }
 
 # --- target_ready / capture ---------------------------------------------------
@@ -1244,6 +1273,7 @@ test_ensure_running_fails_fast_on_denied_without_launching
 test_ensure_running_fails_fast_on_unauth_without_launching
 test_create_task_refuses_duplicate_label
 test_create_task_creates_and_parses_ids
+test_create_task_recovers_after_post_create_lookup_failure
 test_target_ready_fails_when_target_absent
 test_target_ready_checks_expected_label
 test_target_ready_rejects_label_mismatch
