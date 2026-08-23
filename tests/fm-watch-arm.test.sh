@@ -46,6 +46,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WATCH_LOCK="$STATE/.watch.lock"
 WATCH_PATH="$SCRIPT_DIR/fm-watch.sh"
 printf 'launched\n' >> "$FM_TEST_WATCHER_LOG"
+printf '%s\n' "${BASHPID:-$$}" > "$FM_TEST_WATCHER_PID_FILE"
+if [ "${FM_TEST_WATCHER_TERM_RESISTANT:-0}" = 1 ]; then
+  trap '' TERM
+fi
 if [ "${FM_TEST_WATCHER_READY_DELAY:-never}" = never ]; then
   while :; do sleep 1; done
 fi
@@ -78,15 +82,17 @@ SH
   printf '%s\n' "$dir"
 }
 
-start_confirmation_arm() {  # <fixture> <output> <ready-delay> [environment-timeout]
-  local dir=$1 out=$2 delay=$3 timeout=${4:-}
+start_confirmation_arm() {  # <fixture> <output> <ready-delay> [environment-timeout] [term-resistant]
+  local dir=$1 out=$2 delay=$3 timeout=${4:-} term_resistant=${5:-0}
   if [ -n "$timeout" ]; then
     PATH="$dir/fakebin:$PATH" FM_HOME="$dir" FM_ARM_CONFIRM_TIMEOUT="$timeout" \
       FM_TEST_NOW_FILE="$dir/now" FM_TEST_WATCHER_LOG="$dir/watcher.log" \
+      FM_TEST_WATCHER_PID_FILE="$dir/watcher.pid" FM_TEST_WATCHER_TERM_RESISTANT="$term_resistant" \
       FM_TEST_WATCHER_READY_DELAY="$delay" "$dir/bin/fm-watch-arm.sh" > "$out" 2>&1 &
   else
     env -u FM_ARM_CONFIRM_TIMEOUT PATH="$dir/fakebin:$PATH" FM_HOME="$dir" \
       FM_TEST_NOW_FILE="$dir/now" FM_TEST_WATCHER_LOG="$dir/watcher.log" \
+      FM_TEST_WATCHER_PID_FILE="$dir/watcher.pid" FM_TEST_WATCHER_TERM_RESISTANT="$term_resistant" \
       FM_TEST_WATCHER_READY_DELAY="$delay" "$dir/bin/fm-watch-arm.sh" > "$out" 2>&1 &
   fi
   ARM_PID=$!
@@ -112,13 +118,16 @@ advance_confirmation_clock() {  # <fixture> <epoch>
 }
 
 assert_single_confirmation_failure() {  # <pid> <output> <label>
-  local pid=$1 out=$2 label=$3 status failures
+  local pid=$1 out=$2 label=$3 status failures launches dir
   wait_for_exit "$pid" 80
   status=$?
   [ "$status" -ne 124 ] || fail "$label did not fail within its bounded confirmation window"
   [ "$status" -ne 0 ] || fail "$label exited successfully without a confirmed watcher"
   failures=$(grep -c '^watcher: FAILED' "$out" 2>/dev/null || true)
   [ "$failures" -eq 1 ] || fail "$label emitted $failures failure lines instead of one: $(cat "$out")"
+  dir=${out%/*}
+  launches=$(wc -l < "$dir/watcher.log" | tr -d ' ')
+  [ "$launches" -eq 1 ] || fail "$label launched $launches watcher attempts instead of one"
 }
 
 # Start the real watcher as the singleton holder.
@@ -286,7 +295,7 @@ test_confirmation_timeout_precedence() {
 }
 
 test_malformed_confirmation_timeout_file_refuses() {
-  local dir out status
+  local dir blank_line_dir out status
   dir=$(make_confirmation_fixture confirm-malformed)
   printf 'not-an-integer\n' > "$dir/config/arm-confirm-timeout"
   out="$dir/arm.out"
@@ -298,7 +307,64 @@ test_malformed_confirmation_timeout_file_refuses() {
   grep -F 'config/arm-confirm-timeout must contain one non-negative base-10 integer' "$out" >/dev/null \
     || fail "malformed timeout refusal did not name the file contract: $(cat "$out")"
   [ ! -e "$dir/watcher.log" ] || fail "malformed timeout file launched a watcher before refusing"
+
+  blank_line_dir=$(make_confirmation_fixture confirm-extra-blank-line)
+  printf '10\n\n' > "$blank_line_dir/config/arm-confirm-timeout"
+  out="$blank_line_dir/arm.out"
+  status=0
+  env -u FM_ARM_CONFIRM_TIMEOUT PATH="$blank_line_dir/fakebin:$PATH" FM_HOME="$blank_line_dir" \
+    FM_TEST_NOW_FILE="$blank_line_dir/now" FM_TEST_WATCHER_LOG="$blank_line_dir/watcher.log" \
+    FM_TEST_WATCHER_PID_FILE="$blank_line_dir/watcher.pid" FM_TEST_WATCHER_READY_DELAY=never \
+    "$blank_line_dir/bin/fm-watch-arm.sh" > "$out" 2>&1 || status=$?
+  expect_code 2 "$status" "config/arm-confirm-timeout with an extra blank line"
+  grep -F 'config/arm-confirm-timeout must contain one non-negative base-10 integer' "$out" >/dev/null \
+    || fail "extra blank-line refusal did not name the file contract: $(cat "$out")"
+  [ ! -e "$blank_line_dir/watcher.log" ] || fail "timeout file with an extra blank line launched a watcher before refusing"
   pass "watch-arm: malformed config/arm-confirm-timeout refuses loudly before watcher launch"
+}
+
+test_confirmation_timeout_range_is_bounded() {
+  local accepted_dir refused_dir out status watcher_pid
+  accepted_dir=$(make_confirmation_fixture confirm-max-accepted)
+  printf '2147483647\n' > "$accepted_dir/config/arm-confirm-timeout"
+  out="$accepted_dir/arm.out"
+  start_confirmation_arm "$accepted_dir" "$out" never
+  wait_for_watcher_launch "$accepted_dir" || fail "maximum confirmation timeout did not launch its watcher"
+  watcher_pid=$(cat "$accepted_dir/watcher.pid")
+  kill -TERM "$ARM_PID" 2>/dev/null || fail "could not stop maximum confirmation timeout fixture"
+  wait_for_exit "$ARM_PID" 50 >/dev/null 2>&1
+  status=$?
+  [ "$status" -ne 124 ] || fail "maximum confirmation timeout fixture did not stop within its cleanup bound"
+  ! is_live_non_zombie "$watcher_pid" || fail "maximum confirmation timeout fixture left its watcher running"
+
+  refused_dir=$(make_confirmation_fixture confirm-overflow-refused)
+  printf '2147483648\n' > "$refused_dir/config/arm-confirm-timeout"
+  out="$refused_dir/arm.out"
+  status=0
+  env -u FM_ARM_CONFIRM_TIMEOUT PATH="$refused_dir/fakebin:$PATH" FM_HOME="$refused_dir" \
+    FM_TEST_NOW_FILE="$refused_dir/now" FM_TEST_WATCHER_LOG="$refused_dir/watcher.log" \
+    FM_TEST_WATCHER_PID_FILE="$refused_dir/watcher.pid" FM_TEST_WATCHER_READY_DELAY=never \
+    "$refused_dir/bin/fm-watch-arm.sh" > "$out" 2>&1 || status=$?
+  expect_code 2 "$status" "out-of-range config/arm-confirm-timeout"
+  grep -F 'config/arm-confirm-timeout must contain an integer between 0 and 2147483647' "$out" >/dev/null \
+    || fail "out-of-range timeout refusal did not report the supported range: $(cat "$out")"
+  [ ! -e "$refused_dir/watcher.log" ] || fail "out-of-range timeout launched a watcher before refusing"
+  pass "watch-arm: confirmation timeout accepts its maximum and refuses larger values"
+}
+
+test_confirmation_timeout_reaps_term_resistant_child() {
+  local dir out watcher_pid
+  dir=$(make_confirmation_fixture confirm-term-resistant)
+  printf '0\n' > "$dir/config/arm-confirm-timeout"
+  out="$dir/arm.out"
+  start_confirmation_arm "$dir" "$out" never '' 1
+  wait_for_watcher_launch "$dir" || fail "TERM-resistant confirmation fixture did not launch its watcher"
+  watcher_pid=$(cat "$dir/watcher.pid")
+  advance_confirmation_clock "$dir" 1
+  advance_confirmation_clock "$dir" 7
+  assert_single_confirmation_failure "$ARM_PID" "$out" "TERM-resistant confirmation arm"
+  ! is_live_non_zombie "$watcher_pid" || fail "TERM-resistant watcher survived bounded KILL escalation"
+  pass "watch-arm: confirmation timeout boundedly escalates and reaps a TERM-resistant child"
 }
 
 test_live_child_gets_one_bounded_confirmation_grace() {
@@ -964,6 +1030,8 @@ test_downtime_marker_does_not_follow_symlink() {
 
 test_confirmation_timeout_precedence
 test_malformed_confirmation_timeout_file_refuses
+test_confirmation_timeout_range_is_bounded
+test_confirmation_timeout_reaps_term_resistant_child
 test_live_child_gets_one_bounded_confirmation_grace
 test_attached_arm_reports_the_delivered_wake
 test_attached_arm_reports_the_delivered_wake_after_drain

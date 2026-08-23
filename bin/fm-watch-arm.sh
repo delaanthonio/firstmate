@@ -86,6 +86,7 @@ case "${OSTYPE:-}" in
   *) ARM_CONFIRM_DEFAULT=10 ;;
 esac
 CONFIRM_TIMEOUT=$ARM_CONFIRM_DEFAULT
+CONFIRM_TIMEOUT_FILE_INVALID=0
 if [ -n "${FM_ARM_CONFIRM_TIMEOUT:-}" ]; then
   CONFIRM_TIMEOUT=$FM_ARM_CONFIRM_TIMEOUT
 elif [ -e "$CONFIG/arm-confirm-timeout" ] || [ -L "$CONFIG/arm-confirm-timeout" ]; then
@@ -93,10 +94,31 @@ elif [ -e "$CONFIG/arm-confirm-timeout" ] || [ -L "$CONFIG/arm-confirm-timeout" 
     echo "watcher: FAILED - config/arm-confirm-timeout must be a regular non-symlink file containing one non-negative base-10 integer" >&2
     exit 2
   fi
-  CONFIRM_TIMEOUT=$(cat "$CONFIG/arm-confirm-timeout") || {
+  CONFIRM_TIMEOUT=
+  confirm_timeout_extra=
+  confirm_timeout_had_newline=0
+  exec 3< "$CONFIG/arm-confirm-timeout" || {
     echo "watcher: FAILED - config/arm-confirm-timeout could not be read" >&2
     exit 2
   }
+  if IFS= read -r CONFIRM_TIMEOUT <&3; then
+    confirm_timeout_had_newline=1
+  fi
+  if IFS= read -r confirm_timeout_extra <&3 || [ -n "$confirm_timeout_extra" ]; then
+    CONFIRM_TIMEOUT_FILE_INVALID=1
+  fi
+  exec 3<&-
+  confirm_timeout_bytes=$(LC_ALL=C wc -c < "$CONFIG/arm-confirm-timeout") || {
+    echo "watcher: FAILED - config/arm-confirm-timeout could not be read" >&2
+    exit 2
+  }
+  confirm_timeout_expected_bytes=${#CONFIRM_TIMEOUT}
+  if [ "$confirm_timeout_had_newline" -eq 1 ]; then
+    confirm_timeout_expected_bytes=$((confirm_timeout_expected_bytes + 1))
+  fi
+  if [ "$confirm_timeout_bytes" -ne "$confirm_timeout_expected_bytes" ]; then
+    CONFIRM_TIMEOUT_FILE_INVALID=1
+  fi
 fi
 case "$CONFIRM_TIMEOUT" in
   ''|*[!0-9]*)
@@ -108,12 +130,45 @@ case "$CONFIRM_TIMEOUT" in
     exit 2
     ;;
 esac
+if [ "$CONFIRM_TIMEOUT_FILE_INVALID" -eq 1 ]; then
+  echo "watcher: FAILED - config/arm-confirm-timeout must contain one non-negative base-10 integer" >&2
+  exit 2
+fi
 # Normalize leading zeros so every accepted value remains decimal in Bash
 # arithmetic instead of acquiring the shell's legacy octal interpretation.
 while [ "${CONFIRM_TIMEOUT#0}" != "$CONFIRM_TIMEOUT" ]; do
   CONFIRM_TIMEOUT=${CONFIRM_TIMEOUT#0}
 done
 [ -n "$CONFIRM_TIMEOUT" ] || CONFIRM_TIMEOUT=0
+ARM_CONFIRM_MAX=2147483647
+confirm_timeout_exceeds_max=0
+if [ "${#CONFIRM_TIMEOUT}" -gt "${#ARM_CONFIRM_MAX}" ]; then
+  confirm_timeout_exceeds_max=1
+elif [ "${#CONFIRM_TIMEOUT}" -eq "${#ARM_CONFIRM_MAX}" ]; then
+  confirm_timeout_remaining=$CONFIRM_TIMEOUT
+  confirm_timeout_max_remaining=$ARM_CONFIRM_MAX
+  while [ -n "$confirm_timeout_remaining" ]; do
+    confirm_timeout_digit=${confirm_timeout_remaining%"${confirm_timeout_remaining#?}"}
+    confirm_timeout_max_digit=${confirm_timeout_max_remaining%"${confirm_timeout_max_remaining#?}"}
+    if [ "$confirm_timeout_digit" -gt "$confirm_timeout_max_digit" ]; then
+      confirm_timeout_exceeds_max=1
+      break
+    fi
+    if [ "$confirm_timeout_digit" -lt "$confirm_timeout_max_digit" ]; then
+      break
+    fi
+    confirm_timeout_remaining=${confirm_timeout_remaining#?}
+    confirm_timeout_max_remaining=${confirm_timeout_max_remaining#?}
+  done
+fi
+if [ "$confirm_timeout_exceeds_max" -eq 1 ]; then
+  if [ -n "${FM_ARM_CONFIRM_TIMEOUT:-}" ]; then
+    echo "watcher: FAILED - FM_ARM_CONFIRM_TIMEOUT must be between 0 and $ARM_CONFIRM_MAX" >&2
+  else
+    echo "watcher: FAILED - config/arm-confirm-timeout must contain an integer between 0 and $ARM_CONFIRM_MAX" >&2
+  fi
+  exit 2
+fi
 # A live launched child earns this one bounded defense-in-depth extension.
 ARM_CONFIRM_LIVE_GRACE=5
 # Poll interval while attached to an existing healthy watcher.
@@ -487,6 +542,47 @@ fi
 # wake exit propagates out so the harness re-notifies firstmate.
 child=
 child_out=
+OWNED_CHILD_RC=0
+owned_child_running() {
+  local running_pid running_pids
+  [ -n "$child" ] || return 1
+  running_pids=$(jobs -pr)
+  for running_pid in $running_pids; do
+    [ "$running_pid" = "$child" ] && return 0
+  done
+  return 1
+}
+
+stop_owned_child_bounded() {
+  local i
+  OWNED_CHILD_RC=0
+  [ -n "$child" ] || return 0
+  if owned_child_running; then
+    kill -TERM "$child" 2>/dev/null || true
+    i=0
+    while [ "$i" -lt 10 ] && owned_child_running; do
+      sleep 0.1
+      i=$((i + 1))
+    done
+  fi
+  if owned_child_running; then
+    kill -KILL "$child" 2>/dev/null || true
+    i=0
+    while [ "$i" -lt 10 ] && owned_child_running; do
+      sleep 0.1
+      i=$((i + 1))
+    done
+  fi
+  if owned_child_running; then
+    OWNED_CHILD_RC=124
+  else
+    wait "$child" 2>/dev/null
+    OWNED_CHILD_RC=$?
+  fi
+  child=
+  [ "$OWNED_CHILD_RC" -ne 124 ]
+}
+
 cleanup_child() {
   if [ -n "$child" ] && fm_pid_alive "$child"; then
     kill -TERM "$child" 2>/dev/null || true
@@ -500,10 +596,7 @@ cleanup_child() {
 handle_arm_signal() {
   local signal=$1 rc=$2
   trap - HUP TERM INT
-  if [ -n "$child" ] && fm_pid_alive "$child"; then
-    kill -TERM "$child" 2>/dev/null || true
-    wait "$child" 2>/dev/null || true
-  fi
+  stop_owned_child_bounded || true
   cycle_log_append "$rc" "$signal" arm-interrupted none
   cleanup_child
   exit "$rc"
@@ -591,8 +684,8 @@ while :; do
     if [ "$HEALTHY_PID" = "$child" ]; then
       cycle_refresh_lock_before
       if ! handling_generation=$(handling_successor_generation); then
+        stop_owned_child_bounded || true
         cleanup_child
-        wait "$child" 2>/dev/null || true
         cycle_log_append 1 none handling-handoff-failed none
         echo "watcher: FAILED - established successor could not inspect handling state"
         exit 1
@@ -635,9 +728,9 @@ done
 
 trap - HUP TERM INT
 print_watch_output "$child_out"
+stop_owned_child_bounded || true
+rc=$OWNED_CHILD_RC
 cleanup_child
-wait "$child" 2>/dev/null
-rc=$?
 cycle_log_append "$rc" "$(cycle_signal_name "$rc")" confirmation-timeout none
 echo "watcher: FAILED - no live watcher with a fresh beacon"
 exit 1
