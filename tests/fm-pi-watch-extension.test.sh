@@ -2199,7 +2199,7 @@ EOF
   pass "Pi and OpenCode readiness bounds cover selected arm budgets and platform defaults"
 }
 
-test_pi_selected_arm_bound_prevents_early_retirement() {
+test_pi_delayed_start_preserves_arm_bound() {
   local repo home plugin log retired stop out status
   repo="$TMP_ROOT/pi-selected-arm-bound-root"
   home="$TMP_ROOT/pi-selected-arm-bound-home"
@@ -2220,11 +2220,13 @@ if [ "$count" -eq 1 ]; then
 fi
 trap 'printf "retired\n" > "${FM_RETIRED_FILE:?}"; exit 0' TERM INT
 sleep 0.4
+printf 'watcher-confirmation-boundary\n' >&4
+sleep 0.4
 printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
 while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
-  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_RETIRED_FILE="$retired" FM_STOP_FILE="$stop" FM_ARM_CONFIRM_TIMEOUT=0 FM_PI_ARM_READY_TIMEOUT_MS=250 node --input-type=module 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_RETIRED_FILE="$retired" FM_STOP_FILE="$stop" FM_ARM_CONFIRM_TIMEOUT=invalid FM_PI_ARM_READY_TIMEOUT_MS=600 node --input-type=module 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -2248,19 +2250,19 @@ for (let i = 0; i < 250 && !prompt; i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 20));
 }
 const rows = readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n");
-if (rows.length !== 2) throw new Error(`Pi retired or retried the grace-eligible successor: ${rows.join(" | ")}`);
-if (existsSync(process.env.FM_RETIRED_FILE)) throw new Error("Pi retired the successor before its selected arm bound");
+if (rows.length !== 2) throw new Error(`Pi retired or retried the delayed successor: ${rows.join(" | ")}`);
+if (existsSync(process.env.FM_RETIRED_FILE)) throw new Error("Pi retired the successor inside its arm-owned interval");
 if (!prompt.includes("signal: synthetic wake")) throw new Error(`Pi lost the original wake: ${prompt}`);
 writeFileSync(process.env.FM_STOP_FILE, "stop\n");
 EOF
 )
   status=$?
-  expect_code 0 "$status" "Pi must not retire a successor before the selected arm bound completes"
-  [ -z "$out" ] || fail "Pi selected-arm-bound test printed output: $out"
-  pass "Pi preserves a successor that confirms within the selected arm bound"
+  expect_code 0 "$status" "Pi must grant the complete arm interval after delayed startup"
+  [ -z "$out" ] || fail "Pi delayed-start arm-bound test printed output: $out"
+  pass "Pi grants a delayed successor its complete arm-owned readiness interval"
 }
 
-test_opencode_selected_arm_bound_prevents_early_retirement() {
+test_opencode_delayed_start_preserves_arm_bound() {
   local plugin repo home log retired stop out status
   plugin="$ROOT/.opencode/plugins/fm-primary-watch-arm.js"
   repo="$TMP_ROOT/opencode-selected-arm-bound-root"
@@ -2283,11 +2285,13 @@ if [ "$count" -eq 1 ]; then
 fi
 trap 'printf "retired\n" > "${FM_RETIRED_FILE:?}"; exit 0' TERM INT
 sleep 0.4
+printf 'watcher-confirmation-boundary\n' >&4
+sleep 0.4
 printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
 while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
-  out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_RETIRED_FILE="$retired" FM_STOP_FILE="$stop" FM_ARM_CONFIRM_TIMEOUT=0 FM_OPENCODE_ARM_READY_TIMEOUT_MS=250 node --input-type=module 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_RETIRED_FILE="$retired" FM_STOP_FILE="$stop" FM_ARM_CONFIRM_TIMEOUT=invalid FM_OPENCODE_ARM_READY_TIMEOUT_MS=600 node --input-type=module 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -2311,21 +2315,21 @@ for (let i = 0; i < 250 && !prompt; i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 20));
 }
 const rows = readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n");
-if (rows.length !== 2) throw new Error(`OpenCode retired or retried the grace-eligible successor: ${rows.join(" | ")}`);
-if (existsSync(process.env.FM_RETIRED_FILE)) throw new Error("OpenCode retired the successor before its selected arm bound");
+if (rows.length !== 2) throw new Error(`OpenCode retired or retried the delayed successor: ${rows.join(" | ")}`);
+if (existsSync(process.env.FM_RETIRED_FILE)) throw new Error("OpenCode retired the successor inside its arm-owned interval");
 if (!prompt.includes("signal: synthetic wake")) throw new Error(`OpenCode lost the original wake: ${prompt}`);
 writeFileSync(process.env.FM_STOP_FILE, "stop\n");
 EOF
 )
   status=$?
-  expect_code 0 "$status" "OpenCode must not retire a successor before the selected arm bound completes"
-  [ -z "$out" ] || fail "OpenCode selected-arm-bound test printed output: $out"
-  pass "OpenCode preserves a successor that confirms within the selected arm bound"
+  expect_code 0 "$status" "OpenCode must grant the complete arm interval after delayed startup"
+  [ -z "$out" ] || fail "OpenCode delayed-start arm-bound test printed output: $out"
+  pass "OpenCode grants a delayed successor its complete arm-owned readiness interval"
 }
 
 test_adapter_arm_ready_timeout_resolution
-test_pi_selected_arm_bound_prevents_early_retirement
-test_opencode_selected_arm_bound_prevents_early_retirement
+test_pi_delayed_start_preserves_arm_bound
+test_opencode_delayed_start_preserves_arm_bound
 test_pi_extension_reports_external_healthy_watcher
 test_pi_tool_returns_agent_tool_result
 test_pi_redundant_tool_call_is_owned_noop

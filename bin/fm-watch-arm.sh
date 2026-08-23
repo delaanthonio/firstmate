@@ -687,6 +687,10 @@ owned_child_finished() {
 # date(1) exposes whole seconds. Keep the configured confirmation budget from
 # collapsing when startup begins just before the next second boundary.
 deadline=$(( $(date +%s) + CONFIRM_TIMEOUT + 1 ))
+if [ "${FM_ARM_READY_FD:-}" = 4 ]; then
+  printf 'watcher-confirmation-boundary\n' 2>/dev/null >&4 || true
+  exec 4>&-
+fi
 confirm_grace_used=0
 while :; do
   if healthy_watcher; then

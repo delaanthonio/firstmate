@@ -86,14 +86,16 @@ start_confirmation_arm() {  # <fixture> <output> <ready-delay> [environment-time
   local dir=$1 out=$2 delay=$3 timeout=${4:-} term_resistant=${5:-0}
   if [ -n "$timeout" ]; then
     PATH="$dir/fakebin:$PATH" FM_HOME="$dir" FM_ARM_CONFIRM_TIMEOUT="$timeout" \
+      FM_ARM_READY_FD=4 \
       FM_TEST_NOW_FILE="$dir/now" FM_TEST_WATCHER_LOG="$dir/watcher.log" \
       FM_TEST_WATCHER_PID_FILE="$dir/watcher.pid" FM_TEST_WATCHER_TERM_RESISTANT="$term_resistant" \
-      FM_TEST_WATCHER_READY_DELAY="$delay" "$dir/bin/fm-watch-arm.sh" > "$out" 2>&1 &
+      FM_TEST_WATCHER_READY_DELAY="$delay" "$dir/bin/fm-watch-arm.sh" > "$out" 2>&1 4>"$dir/boundary" &
   else
     env -u FM_ARM_CONFIRM_TIMEOUT PATH="$dir/fakebin:$PATH" FM_HOME="$dir" \
+      FM_ARM_READY_FD=4 \
       FM_TEST_NOW_FILE="$dir/now" FM_TEST_WATCHER_LOG="$dir/watcher.log" \
       FM_TEST_WATCHER_PID_FILE="$dir/watcher.pid" FM_TEST_WATCHER_TERM_RESISTANT="$term_resistant" \
-      FM_TEST_WATCHER_READY_DELAY="$delay" "$dir/bin/fm-watch-arm.sh" > "$out" 2>&1 &
+      FM_TEST_WATCHER_READY_DELAY="$delay" "$dir/bin/fm-watch-arm.sh" > "$out" 2>&1 4>"$dir/boundary" &
   fi
   ARM_PID=$!
 }
@@ -440,6 +442,8 @@ test_live_child_gets_one_bounded_confirmation_grace() {
   out="$dir/arm.out"
   start_confirmation_arm "$dir" "$out" 1
   wait_for_watcher_launch "$dir" || fail "grace confirmation fixture did not launch its watcher"
+  wait_for_file_text "$dir/boundary" 'watcher-confirmation-boundary' \
+    || fail "confirmation arm did not publish its owned readiness boundary"
   advance_confirmation_clock "$dir" 1
   wait_for_file_text "$out" 'watcher: started pid=' \
     || fail "live watcher child was failed at the initial bound instead of confirming in grace: $(cat "$out")"

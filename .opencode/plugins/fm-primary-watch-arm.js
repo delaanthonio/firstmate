@@ -17,6 +17,7 @@ let launchInFlight = null;
 let restorationInFlight = null;
 let armClose = new WeakMap();
 let armReadiness = new WeakMap();
+let armConfirmationBoundary = new WeakMap();
 let armRecovery = new WeakMap();
 
 function positiveInteger(name, fallback) {
@@ -76,8 +77,21 @@ function waitForArmReady(armChild, configPath) {
   const readiness = armReadiness.get(armChild);
   if (!readiness) return Promise.resolve("failed");
   return new Promise((resolve) => {
-    const cancelTimeout = startDeadlineTimer(openCodeArmReadyTimeoutMs(configPath), () => resolve("timeout"));
+    let settled = false;
+    let cancelTimeout = startDeadlineTimer(openCodeArmReadyTimeoutMs(configPath), () => {
+      settled = true;
+      resolve("timeout");
+    });
+    void armConfirmationBoundary.get(armChild)?.then(() => {
+      if (settled) return;
+      cancelTimeout();
+      cancelTimeout = startDeadlineTimer(openCodeArmReadyTimeoutMs(configPath), () => {
+        settled = true;
+        resolve("timeout");
+      });
+    });
     void readiness.then((status) => {
+      settled = true;
       cancelTimeout();
       resolve(status);
     });
@@ -337,12 +351,13 @@ function spawnArm(paths, sessionID, client, predecessorArmPid = "") {
     FM_HOME: paths.home,
     FM_ROOT_OVERRIDE: paths.root,
     FM_CONFIG_OVERRIDE: paths.config,
+    FM_ARM_READY_FD: "4",
     FM_WATCH_PREDECESSOR_ARM_PID: predecessorArmPid,
   };
   const armChild = spawn("bash", ["-lc", 'config_dir="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"; [ -f "$config_dir/x-mode.env" ] && . "$config_dir/x-mode.env"; exec "$FM_ROOT_OVERRIDE/bin/fm-watch-arm.sh" --restart'], {
     cwd: paths.root,
     env,
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ["ignore", "pipe", "pipe", "ignore", "pipe"],
   });
   child = armChild;
   let stdout = "";
@@ -351,14 +366,25 @@ function spawnArm(paths, sessionID, client, predecessorArmPid = "") {
   let resolveClosed = null;
   let readinessSettled = false;
   let resolveReadiness = null;
+  let boundarySettled = false;
+  let resolveBoundary = null;
   const readiness = new Promise((resolve) => {
     resolveReadiness = resolve;
   });
   armReadiness.set(armChild, readiness);
+  const boundary = new Promise((resolveArmBoundary) => {
+    resolveBoundary = resolveArmBoundary;
+  });
+  armConfirmationBoundary.set(armChild, boundary);
   const settleReadiness = (status) => {
     if (readinessSettled) return;
     readinessSettled = true;
     resolveReadiness(status);
+  };
+  const settleBoundary = () => {
+    if (boundarySettled) return;
+    boundarySettled = true;
+    resolveBoundary();
   };
   const closed = new Promise((resolveClosedChild) => {
     resolveClosed = resolveClosedChild;
@@ -380,6 +406,9 @@ function spawnArm(paths, sessionID, client, predecessorArmPid = "") {
     stderr += chunk.toString();
     observeRecovery();
     observeArmOutput(stdout, stderr, settleReadiness);
+  });
+  armChild.stdio[4]?.on("data", (chunk) => {
+    if (chunk.toString().split(/\r?\n/).includes("watcher-confirmation-boundary")) settleBoundary();
   });
   armChild.on("close", (code, signal) => {
     if (settled) return;

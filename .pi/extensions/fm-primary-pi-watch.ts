@@ -95,6 +95,7 @@ const shuttingDownMessage = "watcher: not armed - Pi session is shutting down";
 let nextGenerationId = 0;
 let activeGeneration: SessionGeneration | null = null;
 const armReadiness = new WeakMap<ChildProcess, Promise<boolean>>();
+const armConfirmationBoundary = new WeakMap<ChildProcess, Promise<void>>();
 const armClose = new WeakMap<ChildProcess, Promise<void>>();
 const armRecovery = new WeakMap<ChildProcess, { generation: string; watcherPid: string }>();
 
@@ -319,8 +320,21 @@ export default function (pi: ExtensionAPI) {
     const readiness = armReadiness.get(armChild);
     if (!readiness) return Promise.resolve(false);
     return new Promise((resolveReady) => {
-      const cancelTimeout = startDeadlineTimer(piArmReadyTimeoutMs(), () => resolveReady(false));
+      let settled = false;
+      let cancelTimeout = startDeadlineTimer(piArmReadyTimeoutMs(), () => {
+        settled = true;
+        resolveReady(false);
+      });
+      void armConfirmationBoundary.get(armChild)?.then(() => {
+        if (settled) return;
+        cancelTimeout();
+        cancelTimeout = startDeadlineTimer(piArmReadyTimeoutMs(), () => {
+          settled = true;
+          resolveReady(false);
+        });
+      });
       void readiness.then((ready) => {
+        settled = true;
         cancelTimeout();
         resolveReady(ready);
       });
@@ -426,13 +440,14 @@ export default function (pi: ExtensionAPI) {
       FM_HOME: fmHome,
       FM_ROOT_OVERRIDE: fmRoot,
       FM_CONFIG_OVERRIDE: config,
+      FM_ARM_READY_FD: "4",
       FM_WATCH_ARM_SCRIPT: armScript,
       FM_WATCH_PREDECESSOR_ARM_PID: predecessorArmPid,
     };
     const armChild = spawn("bash", ["-lc", "config_dir=\"${FM_CONFIG_OVERRIDE:-$FM_HOME/config}\"; [ -f \"$config_dir/x-mode.env\" ] && . \"$config_dir/x-mode.env\"; exec \"$FM_WATCH_ARM_SCRIPT\" --restart"], {
       cwd: fmRoot,
       env,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["ignore", "pipe", "pipe", "ignore", "pipe"],
     });
     owner.child = armChild;
     let stdout = "";
@@ -440,11 +455,17 @@ export default function (pi: ExtensionAPI) {
     let settled = false;
     let readinessSettled = false;
     let resolveReadiness: (ready: boolean) => void = () => {};
+    let boundarySettled = false;
+    let resolveBoundary: () => void = () => {};
     let resolveClosed: () => void = () => {};
     const readiness = new Promise<boolean>((resolveReady) => {
       resolveReadiness = resolveReady;
     });
     armReadiness.set(armChild, readiness);
+    const boundary = new Promise<void>((resolveArmBoundary) => {
+      resolveBoundary = resolveArmBoundary;
+    });
+    armConfirmationBoundary.set(armChild, boundary);
     const closed = new Promise<void>((resolveClosedChild) => {
       resolveClosed = resolveClosedChild;
     });
@@ -453,6 +474,11 @@ export default function (pi: ExtensionAPI) {
       if (readinessSettled) return;
       readinessSettled = true;
       resolveReadiness(ready);
+    };
+    const settleBoundary = (): void => {
+      if (boundarySettled) return;
+      boundarySettled = true;
+      resolveBoundary();
     };
     const observeEstablishedArm = (): void => {
       const combined = `${stdout}\n${stderr}`;
@@ -472,6 +498,9 @@ export default function (pi: ExtensionAPI) {
     armChild.stderr.on("data", (chunk: Buffer) => {
       stderr += chunk.toString();
       observeEstablishedArm();
+    });
+    armChild.stdio[4]?.on("data", (chunk: Buffer) => {
+      if (chunk.toString().split(/\r?\n/).includes("watcher-confirmation-boundary")) settleBoundary();
     });
     armChild.on("close", (code: number | null, signal: NodeJS.Signals | null) => {
       if (settled) return;
