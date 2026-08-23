@@ -573,8 +573,8 @@ test_spawn_abort_retires_unpublished_session_fingerprint() {
   printf '# Firstmate\n' > "$subhome/AGENTS.md"
   printf 'legacy\n' > "$subhome/.fm-secondmate-home"
   printf 'charter\n' > "$subhome/data/charter.md"
-  (cd "$dir" && python3 -c 'import socket,sys,time; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(); time.sleep(30)' "$socket_root/contract_version_1/firstmate") &
-  server_pid=$!
+  coproc { exec python3 -c 'import socket,sys,time; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(); time.sleep(30)' "$socket"; }
+  server_pid=$COPROC_PID
   for _ in 1 2 3 4 5 6 7 8 9 10; do
     [ -S "$socket" ] && break
     sleep 0.1
@@ -1222,8 +1222,8 @@ printf 'called\n' >> "$FM_TEST_TREEHOUSE_LOG"
 exit 0
 SH
   chmod +x "$fb/treehouse"
-  (cd "$worktree" && sleep 60) &
-  pid=$!
+  coproc { cd "$worktree" && exec sleep 60; }
+  pid=$COPROC_PID
   out=$( PATH="$fb:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$data" \
     FM_CONFIG_OVERRIDE="$config" FM_ROOT_OVERRIDE="$ROOT" FM_TEST_TREEHOUSE_LOG="$dir/treehouse.log" \
     FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" FM_ZELLIJ_SESSION_LIST=firstmate \
