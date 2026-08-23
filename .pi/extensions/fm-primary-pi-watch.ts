@@ -10,7 +10,7 @@
 // callbacks from a prior generation are no-ops against the active replacement.
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
-import { lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
@@ -105,37 +105,15 @@ function positiveInteger(name: string, fallback: number): number {
   return Math.floor(value);
 }
 
-function selectedArmConfirmSeconds(configPath: string, platform: NodeJS.Platform): number | null {
-  let raw = process.env.FM_ARM_CONFIRM_TIMEOUT;
-  if (!raw) {
-    const path = `${configPath}/arm-confirm-timeout`;
-    try {
-      const stat = lstatSync(path);
-      if (!stat.isFile() || stat.isSymbolicLink()) return null;
-      raw = readFileSync(path, "utf8");
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") return null;
-      return platform === "win32" ? 30 : 10;
-    }
-  }
-  if (!/^[0-9]{1,10}\n?$/.test(raw)) return null;
-  const value = Number(raw.trimEnd());
-  if (!Number.isSafeInteger(value) || value > 2147483647) return null;
-  return value;
-}
-
-export function piArmReadyTimeoutMs(configPath = config, platform: NodeJS.Platform = process.platform): number {
-  const configured = positiveInteger("FM_PI_ARM_READY_TIMEOUT_MS", platform === "win32" ? 36000 : 16000);
-  const confirmSeconds = selectedArmConfirmSeconds(configPath, platform);
-  return confirmSeconds === null ? configured : Math.max(configured, (confirmSeconds + 6) * 1000);
-}
-
-function piArmStartupTimeoutMs(platform: NodeJS.Platform = process.platform): number {
+export function piArmStartupTimeoutMs(platform: NodeJS.Platform = process.platform): number {
   return positiveInteger("FM_PI_ARM_READY_TIMEOUT_MS", platform === "win32" ? 36000 : 16000);
 }
 
-function piArmConfirmationTimeoutMs(confirmSeconds: number): number {
-  return Math.max(piArmStartupTimeoutMs(), (confirmSeconds + 6) * 1000);
+export function piArmConfirmationTimeoutMs(
+  confirmSeconds: number,
+  platform: NodeJS.Platform = process.platform,
+): number {
+  return Math.max(piArmStartupTimeoutMs(platform), (confirmSeconds + 6) * 1000);
 }
 
 function startDeadlineTimer(timeoutMs: number, onTimeout: () => void): () => void {

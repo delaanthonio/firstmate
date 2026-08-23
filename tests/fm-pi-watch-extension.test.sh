@@ -2304,45 +2304,43 @@ EOF
 }
 
 test_adapter_arm_ready_timeout_resolution() {
-  local repo home pi_plugin opencode_plugin out status
+  local repo pi_plugin opencode_plugin out status
   repo="$TMP_ROOT/adapter-ready-timeout-root"
-  home="$TMP_ROOT/adapter-ready-timeout-home"
-  mkdir -p "$home/config"
   install_pi_watch_extension_fixture "$repo"
   pi_plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
   opencode_plugin="$ROOT/.opencode/plugins/fm-primary-watch-arm.js"
-  out=$(PI_PLUGIN="$pi_plugin" OPENCODE_PLUGIN="$opencode_plugin" FM_HOME="$home" node --input-type=module 2>&1 <<'EOF'
-import { rmSync, writeFileSync } from "node:fs";
+  out=$(PI_PLUGIN="$pi_plugin" OPENCODE_PLUGIN="$opencode_plugin" node --input-type=module 2>&1 <<'EOF'
 import { pathToFileURL } from "node:url";
 
 const pi = await import(pathToFileURL(process.env.PI_PLUGIN).href);
 const opencode = await import(pathToFileURL(process.env.OPENCODE_PLUGIN).href);
-const config = `${process.env.FM_HOME}/config`;
-const checkBoth = (platform, expected, label) => {
-  const piValue = pi.piArmReadyTimeoutMs(config, platform);
-  const opencodeValue = opencode.openCodeArmReadyTimeoutMs(config, platform);
+const checkStartup = (platform, expected, label) => {
+  const piValue = pi.piArmStartupTimeoutMs(platform);
+  const opencodeValue = opencode.openCodeArmStartupTimeoutMs(platform);
+  if (piValue !== expected || opencodeValue !== expected) {
+    throw new Error(`${label}: Pi=${piValue} OpenCode=${opencodeValue} expected=${expected}`);
+  }
+};
+const checkConfirmation = (confirmSeconds, platform, expected, label) => {
+  const piValue = pi.piArmConfirmationTimeoutMs(confirmSeconds, platform);
+  const opencodeValue = opencode.openCodeArmConfirmationTimeoutMs(confirmSeconds, platform);
   if (piValue !== expected || opencodeValue !== expected) {
     throw new Error(`${label}: Pi=${piValue} OpenCode=${opencodeValue} expected=${expected}`);
   }
 };
 
-delete process.env.FM_ARM_CONFIRM_TIMEOUT;
 delete process.env.FM_PI_ARM_READY_TIMEOUT_MS;
 delete process.env.FM_OPENCODE_ARM_READY_TIMEOUT_MS;
-rmSync(`${config}/arm-confirm-timeout`, { force: true });
-checkBoth("darwin", 16000, "Unix platform default");
-checkBoth("win32", 36000, "Windows platform default");
-writeFileSync(`${config}/arm-confirm-timeout`, "40\n");
-checkBoth("darwin", 46000, "config-selected arm bound");
-process.env.FM_ARM_CONFIRM_TIMEOUT = "50";
-checkBoth("darwin", 56000, "environment-selected arm bound");
+checkStartup("darwin", 16000, "Unix startup default");
+checkStartup("win32", 36000, "Windows startup default");
+checkConfirmation(10, "darwin", 16000, "Unix confirmation default");
+checkConfirmation(30, "win32", 36000, "Windows confirmation default");
+checkConfirmation(40, "darwin", 46000, "boundary-selected arm bound");
+checkConfirmation(50, "darwin", 56000, "larger boundary-selected arm bound");
 process.env.FM_PI_ARM_READY_TIMEOUT_MS = "60000";
 process.env.FM_OPENCODE_ARM_READY_TIMEOUT_MS = "60000";
-checkBoth("darwin", 60000, "larger adapter minimum");
-process.env.FM_ARM_CONFIRM_TIMEOUT = "invalid";
-process.env.FM_PI_ARM_READY_TIMEOUT_MS = "250";
-process.env.FM_OPENCODE_ARM_READY_TIMEOUT_MS = "250";
-checkBoth("darwin", 250, "malformed selected value exits through the arm");
+checkStartup("darwin", 60000, "larger adapter startup minimum");
+checkConfirmation(50, "darwin", 60000, "larger adapter confirmation minimum");
 EOF
 )
   status=$?

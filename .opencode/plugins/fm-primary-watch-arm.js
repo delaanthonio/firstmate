@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { encodeFirstmateOperationalInput } from "./lib/fm-operational-input.js";
 
@@ -26,37 +26,12 @@ function positiveInteger(name, fallback) {
   return Math.floor(value);
 }
 
-function selectedArmConfirmSeconds(configPath, platform) {
-  let raw = process.env.FM_ARM_CONFIRM_TIMEOUT;
-  if (!raw) {
-    const path = `${configPath}/arm-confirm-timeout`;
-    try {
-      const stat = lstatSync(path);
-      if (!stat.isFile() || stat.isSymbolicLink()) return null;
-      raw = readFileSync(path, "utf8");
-    } catch (error) {
-      if (error?.code !== "ENOENT") return null;
-      return platform === "win32" ? 30 : 10;
-    }
-  }
-  if (!/^[0-9]{1,10}\n?$/.test(raw)) return null;
-  const value = Number(raw.trimEnd());
-  if (!Number.isSafeInteger(value) || value > 2147483647) return null;
-  return value;
-}
-
-export function openCodeArmReadyTimeoutMs(configPath, platform = process.platform) {
-  const configured = positiveInteger("FM_OPENCODE_ARM_READY_TIMEOUT_MS", platform === "win32" ? 36000 : 16000);
-  const confirmSeconds = selectedArmConfirmSeconds(configPath, platform);
-  return confirmSeconds === null ? configured : Math.max(configured, (confirmSeconds + 6) * 1000);
-}
-
-function openCodeArmStartupTimeoutMs(platform = process.platform) {
+export function openCodeArmStartupTimeoutMs(platform = process.platform) {
   return positiveInteger("FM_OPENCODE_ARM_READY_TIMEOUT_MS", platform === "win32" ? 36000 : 16000);
 }
 
-function openCodeArmConfirmationTimeoutMs(confirmSeconds) {
-  return Math.max(openCodeArmStartupTimeoutMs(), (confirmSeconds + 6) * 1000);
+export function openCodeArmConfirmationTimeoutMs(confirmSeconds, platform = process.platform) {
+  return Math.max(openCodeArmStartupTimeoutMs(platform), (confirmSeconds + 6) * 1000);
 }
 
 function startDeadlineTimer(timeoutMs, onTimeout) {
