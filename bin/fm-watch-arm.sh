@@ -543,12 +543,12 @@ fi
 child=
 child_out=
 OWNED_CHILD_RC=0
-owned_child_running() {
-  local running_pid running_pids
+owned_child_active() {
+  local active_pid active_pids
   [ -n "$child" ] || return 1
-  running_pids=$(jobs -pr)
-  for running_pid in $running_pids; do
-    [ "$running_pid" = "$child" ] && return 0
+  active_pids=$(jobs -p)
+  for active_pid in $active_pids; do
+    [ "$active_pid" = "$child" ] && return 0
   done
   return 1
 }
@@ -557,23 +557,23 @@ stop_owned_child_bounded() {
   local i
   OWNED_CHILD_RC=0
   [ -n "$child" ] || return 0
-  if owned_child_running; then
+  if owned_child_active; then
     kill -TERM "$child" 2>/dev/null || true
     i=0
-    while [ "$i" -lt 10 ] && owned_child_running; do
+    while [ "$i" -lt 10 ] && owned_child_active; do
       sleep 0.1
       i=$((i + 1))
     done
   fi
-  if owned_child_running; then
+  if owned_child_active; then
     kill -KILL "$child" 2>/dev/null || true
     i=0
-    while [ "$i" -lt 10 ] && owned_child_running; do
+    while [ "$i" -lt 10 ] && owned_child_active; do
       sleep 0.1
       i=$((i + 1))
     done
   fi
-  if owned_child_running; then
+  if owned_child_active; then
     OWNED_CHILD_RC=124
   else
     wait "$child" 2>/dev/null

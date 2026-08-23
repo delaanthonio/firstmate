@@ -367,6 +367,34 @@ test_confirmation_timeout_reaps_term_resistant_child() {
   pass "watch-arm: confirmation timeout boundedly escalates and reaps a TERM-resistant child"
 }
 
+test_confirmation_timeout_reaps_stopped_child() {
+  local dir out watcher_pid watcher_state i
+  dir=$(make_confirmation_fixture confirm-stopped)
+  printf '0\n' > "$dir/config/arm-confirm-timeout"
+  out="$dir/arm.out"
+  start_confirmation_arm "$dir" "$out" never
+  wait_for_watcher_launch "$dir" || fail "stopped-child confirmation fixture did not launch its watcher"
+  watcher_pid=$(cat "$dir/watcher.pid")
+  kill -STOP "$watcher_pid" 2>/dev/null || fail "could not stop confirmation watcher child"
+  i=0
+  watcher_state=
+  while [ "$i" -lt 50 ]; do
+    watcher_state=$(ps -p "$watcher_pid" -o stat= 2>/dev/null | tr -d ' ' || true)
+    case "$watcher_state" in T*) break ;; esac
+    sleep 0.02
+    i=$((i + 1))
+  done
+  case "$watcher_state" in
+    T*) ;;
+    *) fail "confirmation watcher child did not enter the stopped state: $watcher_state" ;;
+  esac
+  advance_confirmation_clock "$dir" 1
+  advance_confirmation_clock "$dir" 7
+  assert_single_confirmation_failure "$ARM_PID" "$out" "stopped-child confirmation arm"
+  ! is_live_non_zombie "$watcher_pid" || fail "stopped watcher survived bounded KILL escalation"
+  pass "watch-arm: confirmation timeout boundedly escalates and reaps a stopped child"
+}
+
 test_live_child_gets_one_bounded_confirmation_grace() {
   local dir out started_pid
   dir=$(make_confirmation_fixture confirm-live-grace)
@@ -1032,6 +1060,7 @@ test_confirmation_timeout_precedence
 test_malformed_confirmation_timeout_file_refuses
 test_confirmation_timeout_range_is_bounded
 test_confirmation_timeout_reaps_term_resistant_child
+test_confirmation_timeout_reaps_stopped_child
 test_live_child_gets_one_bounded_confirmation_grace
 test_attached_arm_reports_the_delivered_wake
 test_attached_arm_reports_the_delivered_wake_after_drain
