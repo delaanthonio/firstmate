@@ -1685,14 +1685,17 @@ safe_rm_rf_child_worktree() {
 
 validate_task_tmp_for_removal() {
   local target=$1 label=${2:-task temp root} task_id=${3:-$ID} task_home=${4:-$FM_HOME}
-  local tmp_base tag expected_logical expected_abs abs_target
+  local tmp_base tag expected_logical expected_abs legacy_logical legacy_abs abs_target
   [ -n "$target" ] || return 0
   tmp_base=$(cd /tmp && pwd -P) || tmp_base=/tmp
   tag=$(FM_HOME=$task_home FM_ROOT=$task_home fm_backend_hometag)
   expected_logical="/tmp/fm-$tag/$task_id"
   expected_abs="$tmp_base/fm-$tag/$task_id"
+  legacy_logical="/tmp/fm-$task_id"
+  legacy_abs="$tmp_base/fm-$task_id"
   case "$target" in
     "$expected_logical"|"$expected_abs") ;;
+    "$legacy_logical"|"$legacy_abs") return 0 ;;
     *)
       if [ -e "$target" ]; then
         abs_target=$(removal_target_abs_path "$target") || return 1
@@ -1716,7 +1719,14 @@ validate_task_tmp_for_removal() {
 
 safe_rm_rf_task_tmp() {
   local target=$1 task_id=${2:-$ID} task_home=${3:-$FM_HOME}
+  local tmp_base legacy_logical legacy_abs
   validate_task_tmp_for_removal "$target" "task temp root" "$task_id" "$task_home" || return 1
+  tmp_base=$(cd /tmp && pwd -P) || tmp_base=/tmp
+  legacy_logical="/tmp/fm-$task_id"
+  legacy_abs="$tmp_base/fm-$task_id"
+  case "$target" in
+    "$legacy_logical"|"$legacy_abs") return 0 ;;
+  esac
   [ -e "$target" ] || return 0
   rm -rf -- "$target"
 }

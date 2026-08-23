@@ -166,6 +166,16 @@ fm_backend_zellij_scoped_title() {  # <fm-task-label>
   printf 'fm-%s-%s' "$home" "$rest"
 }
 
+fm_backend_zellij_legacy_scoped_title() {  # <fm-task-label>
+  local label=$1 rest root_tag
+  root_tag=$(fm_backend_legacy_roottag)
+  case "$label" in
+    fm-*) rest=${label#fm-} ;;
+    *) rest=$label ;;
+  esac
+  printf 'fm-%s-%s' "$root_tag" "$rest"
+}
+
 # fm_backend_zellij_tool_check: refuse loudly if zellij or jq is missing.
 fm_backend_zellij_tool_check() {
   command -v zellij >/dev/null 2>&1 || { echo "error: backend=zellij selected but the 'zellij' CLI is not installed (https://zellij.dev)" >&2; return 1; }
@@ -302,11 +312,21 @@ fm_backend_zellij_pane_exists() {  # <session> <pane_id>
 # already-fetched JSON), so a caller whose fake-CLI fixture supplies exactly
 # one list-tabs response keeps working unchanged.
 fm_backend_zellij_tab_matches_label() {  # <session> <tab_id> <label>
-  local session=$1 tab_id=$2 label=$3 scoped tabs count
+  local session=$1 tab_id=$2 label=$3 scoped legacy_scoped tabs count
   scoped=$(fm_backend_zellij_scoped_title "$label")
+  legacy_scoped=$(fm_backend_zellij_legacy_scoped_title "$label")
   tabs=$(fm_backend_zellij_cli "$session" action list-tabs --json 2>/dev/null)
   printf '%s' "$tabs" | jq -e --argjson t "$tab_id" --arg want "$scoped" \
     '[.[]? | select(.tab_id == $t and .name == $want)] | length > 0' >/dev/null 2>&1 && return 0
+  if [ "$legacy_scoped" != "$scoped" ]; then
+    printf '%s' "$tabs" | jq -e --argjson t "$tab_id" --arg want "$legacy_scoped" \
+      '[.[]? | select(.tab_id == $t and .name == $want)] | length > 0' >/dev/null 2>&1 || true
+    count=$(printf '%s' "$tabs" | jq -r --arg want "$legacy_scoped" '[.[]? | select(.name == $want)] | length' 2>/dev/null)
+    if [ "$count" = 1 ] && printf '%s' "$tabs" | jq -e --argjson t "$tab_id" --arg want "$legacy_scoped" \
+      '[.[]? | select(.tab_id == $t and .name == $want)] | length > 0' >/dev/null 2>&1; then
+      return 0
+    fi
+  fi
   printf '%s' "$tabs" | jq -e --argjson t "$tab_id" --arg want "$label" \
     '[.[]? | select(.tab_id == $t and .name == $want)] | length > 0' >/dev/null 2>&1 || return 1
   count=$(printf '%s' "$tabs" | jq -r --arg want "$label" '[.[]? | select(.name == $want)] | length' 2>/dev/null)

@@ -325,6 +325,16 @@ fm_backend_cmux_scoped_title() {  # <fm-task-label>
   printf 'fm-%s-%s' "$home" "$rest"
 }
 
+fm_backend_cmux_legacy_scoped_title() {  # <fm-task-label>
+  local label=$1 rest root_tag
+  root_tag=$(fm_backend_legacy_roottag)
+  case "$label" in
+    fm-*) rest=${label#fm-} ;;
+    *) rest=$label ;;
+  esac
+  printf 'fm-%s-%s' "$root_tag" "$rest"
+}
+
 # fm_backend_cmux_workspace_id_for_label: the live workspace id whose title
 # equals <label>, or empty. cmux enforces no title uniqueness (finding #6),
 # so this adopts the FIRST match `jq` returns, mirroring herdr's/zellij's own
@@ -333,6 +343,14 @@ fm_backend_cmux_workspace_id_for_label() {  # <label>
   local label=$1
   fm_backend_cmux_cli workspace list --json --id-format uuids 2>/dev/null \
     | jq -r --arg want "$label" '.workspaces[]? | select(.title == $want) | .id' 2>/dev/null | head -1
+}
+
+fm_backend_cmux_unique_workspace_id_for_label() {  # <label>
+  local label=$1 matches
+  matches=$(fm_backend_cmux_cli workspace list --json --id-format uuids 2>/dev/null \
+    | jq -r --arg want "$label" '.workspaces[]? | select(.title == $want) | .id' 2>/dev/null)
+  [ "$(printf '%s\n' "$matches" | sed '/^$/d' | wc -l | tr -d ' ')" = 1 ] || return 1
+  printf '%s\n' "$matches"
 }
 
 fm_backend_cmux_surface_id_for_workspace() {  # <workspace_id>
@@ -408,18 +426,26 @@ fm_backend_cmux_surface_exists() {  # <workspace_id> <surface_id>
 # header for the fresh-surface pitfall this avoids). When the caller knows
 # the owning firstmate task label, refresh stale workspace/surface ids by label.
 fm_backend_cmux_target_ready() {  # <target> [expected-label]
-  local expected_label=${2:-} expected_title title wsid sfid
+  local expected_label=${2:-} expected_title legacy_title title wsid sfid
   fm_backend_cmux_parse_target "$1" || return 1
   if [ -n "$expected_label" ]; then
     expected_title=$(fm_backend_cmux_scoped_title "$expected_label")
+    legacy_title=$(fm_backend_cmux_legacy_scoped_title "$expected_label")
     title=$(fm_backend_cmux_cli workspace list --json --id-format uuids 2>/dev/null | jq -r --arg id "$FM_BACKEND_CMUX_WORKSPACE" '.workspaces[]? | select(.id == $id) | .title' 2>/dev/null)
     if [ "$title" = "$expected_title" ]; then
       fm_backend_cmux_surface_exists "$FM_BACKEND_CMUX_WORKSPACE" "$FM_BACKEND_CMUX_SURFACE" && return 0
       wsid=$FM_BACKEND_CMUX_WORKSPACE
+    elif [ "$legacy_title" != "$expected_title" ] && [ "$title" = "$legacy_title" ]; then
+      wsid=$(fm_backend_cmux_unique_workspace_id_for_label "$legacy_title") || return 1
+      [ "$wsid" = "$FM_BACKEND_CMUX_WORKSPACE" ] || return 1
+      fm_backend_cmux_surface_exists "$FM_BACKEND_CMUX_WORKSPACE" "$FM_BACKEND_CMUX_SURFACE" && return 0
     elif [ -n "$title" ]; then
       return 1
     else
       wsid=$(fm_backend_cmux_workspace_id_for_label "$expected_title")
+      if [ -z "$wsid" ] && [ "$legacy_title" != "$expected_title" ]; then
+        wsid=$(fm_backend_cmux_unique_workspace_id_for_label "$legacy_title") || return 1
+      fi
       [ -n "$wsid" ] || return 1
     fi
     sfid=$(fm_backend_cmux_surface_id_for_workspace "$wsid")

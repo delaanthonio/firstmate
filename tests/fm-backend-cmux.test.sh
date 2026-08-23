@@ -541,6 +541,36 @@ test_target_ready_rejects_label_mismatch() {
   pass "fm_backend_cmux_target_ready: rejects a workspace id reused under a different title"
 }
 
+test_target_ready_accepts_unique_legacy_root_tag() {
+  local dir home checkout fb legacy_title
+  dir="$TMP_ROOT/ready-legacy-root-tag"; home="$dir/home"; checkout="$dir/checkout"
+  mkdir -p "$dir/responses" "$home" "$checkout"
+  legacy_title=$(FM_HOME="$home" FM_ROOT_OVERRIDE="$checkout" bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_legacy_scoped_title fm-label' "$ROOT")
+  cmux_workspace_list_response "$dir" 1 "aaaaaaaa-0000-0000-0000-000000000000" "$legacy_title"
+  cmux_workspace_list_response "$dir" 2 "aaaaaaaa-0000-0000-0000-000000000000" "$legacy_title"
+  cmux_panes_response "$dir" 3 "bbbbbbbb-1111-1111-1111-111111111111"
+  fb=$(make_cmux_fakebin "$dir")
+  PATH="$fb:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$checkout" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
+    bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_target_ready "aaaaaaaa-0000-0000-0000-000000000000:bbbbbbbb-1111-1111-1111-111111111111" fm-label' "$ROOT"
+  expect_code 0 $? "target_ready should accept the unique root-tagged title from the prior release"
+  pass "fm_backend_cmux_target_ready: accepts a unique legacy root-tagged workspace"
+}
+
+test_target_ready_refuses_ambiguous_legacy_root_tag() {
+  local dir home checkout fb legacy_title status
+  dir="$TMP_ROOT/ready-ambiguous-legacy-root-tag"; home="$dir/home"; checkout="$dir/checkout"
+  mkdir -p "$dir/responses" "$home" "$checkout"
+  legacy_title=$(FM_HOME="$home" FM_ROOT_OVERRIDE="$checkout" bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_legacy_scoped_title fm-label' "$ROOT")
+  cmux_workspace_list_response "$dir" 1 "aaaaaaaa-0000-0000-0000-000000000000" "$legacy_title" "cccccccc-2222-2222-2222-222222222222" "$legacy_title"
+  cmux_workspace_list_response "$dir" 2 "aaaaaaaa-0000-0000-0000-000000000000" "$legacy_title" "cccccccc-2222-2222-2222-222222222222" "$legacy_title"
+  fb=$(make_cmux_fakebin "$dir")
+  PATH="$fb:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$checkout" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
+    bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_target_ready "aaaaaaaa-0000-0000-0000-000000000000:bbbbbbbb-1111-1111-1111-111111111111" fm-label' "$ROOT"
+  status=$?
+  [ "$status" -ne 0 ] || fail "target_ready should refuse an ambiguous legacy root-tagged title"
+  pass "fm_backend_cmux_target_ready: refuses ambiguous legacy root-tagged workspaces"
+}
+
 test_capture_trims_locally() {
   local dir fb out
   dir="$TMP_ROOT/capture"; mkdir -p "$dir/responses"
@@ -1133,6 +1163,8 @@ test_create_task_creates_and_parses_ids
 test_target_ready_fails_when_target_absent
 test_target_ready_checks_expected_label
 test_target_ready_rejects_label_mismatch
+test_target_ready_accepts_unique_legacy_root_tag
+test_target_ready_refuses_ambiguous_legacy_root_tag
 test_capture_trims_locally
 test_capture_fails_when_read_screen_fails_empty
 test_capture_fails_when_target_not_ready

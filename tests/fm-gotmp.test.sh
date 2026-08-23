@@ -281,9 +281,25 @@ test_teardown_refuses_unexpected_tasktmp_dir() {
   pass "fm-teardown refuses unexpected tasktmp paths before cleanup"
 }
 
+test_teardown_preserves_legacy_tasktmp_and_retires_task() {
+  local id=td-legacy-z6 task_tmp fake
+  task_tmp="/tmp/fm-$id"
+  rm -rf "$task_tmp"
+  mkdir -p "$task_tmp/gotmp"
+  printf 'legacy\n' > "$task_tmp/gotmp/build-artifact"
+  fake=$(make_fake_root "$id" "$task_tmp")
+  PATH="$fake/fakebin:$PATH" FM_HOME="$fake" bash "$fake/bin/fm-teardown.sh" "$id" >/dev/null 2>&1 \
+    || fail "teardown rejected a legacy tasktmp path"
+  [ -f "$task_tmp/gotmp/build-artifact" ] || fail "teardown removed the unverifiable legacy tasktmp root"
+  [ ! -e "$fake/state/$id.meta" ] || fail "teardown retained task metadata for a legacy tasktmp path"
+  rm -rf "$task_tmp"
+  pass "fm-teardown preserves legacy task temp roots while retiring their tasks"
+}
+
 test_tasktmp_path_is_home_scoped
 test_teardown_removes_tasktmp_dir
 test_teardown_uses_state_override_home_for_tasktmp
 test_teardown_skips_gracefully_without_tasktmp
 test_teardown_skips_gracefully_when_dir_missing
 test_teardown_refuses_unexpected_tasktmp_dir
+test_teardown_preserves_legacy_tasktmp_and_retires_task

@@ -173,6 +173,37 @@ SH
   pass "fm_supervision_run_due_checks: unauthenticated custom checks are rejected without execution"
 }
 
+test_merged_pr_retirement_waits_for_durable_wake() {
+  local state="$TMP_ROOT/merged-wake-failure/state" rc
+  mkdir -p "$state"
+  use_state_home "$state"
+  touch "$state/pr5.check.sh" "$state/pr5.check-trust"
+  (
+    fm_pr_poll_snapshot_capture() {
+      FM_PR_POLL_SNAPSHOT_PROVIDER=github
+      FM_PR_POLL_SNAPSHOT_URL=https://example.invalid/pr/5
+      FM_PR_POLL_SNAPSHOT_HOST=example.invalid
+      FM_PR_POLL_SNAPSHOT_PATH=pr/5
+      FM_PR_POLL_SNAPSHOT_NUMBER=5
+      return 0
+    }
+    fm_supervision_run_check_script() {
+      printf 'merged\n' > "$3"
+      FM_SUP_CHECK_STATUS=0
+    }
+    fm_wake_append() { return 1; }
+    fm_pr_poll_retirement_publish() { touch "$state/retirement-published"; }
+    fm_pr_poll_retirement_recover_one() { touch "$state/retirement-recovered"; }
+    fm_supervision_run_due_checks "$state" 300 5 false
+  ); rc=$?
+  expect_code 2 "$rc" "failed durable wake append should return 2"
+  assert_present "$state/pr5.check.sh" "failed wake append should retain the PR check for retry"
+  assert_absent "$state/retirement-published" "failed wake append should not publish PR retirement"
+  assert_absent "$state/retirement-recovered" "failed wake append should not recover PR retirement"
+  assert_absent "$state/.last-check" "failed wake append should leave the standing check immediately due"
+  pass "fm_supervision_run_due_checks: merged PR retirement follows durable wake append"
+}
+
 test_due_check_appends_wake_and_stamps_schedule
 test_not_due_check_does_not_run_again
 test_missing_and_silent_checks_do_not_queue
@@ -180,3 +211,4 @@ test_erroring_check_fails_open_and_logs_when_requested
 test_timeout_check_fails_open_and_stamps_schedule
 test_concurrent_runner_lock_prevents_double_run
 test_unauthenticated_check_is_rejected_without_execution
+test_merged_pr_retirement_waits_for_durable_wake

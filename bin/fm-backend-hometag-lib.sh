@@ -28,8 +28,8 @@
 
 FM_BACKEND_HOMETAG_SECONDMATE_MARKER=".fm-secondmate-home"
 
-fm_backend_hometag() {
-  local marker="$FM_HOME/$FM_BACKEND_HOMETAG_SECONDMATE_MARKER" id prefix home hash
+fm_backend_tag_for_path() {
+  local path=$1 marker="$FM_HOME/$FM_BACKEND_HOMETAG_SECONDMATE_MARKER" id prefix resolved hash
   if [ -f "$marker" ]; then
     id=$(tr -d '[:space:]' < "$marker" 2>/dev/null)
     if [ -n "$id" ]; then
@@ -40,13 +40,21 @@ fm_backend_hometag() {
   else
     prefix="firstmate"
   fi
-  home=$(cd "$FM_HOME" 2>/dev/null && pwd -P) || home=$FM_HOME
+  resolved=$(cd "$path" 2>/dev/null && pwd -P) || resolved=$path
   if command -v shasum >/dev/null 2>&1; then
-    hash=$(printf '%s' "$home" | shasum -a 256 | awk '{print substr($1,1,8)}')
+    hash=$(printf '%s' "$resolved" | shasum -a 256 | awk '{print substr($1,1,8)}')
   elif command -v sha256sum >/dev/null 2>&1; then
-    hash=$(printf '%s' "$home" | sha256sum | awk '{print substr($1,1,8)}')
+    hash=$(printf '%s' "$resolved" | sha256sum | awk '{print substr($1,1,8)}')
   else
-    hash=$(printf '%s' "$home" | cksum | awk '{printf "%08x", $1}')
+    hash=$(printf '%s' "$resolved" | cksum | awk '{printf "%08x", $1}')
   fi
   printf '%s-%s' "$prefix" "$hash"
+}
+
+fm_backend_hometag() {
+  fm_backend_tag_for_path "$FM_HOME"
+}
+
+fm_backend_legacy_roottag() {
+  fm_backend_tag_for_path "$FM_ROOT"
 }

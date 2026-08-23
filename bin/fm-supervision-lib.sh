@@ -221,11 +221,6 @@ fm_supervision_run_due_checks() {
       # shellcheck disable=SC2034 # Read by callers after this function returns 0.
       FM_SUP_CHECK_OUTPUT=$out
       FM_SUP_CHECK_REASON="check: $c: $out"
-      if [ "$is_pr_poll" -eq 1 ] && [ "$out" = merged ]; then
-        if fm_pr_poll_retirement_publish "$state" "$id" "$root/bin/fm-pr-poll.sh" "$out"; then
-          fm_pr_poll_retirement_recover_one "$state" "$id" "$root/bin/fm-pr-poll.sh" || true
-        fi
-      fi
       fm_custom_check_snapshot_cleanup
       [ "${FM_WAKE_QUEUE+x}" ] && had_queue=1
       [ "${FM_WAKE_QUEUE_LOCK+x}" ] && had_queue_lock=1
@@ -235,8 +230,13 @@ fm_supervision_run_due_checks() {
       append_rc=$?
       if [ "$had_queue" -eq 1 ]; then FM_WAKE_QUEUE=$old_queue; else unset FM_WAKE_QUEUE; fi
       if [ "$had_queue_lock" -eq 1 ]; then FM_WAKE_QUEUE_LOCK=$old_queue_lock; else unset FM_WAKE_QUEUE_LOCK; fi
+      if [ "$append_rc" -eq 0 ] && [ "$is_pr_poll" -eq 1 ] && [ "$out" = merged ]; then
+        if fm_pr_poll_retirement_publish "$state" "$id" "$root/bin/fm-pr-poll.sh" "$out"; then
+          fm_pr_poll_retirement_recover_one "$state" "$id" "$root/bin/fm-pr-poll.sh" || true
+        fi
+      fi
       rm -f "$err_file" "$out_file"
-      touch "$last_check"
+      [ "$append_rc" -ne 0 ] || touch "$last_check"
       fm_lock_release "$lock"
       [ "$append_rc" -eq 0 ] || return 2
       return 0
