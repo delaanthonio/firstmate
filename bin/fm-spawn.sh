@@ -200,6 +200,7 @@
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FM_HOME_WAS_SET=${FM_HOME:+x}
 
 usage() {
   # The whole leading comment block, ending at the first line that is not a
@@ -238,6 +239,10 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 PROJECTS="${FM_PROJECTS_OVERRIDE:-$FM_HOME/projects}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
+TASK_HOME=$FM_HOME
+if [ -z "$FM_HOME_WAS_SET" ] && [ -n "${FM_STATE_OVERRIDE:-}" ] && [ "$(basename "$STATE")" = state ]; then
+  TASK_HOME=$(cd "$(dirname "$STATE")" 2>/dev/null && pwd -P) || TASK_HOME=$(dirname "$STATE")
+fi
 SUB_HOME_MARKER=".fm-secondmate-home"
 # shellcheck source=bin/fm-ff-lib.sh
 . "$SCRIPT_DIR/fm-ff-lib.sh"
@@ -251,6 +256,16 @@ SUB_HOME_MARKER=".fm-secondmate-home"
 . "$SCRIPT_DIR/fm-backend.sh"
 # shellcheck source=bin/fm-control-lib.sh
 . "$SCRIPT_DIR/fm-control-lib.sh"
+# shellcheck source=bin/fm-backend-hometag-lib.sh
+. "$SCRIPT_DIR/fm-backend-hometag-lib.sh"
+if ! fm_backend_hometag >/dev/null; then
+  echo "error: invalid $FM_BACKEND_HOMETAG_SECONDMATE_MARKER marker in $FM_HOME" >&2
+  exit 1
+fi
+if ! TASK_HOME_TAG=$(FM_HOME="$TASK_HOME" fm_backend_hometag); then
+  echo "error: invalid $FM_BACKEND_HOMETAG_SECONDMATE_MARKER marker in $TASK_HOME" >&2
+  exit 1
+fi
 # shellcheck source=bin/fm-gate-refuse-lib.sh
 . "$SCRIPT_DIR/fm-gate-refuse-lib.sh"
 # shellcheck source=bin/fm-busy-lib.sh
@@ -678,6 +693,16 @@ RELAUNCH_REPLACEMENT_STATE=
 RELAUNCH_REPLACEMENT_WT=
 CONFIG_INHERIT_LOCK=
 CONFIG_INHERIT_LOCK_HELD=0
+ZELLIJ_ABORT_SESSION=
+ZELLIJ_ABORT_FINGERPRINT=
+FM_BACKEND_ZELLIJ_UNPUBLISHED_SESSION=
+FM_BACKEND_ZELLIJ_UNPUBLISHED_TAB_ID=
+FM_BACKEND_ZELLIJ_UNPUBLISHED_PANE_ID=
+FM_BACKEND_ZELLIJ_UNPUBLISHED_LABEL=
+FM_BACKEND_ZELLIJ_UNPUBLISHED_FINGERPRINT=
+export FM_BACKEND_ZELLIJ_UNPUBLISHED_SESSION FM_BACKEND_ZELLIJ_UNPUBLISHED_TAB_ID \
+  FM_BACKEND_ZELLIJ_UNPUBLISHED_PANE_ID FM_BACKEND_ZELLIJ_UNPUBLISHED_LABEL \
+  FM_BACKEND_ZELLIJ_UNPUBLISHED_FINGERPRINT
 
 parse_orca_worktree_result() {
   local raw=$1 rest
@@ -698,6 +723,19 @@ parse_orca_worktree_result() {
 
 spawn_abort_cleanup() {
   local status=$?
+  if [ -n "$ZELLIJ_ABORT_FINGERPRINT" ]; then
+    if ! fm_backend_zellij_session_fingerprint_retire \
+        "$ZELLIJ_ABORT_SESSION" "$ZELLIJ_ABORT_FINGERPRINT"; then
+      echo "warning: could not retire unpublished zellij session fingerprint after aborted spawn of $ID" >&2
+    fi
+    ZELLIJ_ABORT_FINGERPRINT=
+    ZELLIJ_ABORT_SESSION=
+    FM_BACKEND_ZELLIJ_UNPUBLISHED_SESSION=
+    FM_BACKEND_ZELLIJ_UNPUBLISHED_TAB_ID=
+    FM_BACKEND_ZELLIJ_UNPUBLISHED_PANE_ID=
+    FM_BACKEND_ZELLIJ_UNPUBLISHED_LABEL=
+    FM_BACKEND_ZELLIJ_UNPUBLISHED_FINGERPRINT=
+  fi
   if [ -n "$DROID_SETTINGS_CLEANUP" ]; then
     rm -f "$DROID_SETTINGS_CLEANUP" || true
     DROID_SETTINGS_CLEANUP=
@@ -2146,6 +2184,12 @@ EOF
     ;;
   zellij)
     ZELLIJ_SES=$(fm_backend_zellij_container_ensure) || exit 1
+    ZELLIJ_SESSION_FINGERPRINT=$(fm_backend_zellij_session_fingerprint "$ZELLIJ_SES") || {
+      echo "error: could not establish a stable incarnation fingerprint for zellij session '$ZELLIJ_SES'" >&2
+      exit 1
+    }
+    ZELLIJ_ABORT_SESSION=$ZELLIJ_SES
+    ZELLIJ_ABORT_FINGERPRINT=$ZELLIJ_SESSION_FINGERPRINT
     ZELLIJ_TASK_IDS=$(fm_backend_zellij_create_task "$ZELLIJ_SES" "$W" "$PROJ_ABS") || exit 1
     read -r ZELLIJ_TAB_ID ZELLIJ_PANE_ID <<EOF
 $ZELLIJ_TASK_IDS
@@ -2154,6 +2198,11 @@ EOF
       echo "error: zellij did not return a tab/pane id for $W" >&2
       exit 1
     fi
+    FM_BACKEND_ZELLIJ_UNPUBLISHED_SESSION=$ZELLIJ_SES
+    FM_BACKEND_ZELLIJ_UNPUBLISHED_TAB_ID=$ZELLIJ_TAB_ID
+    FM_BACKEND_ZELLIJ_UNPUBLISHED_PANE_ID=$ZELLIJ_PANE_ID
+    FM_BACKEND_ZELLIJ_UNPUBLISHED_LABEL=$W
+    FM_BACKEND_ZELLIJ_UNPUBLISHED_FINGERPRINT=$ZELLIJ_SESSION_FINGERPRINT
     T="$ZELLIJ_SES:$ZELLIJ_PANE_ID"
     ;;
   cmux)
@@ -2370,12 +2419,33 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
   freshen_spawn_worktree_base "$WT" || exit 1
 fi
 
-# Per-task temp root: /tmp/fm-<id>/ with Go's build temp nested at gotmp/. Go won't
-# create GOTMPDIR, so mkdir before it is used; fm-teardown removes the whole root.
-# Nested (not a bare /tmp/fm-<id>/gotmp) so other per-task temp can live alongside
-# later, and teardown cleans one deterministic path. GOTMPDIR (not TMPDIR) is the
-# targeted knob: TMPDIR is too broad (affects every program's temp, not just Go's).
-TASK_TMP="/tmp/fm-$ID"
+if [ "$RELAUNCH" -eq 1 ] && [ "$BACKEND" = zellij ]; then
+  ZELLIJ_SES=$(meta_value "$RELAUNCH_META" zellij_session)
+  ZELLIJ_TAB_ID=$(meta_value "$RELAUNCH_META" zellij_tab_id)
+  ZELLIJ_PANE_ID=$(meta_value "$RELAUNCH_META" zellij_pane_id)
+  ZELLIJ_PREVIOUS_METADATA_FINGERPRINT=$(meta_value "$RELAUNCH_META" zellij_session_fingerprint)
+  if [ -e "$STATE/$ID.zellij-session-fingerprint" ] \
+     || [ -L "$STATE/$ID.zellij-session-fingerprint" ]; then
+    fm_backend_zellij_sidecar_fingerprint \
+      "$ZELLIJ_SES" "$STATE/$ID.zellij-session-fingerprint" >/dev/null || {
+      echo "error: invalid zellij session fingerprint sidecar for $ID" >&2
+      exit 1
+    }
+  fi
+  ZELLIJ_SESSION_FINGERPRINT=$(fm_backend_zellij_session_fingerprint "$ZELLIJ_SES") || {
+    echo "error: could not establish a stable incarnation fingerprint for zellij session '$ZELLIJ_SES'" >&2
+    exit 1
+  }
+  ZELLIJ_ABORT_SESSION=$ZELLIJ_SES
+  ZELLIJ_ABORT_FINGERPRINT=$ZELLIJ_SESSION_FINGERPRINT
+fi
+
+# Per-task temp root: /tmp/fm-<home-tag>/<id>/ with Go's build temp nested at
+# gotmp/. The home tag prevents two isolated firstmate homes that reuse a task id
+# from sharing a temp tree. Go will not create GOTMPDIR, so create it before use;
+# fm-teardown validates and removes the recorded root. GOTMPDIR (not TMPDIR) is
+# the targeted knob because TMPDIR would affect every child program.
+TASK_TMP="/tmp/fm-$TASK_HOME_TAG/$ID"
 mkdir -p "$TASK_TMP/gotmp"
 
 # Per-harness turn-end hook where enabled: a file that touches
@@ -2759,7 +2829,7 @@ fi
 preserve_relaunch_meta() {
   awk -F= '
     BEGIN {
-      split("window endpoint_task_id worktree project harness kind mode yolo tasktmp model effort busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx", keys, " ")
+      split("window endpoint_task_id worktree project harness kind mode yolo tasktmp model effort busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id zellij_session_fingerprint orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx", keys, " ")
       for (i in keys) owned[keys[i]] = 1
     }
     !($1 in owned)
@@ -2794,6 +2864,7 @@ preserve_relaunch_meta() {
     echo "zellij_session=$ZELLIJ_SES"
     echo "zellij_tab_id=$ZELLIJ_TAB_ID"
     echo "zellij_pane_id=$ZELLIJ_PANE_ID"
+    echo "zellij_session_fingerprint=$ZELLIJ_SESSION_FINGERPRINT"
   fi
   if [ "$BACKEND" = orca ]; then
     echo "orca_worktree_id=$ORCA_WORKTREE_ID"
@@ -2814,9 +2885,29 @@ preserve_relaunch_meta() {
     echo "control_relaunch_tx=$FM_CONTROL_RELAUNCH_TX"
   fi
 } > "$SPAWN_META_PATH"
+if [ "$RELAUNCH" -eq 0 ] && [ "$BACKEND" = zellij ]; then
+  ZELLIJ_ABORT_FINGERPRINT=
+  ZELLIJ_ABORT_SESSION=
+  FM_BACKEND_ZELLIJ_UNPUBLISHED_SESSION=
+  FM_BACKEND_ZELLIJ_UNPUBLISHED_TAB_ID=
+  FM_BACKEND_ZELLIJ_UNPUBLISHED_PANE_ID=
+  FM_BACKEND_ZELLIJ_UNPUBLISHED_LABEL=
+  FM_BACKEND_ZELLIJ_UNPUBLISHED_FINGERPRINT=
+fi
 if [ "$RELAUNCH" -eq 1 ]; then
   SPAWN_META_PUBLISH_STARTED=1
   mv -f "$SPAWN_META_TMP" "$STATE/$ID.meta"
+  if [ "$BACKEND" = zellij ]; then
+    ZELLIJ_ABORT_FINGERPRINT=
+    ZELLIJ_ABORT_SESSION=
+    fm_backend_zellij_relaunch_fingerprints_retire \
+      "$ZELLIJ_SES" \
+      "${ZELLIJ_PREVIOUS_METADATA_FINGERPRINT:-}" \
+      "$STATE/$ID.zellij-session-fingerprint" || {
+      echo "error: could not retire previous zellij session fingerprints for $ID" >&2
+      exit 1
+    }
+  fi
   RELAUNCH_REPLACEMENT_PENDING=0
   SPAWN_META_PUBLISH_STARTED=0
   SPAWN_META_TMP=

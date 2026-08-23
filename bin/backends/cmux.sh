@@ -303,26 +303,36 @@ fm_backend_cmux_container_ensure() {
 }
 
 # fm_backend_cmux_home_label: readable home prefix plus a short hash of the
-# resolved FM_ROOT path. cmux has one app-global workspace namespace, so the
-# path hash distinguishes every firstmate installation, including multiple
-# primary homes. Moving an installation changes this tag and old cmux titles
-# stop matching; task meta already records absolute worktree paths, so repo
-# relocation is already outside the supported recovery contract. Derivation
-# itself lives in bin/fm-backend-hometag-lib.sh, shared with zellij's
-# identical shared-namespace collision fix (docs/zellij-backend.md
-# "Home-scoped tab titles").
+# resolved FM_HOME path. cmux has one app-global workspace namespace, so the
+# path hash distinguishes every firstmate home, including multiple homes that
+# share one checkout. Moving a home changes this tag and old cmux titles stop
+# matching; task meta already records absolute worktree paths, so relocation is
+# already outside the supported recovery contract. Derivation itself lives in
+# bin/fm-backend-hometag-lib.sh, shared with zellij's identical
+# shared-namespace collision fix (docs/zellij-backend.md "Home-scoped tab
+# titles").
 fm_backend_cmux_home_label() {
   fm_backend_hometag
 }
 
 fm_backend_cmux_scoped_title() {  # <fm-task-label>
   local label=$1 rest home
-  home=$(fm_backend_cmux_home_label)
+  home=$(fm_backend_cmux_home_label) || return 1
   case "$label" in
     fm-*) rest=${label#fm-} ;;
     *) rest=$label ;;
   esac
   printf 'fm-%s-%s' "$home" "$rest"
+}
+
+fm_backend_cmux_legacy_scoped_title() {  # <fm-task-label>
+  local label=$1 rest root_tag
+  root_tag=$(fm_backend_legacy_roottag) || return 1
+  case "$label" in
+    fm-*) rest=${label#fm-} ;;
+    *) rest=$label ;;
+  esac
+  printf 'fm-%s-%s' "$root_tag" "$rest"
 }
 
 # fm_backend_cmux_workspace_id_for_label: the live workspace id whose title
@@ -335,10 +345,72 @@ fm_backend_cmux_workspace_id_for_label() {  # <label>
     | jq -r --arg want "$label" '.workspaces[]? | select(.title == $want) | .id' 2>/dev/null | head -1
 }
 
+fm_backend_cmux_workspace_ids_for_label() {  # <label>
+  local label=$1 wins window_ids wid wss ids matches=
+  wins=$(fm_backend_cmux_cli list-windows --json --id-format uuids 2>/dev/null) || return 1
+  window_ids=$(printf '%s' "$wins" | jq -er '.[]? | .id' 2>/dev/null) || return 1
+  while IFS= read -r wid; do
+    [ -n "$wid" ] || continue
+    wss=$(fm_backend_cmux_cli workspace list --json --id-format uuids --window "$wid" 2>/dev/null) || return 1
+    printf '%s' "$wss" | jq -e '(.workspaces // []) | type == "array"' >/dev/null 2>&1 || return 1
+    ids=$(printf '%s' "$wss" | jq -r --arg want "$label" \
+      '(.workspaces // []) | .[]? | select(.title == $want) | .id' 2>/dev/null) || return 1
+    [ -z "$ids" ] || matches="$matches${matches:+
+}$ids"
+  done <<< "$window_ids"
+  printf '%s\n' "$matches"
+}
+
+fm_backend_cmux_workspace_ids_global() {
+  local wins window_ids wid wss ids=
+  wins=$(fm_backend_cmux_cli list-windows --json --id-format uuids 2>/dev/null) || return 1
+  window_ids=$(printf '%s' "$wins" | jq -er '.[]? | .id' 2>/dev/null) || return 1
+  while IFS= read -r wid; do
+    [ -n "$wid" ] || continue
+    wss=$(fm_backend_cmux_cli workspace list --json --id-format uuids --window "$wid" 2>/dev/null) || return 1
+    printf '%s' "$wss" | jq -e '(.workspaces // []) | type == "array"' >/dev/null 2>&1 || return 1
+    ids="$ids${ids:+
+}$(printf '%s' "$wss" | jq -r '(.workspaces // []) | .[]? | .id' 2>/dev/null)" || return 1
+  done <<< "$window_ids"
+  printf '%s\n' "$ids"
+}
+
+fm_backend_cmux_unique_workspace_id_for_label() {  # <label>
+  local label=$1 matches
+  matches=$(fm_backend_cmux_workspace_ids_for_label "$label") || return 1
+  [ "$(printf '%s\n' "$matches" | sed '/^$/d' | wc -l | tr -d ' ')" = 1 ] || return 1
+  printf '%s\n' "$matches"
+}
+
 fm_backend_cmux_surface_id_for_workspace() {  # <workspace_id>
   local wsid=$1
   fm_backend_cmux_cli list-panes --workspace "$wsid" --json --id-format uuids 2>/dev/null \
     | jq -r '.panes[0] // {} | .selected_surface_id // (.surface_ids[0] // empty)' 2>/dev/null
+}
+
+fm_backend_cmux_create_record_path() {  # <label>
+  local label=$1 state
+  case "$label" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac
+  state="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
+  printf '%s/.cmux-create-%s.pending' "$state" "$label"
+}
+
+fm_backend_cmux_write_create_record() {  # <path> <title>
+  local path=$1 title=$2 dir tmp
+  dir=$(dirname "$path")
+  mkdir -p "$dir" || return 1
+  tmp=$(umask 077; mktemp "$dir/.cmux-create-pending.XXXXXX") || return 1
+  if ! printf '%s\n' "$title" > "$tmp" || ! mv -f -- "$tmp" "$path"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
+}
+
+fm_backend_cmux_create_record_matches() {  # <path> <title>
+  local path=$1 title=$2 recorded
+  [ -f "$path" ] && [ ! -L "$path" ] || return 1
+  IFS= read -r recorded < "$path" || return 1
+  [ "$recorded" = "$title" ]
 }
 
 # fm_backend_cmux_create_task: create the task's workspace (one surface),
@@ -351,21 +423,35 @@ fm_backend_cmux_surface_id_for_workspace() {  # <workspace_id>
 # focus-restore dance is needed, unlike zellij. Echoes "<workspace_id>
 # <surface_id>" on success.
 fm_backend_cmux_create_task() {  # <label> <cwd>
-  local label=$1 cwd=$2 title dup out wsid sfid
-  title=$(fm_backend_cmux_scoped_title "$label")
-  dup=$(fm_backend_cmux_workspace_id_for_label "$title")
-  if [ -n "$dup" ]; then
+  local label=$1 cwd=$2 title matches match_count out wsid sfid record
+  title=$(fm_backend_cmux_scoped_title "$label") || return 1
+  record=$(fm_backend_cmux_create_record_path "$label") || return 1
+  matches=$(fm_backend_cmux_workspace_ids_for_label "$title") || return 1
+  if [ -n "$matches" ]; then
+    match_count=$(printf '%s\n' "$matches" | sed '/^$/d' | wc -l | tr -d ' ')
+    if [ "$match_count" = 1 ] && fm_backend_cmux_create_record_matches "$record" "$title"; then
+      wsid=$matches
+      sfid=$(fm_backend_cmux_surface_id_for_workspace "$wsid")
+      if [ -n "$sfid" ]; then
+        rm -f -- "$record"
+        printf '%s %s' "$wsid" "$sfid"
+        return 0
+      fi
+    fi
     echo "error: cmux workspace '$title' already exists" >&2
     return 1
   fi
+  fm_backend_cmux_write_create_record "$record" "$title" || return 1
   out=$(fm_backend_cmux_cli new-workspace --name "$title" --cwd "$cwd" --focus false --id-format uuids 2>&1) || {
     echo "error: cmux new-workspace failed for '$title': $out" >&2
     return 1
   }
   wsid=$(fm_backend_cmux_workspace_id_for_label "$title")
-  [ -n "$wsid" ] || { echo "error: could not resolve a cmux workspace id for '$title' after creation" >&2; return 1; }
+  [ -n "$wsid" ] \
+    || { echo "error: could not resolve the cmux workspace id for '$title' after creation" >&2; return 1; }
   sfid=$(fm_backend_cmux_surface_id_for_workspace "$wsid")
   [ -n "$sfid" ] || { echo "error: could not resolve the default surface for cmux workspace '$title' ($wsid)" >&2; return 1; }
+  rm -f -- "$record"
   printf '%s %s' "$wsid" "$sfid"
 }
 
@@ -408,19 +494,33 @@ fm_backend_cmux_surface_exists() {  # <workspace_id> <surface_id>
 # header for the fresh-surface pitfall this avoids). When the caller knows
 # the owning firstmate task label, refresh stale workspace/surface ids by label.
 fm_backend_cmux_target_ready() {  # <target> [expected-label]
-  local expected_label=${2:-} expected_title title wsid sfid
+  local expected_label=${2:-} expected_title legacy_title title wsid sfid matches match_count
   fm_backend_cmux_parse_target "$1" || return 1
   if [ -n "$expected_label" ]; then
-    expected_title=$(fm_backend_cmux_scoped_title "$expected_label")
+    expected_title=$(fm_backend_cmux_scoped_title "$expected_label") || return 1
+    legacy_title=$(fm_backend_cmux_legacy_scoped_title "$expected_label") || return 1
     title=$(fm_backend_cmux_cli workspace list --json --id-format uuids 2>/dev/null | jq -r --arg id "$FM_BACKEND_CMUX_WORKSPACE" '.workspaces[]? | select(.id == $id) | .title' 2>/dev/null)
     if [ "$title" = "$expected_title" ]; then
+      fm_backend_cmux_surface_exists "$FM_BACKEND_CMUX_WORKSPACE" "$FM_BACKEND_CMUX_SURFACE" && return 0
+      wsid=$FM_BACKEND_CMUX_WORKSPACE
+    elif [ "$legacy_title" != "$expected_title" ] && [ "$title" = "$legacy_title" ]; then
       fm_backend_cmux_surface_exists "$FM_BACKEND_CMUX_WORKSPACE" "$FM_BACKEND_CMUX_SURFACE" && return 0
       wsid=$FM_BACKEND_CMUX_WORKSPACE
     elif [ -n "$title" ]; then
       return 1
     else
-      wsid=$(fm_backend_cmux_workspace_id_for_label "$expected_title")
-      [ -n "$wsid" ] || return 1
+      matches=$(fm_backend_cmux_workspace_ids_for_label "$expected_title") || return 1
+      match_count=$(printf '%s\n' "$matches" | sed '/^$/d' | wc -l | tr -d ' ')
+      case "$match_count" in
+        0)
+          [ "$legacy_title" != "$expected_title" ] || return 1
+          matches=$(fm_backend_cmux_workspace_ids_for_label "$legacy_title") || return 1
+          printf '%s\n' "$matches" | grep -Fxq "$FM_BACKEND_CMUX_WORKSPACE" || return 1
+          wsid=$FM_BACKEND_CMUX_WORKSPACE
+          ;;
+        1) wsid=$matches ;;
+        *) return 1 ;;
+      esac
     fi
     sfid=$(fm_backend_cmux_surface_id_for_workspace "$wsid")
     [ -n "$sfid" ] || return 1
@@ -628,6 +728,25 @@ fm_backend_cmux_kill() {  # <target> [unused] [expected-label]
   fm_backend_cmux_cli close-workspace --workspace "$wsid" >/dev/null 2>&1 || true
 }
 
+fm_backend_cmux_endpoint_confirmed_gone() {  # <target> <expected-label>
+  local target=$1 expected_label=$2 scoped legacy matches inventory
+  fm_backend_cmux_parse_target "$target" || return 1
+  inventory=$(fm_backend_cmux_workspace_ids_global) || return 1
+  printf '%s\n' "$inventory" | grep -qxF "$FM_BACKEND_CMUX_WORKSPACE" && return 1
+  scoped=$(fm_backend_cmux_scoped_title "$expected_label") || return 1
+  legacy=$(fm_backend_cmux_legacy_scoped_title "$expected_label") || return 1
+  matches=$(fm_backend_cmux_workspace_ids_for_label "$scoped") || return 1
+  [ -z "$matches" ] || return 1
+  [ "$legacy" = "$scoped" ] && return 0
+  matches=$(fm_backend_cmux_workspace_ids_for_label "$legacy") || return 1
+  [ -z "$matches" ]
+}
+
+fm_backend_cmux_endpoint_ownership_preflight() {  # <target> <expected-label>
+  fm_backend_cmux_target_ready "$1" "$2" && return 0
+  fm_backend_cmux_endpoint_confirmed_gone "$1" "$2"
+}
+
 # fm_backend_cmux_list_live: recovery/orphan discovery. Lists every workspace
 # whose title is scoped to this firstmate home, by TITLE - never by trusting a
 # stored uuid, since workspace ids do NOT survive an app relaunch (finding #5).
@@ -635,7 +754,7 @@ fm_backend_cmux_kill() {  # <target> [unused] [expected-label]
 # Read-only: an unreachable cmux simply lists nothing.
 fm_backend_cmux_list_live() {
   local wss wsid title sfid home prefix plain
-  home=$(fm_backend_cmux_home_label)
+  home=$(fm_backend_cmux_home_label) || return 1
   prefix="fm-$home-"
   wss=$(fm_backend_cmux_cli workspace list --json --id-format uuids 2>/dev/null) || return 0
   while IFS=$'\t' read -r wsid title; do

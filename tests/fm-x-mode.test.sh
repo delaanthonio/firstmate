@@ -700,6 +700,32 @@ test_bootstrap_activates_on_env_token() {
   pass "bootstrap activates X mode from an .env token, idempotently"
 }
 
+test_bootstrap_shim_preserves_overrides() {
+  local home state config fakebin out rc body
+  home="$TMP_ROOT/boot-overrides"; mkdir -p "$home"
+  state="$TMP_ROOT/boot-overrides-state"
+  config="$TMP_ROOT/boot-overrides-config"
+  fakebin=$(make_fake_curl "$home")
+  printf 'FMX_PAIRING_TOKEN=tok-boot\nFMX_RELAY_URL=https://relay.test\n' > "$home/.env"
+  out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$home" FM_STATE_OVERRIDE="$state" \
+    FM_CONFIG_OVERRIDE="$config" "$ROOT/bin/fm-bootstrap.sh" 2>/dev/null)
+  assert_contains "$out" "FMX: X mode on" "override bootstrap must announce X mode"
+  assert_present "$state/x-watch.check.sh" "override bootstrap must put the shim in the selected state dir"
+  assert_present "$config/x-mode.env" "override bootstrap must put cadence in the selected config dir"
+  assert_grep "export FM_STATE_OVERRIDE=" "$state/x-watch.check.sh" \
+    "durable shim must preserve the selected state dir"
+  assert_grep "export FM_CONFIG_OVERRIDE=" "$state/x-watch.check.sh" \
+    "durable shim must preserve the selected config dir"
+  body='{"request_id":"req-override","tweet_id":"555","author_id":"42","text":"which state dir?"}'
+  out=$(PATH="$fakebin:$BASE_PATH" FAKE_POLL_CODE=200 FAKE_POLL_BODY="$body" \
+    "$state/x-watch.check.sh"); rc=$?
+  expect_code 0 "$rc" "override shim poll exit"
+  [ "$out" = "x-mention req-override" ] || fail "override shim must print the compact marker (got: $out)"
+  assert_present "$state/x-inbox/req-override.json" "override shim must write to the selected state dir"
+  assert_absent "$home/state/x-inbox/req-override.json" "override shim must not fall back to FM_HOME/state"
+  pass "bootstrap poll shim preserves state and config overrides"
+}
+
 test_bootstrap_relative_home_writes_absolute_poll_shim() {
   local root home out quoted_home
   root="$TMP_ROOT/boot-relative-home"
@@ -2962,6 +2988,7 @@ test_followup_post_dry_run_increments_counter_keeps_link
 test_followup_post_dry_run_final_clears_link
 test_followup_usage_errors
 test_bootstrap_activates_on_env_token
+test_bootstrap_shim_preserves_overrides
 test_bootstrap_relative_home_writes_absolute_poll_shim
 test_bootstrap_reports_missing_x_dependency
 test_bootstrap_does_not_announce_when_arm_fails

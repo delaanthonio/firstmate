@@ -70,6 +70,8 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 GRACE=${FM_GUARD_GRACE:-300}
+CHECK_INTERVAL=${FM_CHECK_INTERVAL:-300}
+CHECK_TIMEOUT=${FM_CHECK_TIMEOUT:-30}
 WATCH="$SCRIPT_DIR/fm-watch.sh"
 CLAUDE_MODE=0
 CURSOR_MODE=0
@@ -90,6 +92,12 @@ done
 
 # shellcheck source=bin/fm-supervision-lib.sh
 . "$SCRIPT_DIR/fm-supervision-lib.sh"
+# shellcheck source=bin/fm-x-lib.sh
+. "$SCRIPT_DIR/fm-x-lib.sh"
+# shellcheck source=bin/fm-pr-lib.sh
+. "$SCRIPT_DIR/fm-pr-lib.sh"
+# shellcheck source=bin/fm-check-lib.sh
+. "$SCRIPT_DIR/fm-check-lib.sh"
 # shellcheck source=bin/fm-primary-scope-lib.sh
 . "$SCRIPT_DIR/fm-primary-scope-lib.sh"
 # shellcheck source=bin/fm-hook-host-lib.sh
@@ -158,6 +166,26 @@ budget_reset() {
   fm_lock_release "$BUDGET_LOCK"
 }
 
+# --- standing check-script backstop -----------------------------------------
+# The watcher owns normal check polling. Running the same due path here closes
+# the gap where a check becomes actionable while the primary is still in a turn.
+if fm_supervision_run_due_checks "$STATE" "$CHECK_INTERVAL" "$CHECK_TIMEOUT" true; then
+  rule='━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+  {
+    printf '●%s\n' "$rule"
+    printf '●  TURN WOULD END WITH A DUE CHECK WAKE\n'
+    printf '●  %s\n' "$FM_SUP_CHECK_SCRIPT"
+    printf '●  %s\n' "$FM_SUP_CHECK_OUTPUT"
+    printf '●  Drain queued wakes before ending the turn: bin/fm-wake-drain.sh\n'
+    printf '●%s\n' "$rule"
+  } >&2
+  exit 2
+else
+  check_rc=$?
+  [ "$check_rc" -eq 2 ] && printf 'fm-turnend-guard: failed to queue due check wake; allowing stop fail-open\n' >&2
+fi
+
+# --- supervision liveness predicate ----------------------------------------
 fm_supervision_status "$STATE" "$GRACE"
 if [ "$FM_SUP_NEEDED" = false ]; then
   [ -e "$FAILURE_NOTICE" ] || budget_reset

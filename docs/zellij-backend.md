@@ -20,6 +20,7 @@ A spawn stops before creating a session or acquiring a worktree when Zellij or `
 
 Firstmate uses one shared session named `firstmate` by default.
 `FM_ZELLIJ_SESSION` can select another name for isolated verification.
+Every spawn runs `container_ensure` before creating its task tab, so teardown or loss of the last useful tab cannot strand the next spawn; session creation uses a bounded 10-second readiness poll.
 Attach with:
 
 ```sh
@@ -29,20 +30,22 @@ zellij attach <session-name>
 Routine supervision does not require attachment.
 Use `bin/fm-peek.sh <id>` and `FM_HOME=<home> bin/fm-send.sh <id> '<text>'` against the metadata-routed endpoint.
 
-Verify setup by spawning a small task and confirming metadata contains `backend=zellij`, `zellij_session=`, `zellij_tab_id=`, and `zellij_pane_id=`.
+Verify setup by spawning a small task and confirming metadata contains `backend=zellij`, `zellij_session=`, `zellij_tab_id=`, `zellij_pane_id=`, and `zellij_session_fingerprint=`.
 
 ## Task shape and home isolation
 
 Every task receives one tab in the shared Zellij session.
 The caller-facing label remains `fm-<id>`, while the visible title is home-scoped as `fm-<home-label>-<id>`.
-The home label is `firstmate` or `2ndmate-<id>` plus a short stable hash of the resolved Firstmate root.
+The home label is `firstmate` or `2ndmate-<id>` plus a short stable hash of the resolved `FM_HOME` path.
 This prevents task-id collisions between a primary, secondmates, and separate Firstmate installations sharing one session.
 
 Zellij does not enforce tab-name uniqueness, so the adapter performs its own duplicate check against the scoped title.
 Create, recover, list, and cleanup paths all use the same scoped title owner in `bin/fm-backend-hometag-lib.sh`.
-Moving a Firstmate installation changes its path hash and leaves old titles unmatched, consistent with worktree paths also becoming stale after a move.
+Moving a Firstmate home changes its path hash and leaves old titles unmatched, consistent with worktree paths also becoming stale after a move.
 
-A pre-home-tag task remains reachable through its recorded metadata only when exactly one live tab has the old unscoped title.
+A pre-home-tag task remains reachable through its recorded metadata only when exactly one live tab has the old title and its recorded ids plus stable session fingerprint prove that the task belongs to the current session incarnation.
+When that legacy task predates recorded fingerprints, Firstmate may reconstruct the proof only from a positively identified live task process and then persists it in a private sidecar before use.
+An older task that already has the current home-scoped title must already carry stable incarnation proof; a missing or unverifiable fingerprint stops safely without touching its lifecycle records.
 Multiple old tabs with the same title cause a refusal rather than a guess.
 Bulk recovery never adopts unscoped legacy tabs because it has no safe home identity for them.
 
@@ -55,7 +58,7 @@ zellij_pane_id=<pane-id>
 ```
 
 Recorded pane ids are numeric and are never trusted alone after a session recreation.
-Metadata-routed operations also verify the owning tab's expected scoped or unambiguous legacy title.
+Metadata-routed operations verify the owning tab's expected scoped title, or require an unambiguous legacy title whose recorded task ids and stable session fingerprint belong to the current Zellij session incarnation.
 An explicit raw `session:pane` target remains a pane-existence-only operator escape hatch.
 
 ## Current operation and safety
@@ -88,6 +91,7 @@ A short viewport may expose fewer lines than requested.
 
 Closing a pane leaves an empty tab.
 Cleanup resolves and verifies the owning tab, then uses `close-tab-by-id` so both the task pane and tab disappear.
+Teardown retains endpoint records, processes, worktrees, temporary runtime state, and session-fingerprint proofs unless the recorded endpoint and every matching current or legacy title are confirmed gone.
 Real test cleanup uses only an isolated non-`firstmate` session and the guard in `tests/zellij-test-safety.sh`; it never calls all-session deletion commands.
 
 ## Active limits
@@ -100,7 +104,7 @@ Real test cleanup uses only an isolated non-`firstmate` session and the guard in
 - New-tab focus restoration has a narrow visible race.
 - CLI exit status is not meaningful; a target can still disappear after structural readiness checks.
 - Worktree cwd discovery requires the spawn-time marker probe.
-- An ambiguous unscoped legacy title requires manual cleanup and respawn.
+- An ambiguous legacy title or missing stable incarnation proof requires manual cleanup and respawn.
 
 ## Regression entry points
 
@@ -109,5 +113,5 @@ tests/fm-backend-zellij.test.sh
 tests/fm-backend-zellij-smoke.test.sh
 ```
 
-The real smoke test uses a unique session and guarded deletion.
+The real smoke test uses a unique session and guarded deletion, then deterministically proves that `container_ensure` recovers the missing session before a second task is created.
 [`verification/runtime-backends.md`](verification/runtime-backends.md#zellij) records the active CLI matrix and lifecycle evidence.

@@ -136,6 +136,7 @@
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FM_HOME_WAS_SET=${FM_HOME:+x}
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
@@ -150,6 +151,8 @@ SUB_HOME_PARENT_MARKER=".fm-secondmate-parent"
 . "$SCRIPT_DIR/fm-backend.sh"
 # shellcheck source=bin/fm-control-lib.sh
 . "$SCRIPT_DIR/fm-control-lib.sh"
+# shellcheck source=bin/fm-backend-hometag-lib.sh
+. "$SCRIPT_DIR/fm-backend-hometag-lib.sh"
 # shellcheck source=bin/fm-lock-lib.sh
 . "$SCRIPT_DIR/fm-lock-lib.sh"
 # shellcheck source=bin/fm-classify-lib.sh
@@ -442,8 +445,8 @@ if [ "${FM_TEARDOWN_GUARD_DONE:-0}" != 1 ]; then
 fi
 HOME_PATH=$(grep '^home=' "$META" | cut -d= -f2- || true)
 PR_URL=$(grep '^pr=' "$META" | tail -1 | cut -d= -f2- || true)
-# tasktmp is recorded by fm-spawn for tasks that set up a per-task temp root
-# (/tmp/fm-<id>/); absent for tasks spawned before that change, so tolerate empty.
+# tasktmp is recorded by fm-spawn for tasks that set up a per-task temp root;
+# absent for tasks spawned before that change, so tolerate empty.
 TASK_TMP=$(grep '^tasktmp=' "$META" | cut -d= -f2- || true)
 BUSY_GEN=$(fm_meta_get "$META" busy_gen)
 if [ -z "$BUSY_GEN" ]; then
@@ -451,6 +454,10 @@ if [ -z "$BUSY_GEN" ]; then
 fi
 ORCA_WORKTREE_ID=$(fm_meta_get "$META" orca_worktree_id)
 ORCA_PATH_MATCH_VERIFIED=0
+TASK_HOME=$FM_HOME
+if [ -z "$FM_HOME_WAS_SET" ] && [ -n "${FM_STATE_OVERRIDE:-}" ] && [ "$(basename "$STATE")" = state ]; then
+  TASK_HOME=$(cd "$(dirname "$STATE")" 2>/dev/null && pwd -P) || TASK_HOME=$(dirname "$STATE")
+fi
 
 KIND=$(grep '^kind=' "$META" | cut -d= -f2- || true)
 [ -n "$KIND" ] || KIND=ship
@@ -1676,6 +1683,55 @@ safe_rm_rf_child_worktree() {
   rm -rf -- "$target"
 }
 
+validate_task_tmp_for_removal() {
+  local target=$1 label=${2:-task temp root} task_id=${3:-$ID} task_home=${4:-$FM_HOME}
+  local tmp_base tag expected_logical expected_abs abs_target
+  [ -n "$target" ] || return 0
+  tmp_base=$(cd /tmp && pwd -P) || tmp_base=/tmp
+  tag=$(FM_HOME=$task_home FM_ROOT=$task_home fm_backend_hometag)
+  expected_logical="/tmp/fm-$tag/$task_id"
+  expected_abs="$tmp_base/fm-$tag/$task_id"
+  task_tmp_is_legacy_preserve_only "$target" "$task_id" && return 0
+  case "$target" in
+    "$expected_logical"|"$expected_abs") ;;
+    *)
+      if [ -e "$target" ]; then
+        abs_target=$(removal_target_abs_path "$target") || return 1
+        [ "$abs_target" = "$expected_abs" ] || {
+          echo "REFUSED: unsafe $label removal target $target is not the expected firstmate task temp root" >&2
+          return 1
+        }
+      else
+        echo "REFUSED: unsafe $label removal target $target is not the expected firstmate task temp root" >&2
+        return 1
+      fi
+      ;;
+  esac
+  [ -e "$target" ] || return 0
+  abs_target=$(validate_removal_target "$target" "$label") || return 1
+  if [ "$abs_target" != "$expected_abs" ]; then
+    echo "REFUSED: unsafe $label removal target $target is not the expected firstmate task temp root" >&2
+    return 1
+  fi
+}
+
+task_tmp_is_legacy_preserve_only() {
+  local target=$1 task_id=${2:-$ID} tmp_base
+  tmp_base=$(cd /tmp && pwd -P) || tmp_base=/tmp
+  case "$target" in
+    "/tmp/fm-$task_id"|"$tmp_base/fm-$task_id") return 0 ;;
+  esac
+  return 1
+}
+
+safe_rm_rf_task_tmp() {
+  local target=$1 task_id=${2:-$ID} task_home=${3:-$FM_HOME}
+  validate_task_tmp_for_removal "$target" "task temp root" "$task_id" "$task_home" || return 1
+  task_tmp_is_legacy_preserve_only "$target" "$task_id" && return 0
+  [ -e "$target" ] || return 0
+  rm -rf -- "$target"
+}
+
 validate_firstmate_home_for_removal() {
   local home=$1 label=$2 expected_id=${3:-} abs_home_path marker_id conflict child_id child_home
   [ -n "$home" ] || return 0
@@ -2007,7 +2063,7 @@ preflight_descendant_task_locks() {
 }
 
 validate_firstmate_home_children_removal() {
-  local home=$1 sub_state child_meta child_id child_wt child_proj child_kind child_home child_backend child_orca_worktree_id
+  local home=$1 sub_state child_meta child_id child_wt child_proj child_kind child_home child_backend child_orca_worktree_id child_tmp
   sub_state="$home/state"
   [ -d "$sub_state" ] || return 0
   for child_meta in "$sub_state"/*.meta; do
@@ -2019,6 +2075,8 @@ validate_firstmate_home_children_removal() {
     child_kind=$(meta_value "$child_meta" kind)
     [ -n "$child_kind" ] || child_kind=ship
     child_backend=$(fm_backend_of_meta "$child_meta")
+    child_tmp=$(meta_value "$child_meta" tasktmp)
+    [ -z "$child_tmp" ] || validate_task_tmp_for_removal "$child_tmp" "child task temp root" "$child_id" "$home" >/dev/null || return 1
     if [ "$child_kind" = secondmate ]; then
       child_home=$(meta_value "$child_meta" home)
       [ -n "$child_home" ] || child_home=$child_wt
@@ -2173,8 +2231,59 @@ preflight_firstmate_home_herdr_children() {  # <home>
   done
 }
 
+preflight_task_backend_ownership() {
+  local home=$1 root=$2 state=$3 backend=$4 target=$5 tab_id=$6 task_id=$7
+  fm_backend_source "$backend" || return 1
+  if [ "$backend" = zellij ]; then
+    FM_ROOT_OVERRIDE='' FM_HOME="$home" FM_ROOT="$root" FM_STATE_OVERRIDE="$state" \
+      fm_backend_zellij_endpoint_ownership_preflight "$target" "$tab_id" "fm-$task_id" || return 1
+  elif [ "$backend" = cmux ]; then
+    FM_ROOT_OVERRIDE='' FM_HOME="$home" FM_ROOT="$root" FM_STATE_OVERRIDE="$state" \
+      fm_backend_cmux_endpoint_ownership_preflight "$target" "fm-$task_id" || return 1
+  fi
+  return 0
+}
+
+preflight_firstmate_home_backend_ownership() {
+  local home=$1 root=$2 sub_state child_meta child_id child_backend child_target child_kind child_wt child_home
+  sub_state="$home/state"
+  [ -d "$sub_state" ] || return 0
+  for child_meta in "$sub_state"/*.meta; do
+    [ -e "$child_meta" ] || continue
+    child_id=$(basename "$child_meta" .meta)
+    fm_backend_validate_task_endpoint "$child_meta" "$child_id" || return 1
+    child_backend=$FM_BACKEND_VALIDATED_BACKEND
+    child_target=$FM_BACKEND_VALIDATED_TARGET
+    preflight_task_backend_ownership "$home" "$root" "$sub_state" "$child_backend" "$child_target" \
+      "$(meta_value "$child_meta" zellij_tab_id)" "$child_id" || return 1
+    child_kind=$(meta_value "$child_meta" kind)
+    [ -n "$child_kind" ] || child_kind=ship
+    if [ "$child_kind" = secondmate ]; then
+      child_wt=$(meta_value "$child_meta" worktree)
+      child_home=$(meta_value "$child_meta" home)
+      [ -n "$child_home" ] || child_home=$child_wt
+      preflight_firstmate_home_backend_ownership "$child_home" "$root" || return 1
+    fi
+  done
+}
+
+cleanup_firstmate_child_backend_endpoint() {
+  local home=$1 root=$2 sub_state=$3 backend=$4 target=$5 tab_id=$6 child_id=$7
+  if [ "$backend" = zellij ]; then
+    FM_ROOT_OVERRIDE='' FM_HOME=$home FM_ROOT=$root FM_STATE_OVERRIDE=$sub_state \
+      fm_backend_kill zellij "$target" "$tab_id" "fm-$child_id" 2>/dev/null || true
+    FM_ROOT_OVERRIDE='' FM_HOME=$home FM_ROOT=$root FM_STATE_OVERRIDE=$sub_state \
+      fm_backend_zellij_endpoint_confirmed_gone "$target" "$tab_id" "fm-$child_id"
+  else
+    FM_ROOT_OVERRIDE='' FM_HOME=$home FM_ROOT=$root FM_STATE_OVERRIDE=$sub_state \
+      fm_backend_kill cmux "$target" "" "fm-$child_id" 2>/dev/null || true
+    FM_ROOT_OVERRIDE='' FM_HOME=$home FM_ROOT=$root FM_STATE_OVERRIDE=$sub_state \
+      fm_backend_cmux_endpoint_confirmed_gone "$target" "fm-$child_id"
+  fi
+}
+
 cleanup_firstmate_home_children() {
-  local home=$1 sub_state child_meta child_id child_t child_wt child_proj child_kind child_home child_backend child_orca_worktree_id child_return_rc child_busy_gen
+  local home=$1 root=$2 sub_state child_meta child_id child_t child_wt child_proj child_kind child_home child_backend child_orca_worktree_id child_tmp child_return_rc child_busy_gen child_zellij_session child_zellij_fingerprint child_zellij_sidecar_fingerprint
   sub_state="$home/state"
   [ -d "$sub_state" ] || return 0
   for child_meta in "$sub_state"/*.meta; do
@@ -2185,6 +2294,7 @@ cleanup_firstmate_home_children() {
     child_kind=$(meta_value "$child_meta" kind)
     [ -n "$child_kind" ] || child_kind=ship
     child_backend=$(fm_backend_of_meta "$child_meta")
+    child_tmp=$(meta_value "$child_meta" tasktmp)
     if [ "$child_backend" = orca ]; then
       child_t=$(meta_value "$child_meta" terminal)
     else
@@ -2211,7 +2321,15 @@ cleanup_firstmate_home_children() {
       elif [ "$child_backend" = zellij ]; then
         # Zellij titles are scoped by the owning home tag, so forced secondmate
         # cleanup must verify child tabs as that child home, not the parent.
-        ( unset FM_ROOT_OVERRIDE; FM_HOME=$home FM_ROOT=$home fm_backend_kill "$child_backend" "$child_t" "$(meta_value "$child_meta" zellij_tab_id)" "fm-$child_id" ) 2>/dev/null || true
+        if ! cleanup_firstmate_child_backend_endpoint "$home" "$root" "$sub_state" zellij "$child_t" "$(meta_value "$child_meta" zellij_tab_id)" "$child_id"; then
+          echo "error: zellij endpoint $child_t for child $child_id is not confirmed gone; retaining that child's durable identity records and stopping forced cleanup" >&2
+          return 1
+        fi
+      elif [ "$child_backend" = cmux ]; then
+        if ! cleanup_firstmate_child_backend_endpoint "$home" "$root" "$sub_state" cmux "$child_t" "" "$child_id"; then
+          echo "error: cmux endpoint $child_t for child $child_id is not confirmed gone; retaining that child's durable identity records and stopping forced cleanup" >&2
+          return 1
+        fi
       else
         fm_backend_kill "$child_backend" "$child_t" "$(meta_value "$child_meta" zellij_tab_id)" "fm-$child_id" 2>/dev/null || true
       fi
@@ -2220,7 +2338,7 @@ cleanup_firstmate_home_children() {
       child_home=$(meta_value "$child_meta" home)
       [ -n "$child_home" ] || child_home=$child_wt
       if [ -n "$child_home" ] && [ -d "$child_home" ]; then
-        cleanup_firstmate_home_children "$child_home" || return $?
+        cleanup_firstmate_home_children "$child_home" "$root" || return $?
         remove_firstmate_home "$child_home" "child firstmate home" "$child_id" || return $?
       fi
     elif [ "$child_backend" = orca ]; then
@@ -2252,17 +2370,36 @@ cleanup_firstmate_home_children() {
     remove_grok_turnend_auth "$sub_state" "$child_id" || return 1
     remove_kimi_turnend_auth "$sub_state" "$child_id" || return 1
     remove_pr_poll_artifacts "$sub_state" "$child_id" || return 1
+    [ -n "$child_tmp" ] && safe_rm_rf_task_tmp "$child_tmp" "$child_id" "$home"
     child_busy_gen=$(meta_value "$child_meta" busy_gen)
     if [ -z "$child_busy_gen" ]; then
       child_busy_gen=$(cat "$sub_state/$child_id.busy-gen" 2>/dev/null || true)
     fi
     retire_busy_state "$sub_state" "$child_id" "$child_busy_gen" || return 1
     status_retire_presentation_task "$sub_state" "$child_id" || return 1
+    if [ "$child_backend" = zellij ]; then
+      child_zellij_session=$(meta_value "$child_meta" zellij_session)
+      child_zellij_fingerprint=$(meta_value "$child_meta" zellij_session_fingerprint)
+      child_zellij_sidecar_fingerprint=
+      if [ -e "$sub_state/$child_id.zellij-session-fingerprint" ] \
+         || [ -L "$sub_state/$child_id.zellij-session-fingerprint" ]; then
+        child_zellij_sidecar_fingerprint=$(fm_backend_zellij_sidecar_fingerprint \
+          "$child_zellij_session" "$sub_state/$child_id.zellij-session-fingerprint") || return 1
+      fi
+      [ -z "$child_zellij_fingerprint" ] \
+        || fm_backend_zellij_session_fingerprint_retire "$child_zellij_session" "$child_zellij_fingerprint" \
+        || return 1
+      [ -z "$child_zellij_sidecar_fingerprint" ] \
+        || [ "$child_zellij_sidecar_fingerprint" = "$child_zellij_fingerprint" ] \
+        || fm_backend_zellij_session_fingerprint_retire "$child_zellij_session" "$child_zellij_sidecar_fingerprint" \
+        || return 1
+    fi
     rm -f "$sub_state/$child_id.turn-ended" \
       "$sub_state/$child_id.meta" "$sub_state/$child_id.pi-ext.ts" \
       "$sub_state/$child_id.droid-settings.json" \
       "$sub_state/$child_id.grok-turnend-token" "$sub_state/$child_id.kimi-turnend-token" \
       "$sub_state/$child_id.muse-session" "$sub_state/$child_id.muse-session-current" \
+      "$sub_state/$child_id.zellij-session-fingerprint" \
       "$sub_state/$child_id.cursor-session"
   done
 }
@@ -2280,6 +2417,22 @@ remove_secondmate_registry_entry() {
 }
 
 validate_pr_poll_cleanup "$STATE" "$ID" || exit 1
+# Validate mutable task metadata before killing an endpoint, returning a
+# worktree, or removing a secondmate home. A malformed tasktmp must fail before
+# teardown makes any partial destructive progress.
+[ -z "$TASK_TMP" ] || validate_task_tmp_for_removal "$TASK_TMP" "task temp root" "$ID" "$TASK_HOME" >/dev/null || exit 1
+
+if ! preflight_task_backend_ownership "$FM_HOME" "$FM_ROOT" "$STATE" "$BACKEND" "$T" \
+  "$(meta_value "$META" zellij_tab_id)" "$ID"; then
+  echo "error: $BACKEND endpoint ownership for $ID is not proven; teardown changed nothing" >&2
+  exit 1
+fi
+if [ "$KIND" = secondmate ] && [ "$FORCE" = "--force" ]; then
+  preflight_firstmate_home_backend_ownership "${HOME_PATH:-$WT}" "$FM_ROOT" || {
+    echo "error: descendant endpoint ownership is not proven; forced teardown changed nothing" >&2
+    exit 1
+  }
+fi
 
 if [ "$KIND" = secondmate ]; then
   [ -n "$HOME_PATH" ] || HOME_PATH=$WT
@@ -2309,10 +2462,6 @@ fi
 
 if [ "$KIND" = secondmate ]; then
   preflight_firstmate_home_process_event_tree "$HOME_PATH" "secondmate home" || exit 1
-fi
-
-if [ "$KIND" = secondmate ] && [ "$FORCE" = "--force" ]; then
-  cleanup_firstmate_home_children "$HOME_PATH" || exit $?
 fi
 
 if [ "$KIND" = scout ] && [ "$FORCE" != "--force" ]; then
@@ -2376,6 +2525,29 @@ if [ -d "$WT" ] && [ "$FORCE" != "--force" ]; then
   fi
 fi
 
+TEARDOWN_ENDPOINT_CLOSE_CONFIRMED=0
+if [ "$BACKEND" = zellij ]; then
+  fm_backend_kill "$BACKEND" "$T" "$(meta_value "$META" zellij_tab_id)" "fm-$ID" 2>/dev/null || true
+  if ! declare -F fm_backend_zellij_endpoint_confirmed_gone >/dev/null 2>&1 \
+    || ! fm_backend_zellij_endpoint_confirmed_gone "$T" "$(meta_value "$META" zellij_tab_id)" "fm-$ID"; then
+    echo "error: zellij endpoint $T for $ID is not confirmed gone; retaining endpoint records, processes, worktree, and temporary runtime state" >&2
+    exit 1
+  fi
+  TEARDOWN_ENDPOINT_CLOSE_CONFIRMED=1
+elif [ "$BACKEND" = cmux ]; then
+  fm_backend_kill "$BACKEND" "$T" "" "fm-$ID" 2>/dev/null || true
+  if ! declare -F fm_backend_cmux_endpoint_confirmed_gone >/dev/null 2>&1 \
+    || ! fm_backend_cmux_endpoint_confirmed_gone "$T" "fm-$ID"; then
+    echo "error: cmux endpoint $T for $ID is not confirmed gone; retaining endpoint records, processes, worktree, and temporary runtime state" >&2
+    exit 1
+  fi
+  TEARDOWN_ENDPOINT_CLOSE_CONFIRMED=1
+fi
+
+if [ "$KIND" = secondmate ] && [ "$FORCE" = "--force" ]; then
+  cleanup_firstmate_home_children "$HOME_PATH" "$FM_ROOT" || exit $?
+fi
+
 # Every landed/discard-work refusal above has now passed (or --force skipped
 # them). Fix 1 and Fix 2 (see script header) run here, unconditionally on
 # --force, and before ANY destructive step below - a still-parked run or a
@@ -2385,7 +2557,11 @@ fi
 # not by task-worktree cleanup.
 if [ "$KIND" != secondmate ]; then
   conclude_task_no_mistakes_run "$WT"
-  reap_task_worktree_processes worktree "$WT" "$TASK_TMP"
+  if task_tmp_is_legacy_preserve_only "$TASK_TMP" "$ID"; then
+    reap_task_worktree_processes worktree "$WT"
+  else
+    reap_task_worktree_processes worktree "$WT" "$TASK_TMP"
+  fi
 fi
 
 # Fix 3 (see script header): sweep remote job workers abandoned by an already
@@ -2495,7 +2671,7 @@ elif [ "$BACKEND" = herdr ]; then
   else
     echo "warning: herdr session presentation lock path is unavailable; skipping the pane close rather than closing unlocked" >&2
   fi
-elif [ "$BACKEND" != orca ]; then
+elif [ "$BACKEND" != orca ] && [ "$TEARDOWN_ENDPOINT_CLOSE_CONFIRMED" != 1 ]; then
   fm_backend_kill "$BACKEND" "$T" "$(meta_value "$META" zellij_tab_id)" "fm-$ID" 2>/dev/null || true
 fi
 if [ "$HERDR_PRESENTATION_RETIRE_CANDIDATE" = 1 ]; then
@@ -2533,16 +2709,34 @@ fi
 remove_grok_turnend_auth "$STATE" "$ID" || exit 1
 remove_kimi_turnend_auth "$STATE" "$ID" || exit 1
 fm_backend_clear_transition "$BACKEND" "$STATE" "$T" || true
-# Remove the per-task temp root (/tmp/fm-<id>/, incl. its gotmp/) recorded by spawn.
+# Remove the validated per-task temp root recorded by spawn.
 # Read before the state-file rm below; empty (pre-fix tasks without tasktmp=) is a no-op.
-[ -n "$TASK_TMP" ] && rm -rf "$TASK_TMP"
+[ -n "$TASK_TMP" ] && safe_rm_rf_task_tmp "$TASK_TMP" "$ID" "$TASK_HOME"
 remove_pr_poll_artifacts "$STATE" "$ID" || exit 1
 retire_busy_state "$STATE" "$ID" "$BUSY_GEN" || exit 1
 status_retire_presentation_task "$STATE" "$ID" || exit 1
+if [ "$BACKEND" = zellij ]; then
+  ZELLIJ_SESSION_TO_RETIRE=$(meta_value "$META" zellij_session)
+  ZELLIJ_FINGERPRINT_TO_RETIRE=$(meta_value "$META" zellij_session_fingerprint)
+  ZELLIJ_SIDECAR_FINGERPRINT_TO_RETIRE=
+  if [ -e "$STATE/$ID.zellij-session-fingerprint" ] \
+     || [ -L "$STATE/$ID.zellij-session-fingerprint" ]; then
+    ZELLIJ_SIDECAR_FINGERPRINT_TO_RETIRE=$(fm_backend_zellij_sidecar_fingerprint \
+      "$ZELLIJ_SESSION_TO_RETIRE" "$STATE/$ID.zellij-session-fingerprint") || exit 1
+  fi
+  [ -z "$ZELLIJ_FINGERPRINT_TO_RETIRE" ] \
+    || fm_backend_zellij_session_fingerprint_retire "$ZELLIJ_SESSION_TO_RETIRE" "$ZELLIJ_FINGERPRINT_TO_RETIRE" \
+    || exit 1
+  [ -z "$ZELLIJ_SIDECAR_FINGERPRINT_TO_RETIRE" ] \
+    || [ "$ZELLIJ_SIDECAR_FINGERPRINT_TO_RETIRE" = "$ZELLIJ_FINGERPRINT_TO_RETIRE" ] \
+    || fm_backend_zellij_session_fingerprint_retire "$ZELLIJ_SESSION_TO_RETIRE" "$ZELLIJ_SIDECAR_FINGERPRINT_TO_RETIRE" \
+    || exit 1
+fi
 rm -f "$STATE/$ID.turn-ended" "$STATE/$ID.meta" \
   "$STATE/$ID.pi-ext.ts" "$STATE/$ID.droid-settings.json" "$STATE/$ID.grok-turnend-token" \
   "$STATE/$ID.kimi-turnend-token" "$STATE/$ID.muse-session" \
   "$STATE/$ID.muse-session-current" "$STATE/$ID.cursor-session" \
+  "$STATE/$ID.zellij-session-fingerprint" \
   "$STATE/$ID.control-relaunch" "$STATE/$ID.control-relaunch.meta-prior" \
   "$STATE/$ID.control-relaunch.brief-prior" "$STATE/$ID.control-relaunch.note"
 fm_lock_release "$META_LOCK"

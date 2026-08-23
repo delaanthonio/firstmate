@@ -14,6 +14,10 @@ Do not infer this guard's scope, loop safety, or compatibility tradeoffs for tho
 `bin/fm-guard.sh` is a pull-based warning that runs only when another supervision command invokes it.
 The turn-end guard closes the remaining gap at the primary's own turn boundary.
 When work, a process-event source, or Relay polling needs supervision at that boundary and no identity-matched watcher has a fresh beacon, the harness integration must either block the turn end or force one bounded follow-up that uses the recovery instruction from the emitted session-start protocol.
+The same boundary also runs any due authenticated standing check under the watcher's cadence lock; actionable output is queued durably before the guard blocks or requests its bounded follow-up.
+The X relay shim, registered PR polls, and trusted custom checks retain the watcher's validation and immutable-snapshot rules, and each execution remains bounded by `FM_CHECK_TIMEOUT`.
+An unauthenticated state check is never executed and its rejection becomes an actionable wake; the due sweep scans every matching check before publication, so a rejection after valid actionable output is included in that same durable wake rather than hidden.
+An execution failure or timeout is logged and lets the turn end fail open.
 The mid-turn pull warning uses the model-aware supervision verdict described below, while the turn-end guard keeps the PID-strict watcher predicate.
 The guard remains a backstop; [`watcher-continuity.md`](watcher-continuity.md) owns normal continuity.
 
@@ -146,6 +150,7 @@ That warning uses `bin/fm-supervision-instructions.sh --repair-line`, so it alwa
 
 ## Regression coverage
 
+`tests/fm-standing-checks.test.sh` covers authenticated due-check cadence, durable queueing, locking, timeout bounds, and fail-open behavior.
 `tests/fm-turnend-guard.test.sh` covers the predicate, main and secondmate primary scope, child-worktree exclusion, `FM_HOME` and `FM_STATE_OVERRIDE` precedence, the live-lock and fresh-beacon guard predicate, the cooperative `--claude` claim wait, monotonic failed-epoch progression, bounded attended fail-open, post-alarm continuation suppression, positive recovery reset, Pi logical-run latching, missing-`jq` behavior, all five primary registrations, Grok native and legacy selection, typed field precedence, malformed input, and exactly-one-path safety.
 `tests/fm-guard-stale-banner.test.sh` covers the pull-guard predicate, including the persistent-model fresh-leftover-beacon negative control, the auto-arm model's healthy fresh-beacon-without-a-watcher case and stale-beacon alarm, and the extension model's live-watcher path, ownership-qualified fresh hand-off, held-lock failures, independently broken ownership signals, stale-beacon alarm, queued-wake warning, and Pi and pi-signed harness routing.
 It also covers true-reason banner wording and reason-keyed episode dedup surviving a beacon mtime change.

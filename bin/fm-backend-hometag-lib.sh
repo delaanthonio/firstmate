@@ -14,25 +14,27 @@
 #
 # fm_backend_hometag() derives a short, stable tag: a readable prefix
 # ("firstmate" for the primary home, "2ndmate-<id>" for a secondmate home
-# carrying .fm-secondmate-home) plus a short hash of the resolved FM_ROOT
-# path, so distinct installations - including multiple primaries on one
-# machine - never collide even though they share one backend-global
-# namespace. Callers source this file AFTER resolving their own
+# carrying .fm-secondmate-home) plus a short hash of the resolved FM_HOME
+# path, so distinct homes - including multiple homes sharing one checkout -
+# never collide even though they share one backend-global namespace.
+# Callers source this file AFTER resolving their own
 # FM_HOME/FM_ROOT fallbacks (both adapters already do this for their own
 # purposes before any other function runs).
 #
-# Moving/relocating a firstmate installation changes its FM_ROOT path and
+# Moving/relocating a firstmate home changes its FM_HOME path and
 # therefore its tag; titles created under the old tag simply stop matching -
 # an accepted limitation, no worse than the existing fact that a task's
 # recorded absolute worktree path does not survive a move either.
 
 FM_BACKEND_HOMETAG_SECONDMATE_MARKER=".fm-secondmate-home"
 
-fm_backend_hometag() {
-  local marker="$FM_HOME/$FM_BACKEND_HOMETAG_SECONDMATE_MARKER" id prefix root hash
+fm_backend_tag_for_paths() {
+  local hash_path=$2 marker="$1/$FM_BACKEND_HOMETAG_SECONDMATE_MARKER" id prefix resolved hash
   if [ -f "$marker" ]; then
-    id=$(tr -d '[:space:]' < "$marker" 2>/dev/null)
+    IFS= read -r id < "$marker" 2>/dev/null || return 1
+    id=${id//[[:space:]]/}
     if [ -n "$id" ]; then
+      case "$id" in *[!A-Za-z0-9._-]*) return 1 ;; esac
       prefix="2ndmate-$id"
     else
       prefix="firstmate"
@@ -40,13 +42,25 @@ fm_backend_hometag() {
   else
     prefix="firstmate"
   fi
-  root=$(cd "$FM_ROOT" 2>/dev/null && pwd -P) || root=$FM_ROOT
+  resolved=$(cd "$hash_path" 2>/dev/null && pwd -P) || resolved=$hash_path
   if command -v shasum >/dev/null 2>&1; then
-    hash=$(printf '%s' "$root" | shasum -a 256 | awk '{print substr($1,1,8)}')
+    hash=$(printf '%s' "$resolved" | shasum -a 256 | awk '{print substr($1,1,8)}')
   elif command -v sha256sum >/dev/null 2>&1; then
-    hash=$(printf '%s' "$root" | sha256sum | awk '{print substr($1,1,8)}')
+    hash=$(printf '%s' "$resolved" | sha256sum | awk '{print substr($1,1,8)}')
   else
-    hash=$(printf '%s' "$root" | cksum | awk '{printf "%08x", $1}')
+    hash=$(printf '%s' "$resolved" | cksum | awk '{printf "%08x", $1}')
   fi
   printf '%s-%s' "$prefix" "$hash"
+}
+
+fm_backend_tag_for_path() {
+  fm_backend_tag_for_paths "$1" "$1"
+}
+
+fm_backend_hometag() {
+  fm_backend_tag_for_path "$FM_HOME"
+}
+
+fm_backend_legacy_roottag() {
+  fm_backend_tag_for_paths "$FM_HOME" "$FM_ROOT"
 }

@@ -115,6 +115,9 @@ install_guard_scripts() {
   cp "$ROOT/bin/fm-primary-scope-lib.sh" "$dir/bin/fm-primary-scope-lib.sh"
   cp "$ROOT/bin/fm-supervision-lib.sh" "$dir/bin/fm-supervision-lib.sh"
   cp "$ROOT/bin/fm-wake-lib.sh" "$dir/bin/fm-wake-lib.sh"
+  cp "$ROOT/bin/fm-x-lib.sh" "$dir/bin/fm-x-lib.sh"
+  cp "$ROOT/bin/fm-pr-lib.sh" "$dir/bin/fm-pr-lib.sh"
+  cp "$ROOT/bin/fm-check-lib.sh" "$dir/bin/fm-check-lib.sh"
   cp "$ROOT/bin/fm-hook-host-lib.sh" "$dir/bin/fm-hook-host-lib.sh"
   mkdir -p "$dir/docs"
   cp -R "$ROOT/docs/supervision-protocols" "$dir/docs/supervision-protocols"
@@ -193,6 +196,16 @@ run_hook() {
   local dir=$1 stop_active=$2 home
   home=$(cd "$dir" && pwd)
   printf '{"stop_hook_active":%s}' "$stop_active" | CLAUDECODE=1 FM_HOME="$home" bash "$dir/bin/fm-turnend-guard.sh" 2>&1
+}
+
+register_check() {
+  local script=$1 state id hash
+  state=${script%/*}
+  id=$(basename "$script" .check.sh)
+  chmod 700 "$script"
+  hash=$(shasum -a 256 "$script" | awk '{print $1}') || fail "could not hash custom check fixture"
+  printf 'fm-custom-check-v1\n%s\n' "$hash" > "$state/$id.check-trust"
+  chmod 600 "$state/$id.check-trust"
 }
 
 nonexistent_pid() {
@@ -392,6 +405,7 @@ test_hook_x_mode_only_blocks_in_default_mode() {
   local dir out status
   dir=$(make_primary_dir "$TMP_ROOT/hook-x-mode-only")
   : > "$dir/state/x-watch.check.sh"
+  touch "$dir/state/.last-check"
   out=$(run_hook "$dir" false); status=$?
   expect_code 2 "$status" "default hook mode must block an X-mode-only blind turn"
   assert_contains "$out" "X-mode relay polling needs supervision" "X-mode-only blind stop must identify its supervision need"
@@ -431,6 +445,60 @@ test_hook_loop_guard_allows_retry() {
   expect_code 0 "$status" "hook must allow the stop when stop_hook_active is already true"
   [ -z "$out" ] || fail "hook produced output on the loop-guarded retry: $out"
   pass "fm-turnend-guard: stop_hook_active=true always allows the stop (never blocks twice in one turn)"
+}
+
+test_hook_blocks_once_for_due_actionable_check() {
+  local dir out status queue
+  dir=$(make_primary_dir "$TMP_ROOT/hook-check-wake")
+  cat > "$dir/state/merge.check.sh" <<'SH'
+#!/usr/bin/env bash
+printf 'merged PR 123\n'
+SH
+  register_check "$dir/state/merge.check.sh"
+  out=$(run_hook "$dir" false); status=$?
+  expect_code 2 "$status" "hook must block when a due check prints an actionable line"
+  assert_contains "$out" "TURN WOULD END WITH A DUE CHECK WAKE" "check block banner must name the due check wake"
+  assert_contains "$out" "merged PR 123" "check block banner must include the actionable check output"
+  queue=$(cat "$dir/state/.wake-queue")
+  assert_contains "$queue" "check" "hook must durably queue a check wake before blocking"
+  assert_contains "$queue" "merge.check.sh: merged PR 123" "queued check wake must include the actionable output"
+  out=$(run_hook "$dir" true); status=$?
+  expect_code 0 "$status" "stop_hook_active retry must allow stop after a check block"
+  [ -z "$out" ] || fail "hook produced output on check loop-guard retry: $out"
+  pass "fm-turnend-guard: due actionable check queues a wake and blocks only once"
+}
+
+test_hook_runs_due_check_in_secondmate_home() {
+  local dir out status
+  dir=$(make_secondmate_dir "$TMP_ROOT/hook-check-secondmate")
+  cat > "$dir/state/merge.check.sh" <<'SH'
+#!/usr/bin/env bash
+printf 'secondmate merge ready\n'
+SH
+  register_check "$dir/state/merge.check.sh"
+  out=$(run_hook "$dir" false); status=$?
+  expect_code 2 "$status" "a secondmate primary must run and block on its own due checks"
+  assert_contains "$out" "secondmate merge ready" "secondmate due-check banner must include its actionable output"
+  pass "fm-turnend-guard: secondmate primary runs the shared due-check backstop"
+}
+
+test_hook_does_not_run_check_in_child_worktree() {
+  local base dir count out status
+  base="$TMP_ROOT/hook-check-child-base"
+  dir="$TMP_ROOT/hook-check-child-wt"
+  make_crewmate_worktree_dir "$base" "$dir" >/dev/null
+  count="$dir/state/count"
+  cat > "$dir/state/merge.check.sh" <<SH
+#!/usr/bin/env bash
+printf '1\n' > "$count"
+printf 'merged\n'
+SH
+  register_check "$dir/state/merge.check.sh"
+  out=$(run_hook "$dir" false); status=$?
+  expect_code 0 "$status" "hook must skip checks inside child task worktrees"
+  [ -z "$out" ] || fail "hook produced output inside a child worktree: $out"
+  assert_absent "$count" "hook should not execute checks in a child worktree"
+  pass "fm-turnend-guard: standing checks stay scoped out of child task worktrees"
 }
 
 # A secondmate's OWN home runs a primary firstmate session and must be guarded
@@ -1168,6 +1236,7 @@ test_hook_claude_mode_reblocks_x_mode_without_tasks() {
   local dir out status
   dir=$(make_primary_dir "$TMP_ROOT/hook-claude-x-mode")
   : > "$dir/state/x-watch.check.sh"
+  touch "$dir/state/.last-check"
   out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 run_hook_claude "$dir" true); status=$?
   expect_code 2 "$status" "--claude mode must re-block an X-mode-only stop when no auto-arm claims recovery"
   assert_contains "$out" "X-mode relay polling needs supervision" "--claude X-mode re-block must name the active supervision need"
@@ -1622,6 +1691,9 @@ test_hook_x_mode_only_blocks_in_default_mode
 test_hook_ignores_repo_state_when_fm_home_set
 test_hook_uses_state_override
 test_hook_loop_guard_allows_retry
+test_hook_blocks_once_for_due_actionable_check
+test_hook_runs_due_check_in_secondmate_home
+test_hook_does_not_run_check_in_child_worktree
 test_hook_blocks_in_secondmate_own_home
 test_hook_silent_in_idle_secondmate_home
 test_hook_secondmate_loop_guard_allows_retry

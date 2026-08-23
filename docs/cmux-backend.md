@@ -67,9 +67,10 @@ The spawn refusal explains how to finish cmux setup or opt back into tmux.
 
 Each task owns one cmux workspace with one surface.
 The caller-facing label remains `fm-<id>`, while the visible workspace title is `fm-<home-label>-<id>`.
-The home label is `firstmate` or `2ndmate-<id>` plus a stable short hash of the resolved Firstmate root.
+The home label is `firstmate` or `2ndmate-<id>` plus a stable short hash of the resolved `FM_HOME` path.
 cmux does not enforce title uniqueness, so create, recovery, list, and cleanup paths all validate this scoped title.
-Relocating the Firstmate installation changes the hash and leaves old titles unmatched, consistent with recorded worktree paths also becoming stale.
+Creation refuses duplicate scoped titles across every cmux window, while a private pending record lets a retry adopt the one workspace created by its own earlier interrupted attempt.
+Relocating the Firstmate home changes the hash and leaves old titles unmatched, consistent with recorded worktree paths also becoming stale.
 
 ```text
 backend=cmux
@@ -103,6 +104,7 @@ Cleanup owns the whole workspace and uses `close-workspace`.
 cmux also refuses to remove the only workspace in a macOS window while returning a misleading success response.
 When the task is last in its window, Firstmate creates one unfocused unnamed sibling workspace in that same window, closes the task workspace, and leaves the window with cmux's fresh default workspace.
 The sibling never carries an `fm-` title and is ignored by recovery.
+Teardown retains endpoint records, processes, worktrees, and temporary runtime state unless the recorded workspace id and every matching current or legacy title are confirmed gone across all cmux windows.
 
 The exact window membership is re-read before this operation.
 A selected workspace that is not last closes normally; selection itself is not the trigger.
@@ -119,7 +121,7 @@ Real tests share the captain's running app rather than creating an isolated cmux
 - There is no native busy or push-event signal.
 - A target can disappear after structural readiness and before the operation.
 - The only-workspace cleanup path leaves a fresh default workspace and cannot close the window.
-- Label lookup and recovery are currently scoped to the current cmux window, so a task moved to a non-current window is a known recovery blind spot.
+- Metadata-routed label lookup, duplicate detection, and closure confirmation scan every cmux window, while bulk orphan discovery remains scoped to the current window.
 - Workspace ids do not survive app relaunch and are never recovery authority.
 
 ## Regression entry points

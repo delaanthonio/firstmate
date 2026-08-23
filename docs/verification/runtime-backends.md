@@ -590,7 +590,7 @@ The dedicated Herdr daemon workspace topology is covered by `tests/fm-afk-launch
 
 ## Zellij
 
-The current compatibility floor and latest verification are Zellij 0.44.0 with `jq` on macOS aarch64.
+The compatibility floor is Zellij 0.44.0, and the latest verification used Zellij 0.44.3 with `jq` on macOS aarch64 on 2026-08-22.
 All real tests use a uniquely named session and `tests/zellij-test-safety.sh`; they never touch a session named `firstmate` or call all-session deletion.
 
 | Guarantee | Command shape | Result |
@@ -605,6 +605,11 @@ All real tests use a uniquely named session and `tests/zellij-test-safety.sh`; t
 | Styled capture | `dump-screen --pane-id <id> --ansi` | Preserved ANSI styling ("Composer classification matrix" above); feeds the zellij composer classifier. |
 | Close | `close-tab-by-id <id>` | Removed the live task pane and tab together. |
 | Failure exit | actions against missing targets | Returned exit 0, requiring structural preflight and output-shape validation. |
+
+Running `tests/fm-backend-zellij-smoke.test.sh` on Zellij 0.44.3 also reproduced an intermittent disappearance of its isolated `attach --create-background` session.
+The failure occurred in the smoke prefix that is byte-identical to `origin/main`, before this branch's deterministic delete-and-recover case, while `bin/backends/zellij.sh` had no functional delta from main on that path.
+It is therefore baseline headless-session lifecycle or harness flakiness rather than a regression introduced by the multi-backend branch.
+The smoke remains enabled and fail-closed; the added lifecycle case proves the production boundary that a new spawn calls `container_ensure` before `create_task`, with the existing 10-second bounded readiness poll, instead of hiding the baseline failure with a skip.
 
 `pane_cwd` stayed frozen when a foreground subshell changed directory.
 The marker-delimited `pwd` probe returned the live nested cwd and is covered by the real smoke.

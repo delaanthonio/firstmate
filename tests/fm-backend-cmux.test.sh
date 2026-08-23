@@ -105,10 +105,10 @@ cmux_read_screen_response() {  # <dir> <n> <text>
   jq -n --arg t "$3" '{text:$t}' > "$1/responses/$2.out"
 }
 
-cmux_expected_root_hash() {  # <root>
-  local root real
-  root=$1
-  real=$(cd "$root" && pwd -P) || return 1
+cmux_expected_home_hash() {  # <home>
+  local home real
+  home=$1
+  real=$(cd "$home" && pwd -P) || return 1
   if command -v shasum >/dev/null 2>&1; then
     printf '%s' "$real" | shasum -a 256 | awk '{print substr($1,1,8)}'
   elif command -v sha256sum >/dev/null 2>&1; then
@@ -119,7 +119,7 @@ cmux_expected_root_hash() {  # <root>
 }
 
 cmux_expected_home_label() {  # [home] [root]
-  local home=${1:-$ROOT} root=${2:-$ROOT} marker id prefix
+  local home=${1:-$ROOT} root=${2:-${1:-$ROOT}} marker id prefix
   marker="$home/.fm-secondmate-home"
   if [ -f "$marker" ]; then
     id=$(tr -d '[:space:]' < "$marker" 2>/dev/null)
@@ -131,11 +131,11 @@ cmux_expected_home_label() {  # [home] [root]
   else
     prefix="firstmate"
   fi
-  printf '%s-%s' "$prefix" "$(cmux_expected_root_hash "$root")"
+  printf '%s-%s' "$prefix" "$(cmux_expected_home_hash "$root")"
 }
 
 cmux_expected_scoped_title() {  # <fm-task-label> [home] [root]
-  local label=$1 home=${2:-$ROOT} root=${3:-$ROOT} rest
+  local label=$1 home=${2:-$ROOT} root=${3:-${2:-$ROOT}} rest
   case "$label" in
     fm-*) rest=${label#fm-} ;;
     *) rest=$label ;;
@@ -282,7 +282,7 @@ test_scoped_title_uses_primary_home_label() {
   expected=$(cmux_expected_scoped_title fm-task1 "$dir")
   out=$( FM_HOME="$dir" bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_scoped_title fm-task1' "$ROOT" )
   [ "$out" = "$expected" ] || fail "primary scoped title should be $expected, got '$out'"
-  pass "fm_backend_cmux_scoped_title: scopes a primary task title with firstmate plus root hash"
+  pass "fm_backend_cmux_scoped_title: scopes a primary task title with firstmate plus home hash"
 }
 
 test_scoped_title_uses_secondmate_home_label() {
@@ -292,21 +292,31 @@ test_scoped_title_uses_secondmate_home_label() {
   expected=$(cmux_expected_scoped_title fm-task1 "$dir")
   out=$( FM_HOME="$dir" bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_scoped_title fm-task1' "$ROOT" )
   [ "$out" = "$expected" ] || fail "secondmate scoped title should be $expected, got '$out'"
-  pass "fm_backend_cmux_scoped_title: scopes a secondmate task title with the home marker plus root hash"
+  pass "fm_backend_cmux_scoped_title: scopes a secondmate task title with the home marker plus home hash"
 }
 
-test_scoped_title_changes_with_root_path() {
-  local dir home root_one root_two out_one out_two expected_one expected_two
-  dir="$TMP_ROOT/scoped-title-root-hash"; home="$dir/home"; root_one="$dir/root-one"; root_two="$dir/root-two"
-  mkdir -p "$home" "$root_one" "$root_two"
-  expected_one=$(cmux_expected_scoped_title fm-task1 "$home" "$root_one")
-  expected_two=$(cmux_expected_scoped_title fm-task1 "$home" "$root_two")
-  out_one=$( FM_HOME="$home" FM_ROOT_OVERRIDE="$root_one" bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_scoped_title fm-task1' "$ROOT" )
-  out_two=$( FM_HOME="$home" FM_ROOT_OVERRIDE="$root_two" bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_scoped_title fm-task1' "$ROOT" )
-  [ "$out_one" = "$expected_one" ] || fail "scoped title should include root-one hash as $expected_one, got '$out_one'"
-  [ "$out_two" = "$expected_two" ] || fail "scoped title should include root-two hash as $expected_two, got '$out_two'"
-  [ "$out_one" != "$out_two" ] || fail "scoped titles should differ for distinct FM_ROOT paths"
-  pass "fm_backend_cmux_scoped_title: includes the resolved FM_ROOT hash in the home label"
+test_scoped_title_normalizes_secondmate_marker_whitespace() {
+  local dir out expected
+  dir="$TMP_ROOT/scoped-title-secondmate-whitespace"; mkdir -p "$dir"
+  printf ' sm-one \nignored\n' > "$dir/.fm-secondmate-home"
+  expected="fm-2ndmate-sm-one-$(cmux_expected_home_hash "$dir")-task1"
+  out=$( FM_HOME="$dir" bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_scoped_title fm-task1' "$ROOT" )
+  [ "$out" = "$expected" ] || fail "secondmate scoped title should normalize marker whitespace to $expected, got '$out'"
+  pass "fm_backend_cmux_scoped_title: normalizes the first marker line before validation"
+}
+
+test_scoped_title_changes_with_home_path() {
+  local dir checkout home_one home_two out_one out_two expected_one expected_two
+  dir="$TMP_ROOT/scoped-title-home-hash"; checkout="$dir/shared-checkout"; home_one="$dir/home-one"; home_two="$dir/home-two"
+  mkdir -p "$checkout" "$home_one" "$home_two"
+  expected_one=$(cmux_expected_scoped_title fm-task1 "$home_one")
+  expected_two=$(cmux_expected_scoped_title fm-task1 "$home_two")
+  out_one=$( FM_HOME="$home_one" FM_ROOT_OVERRIDE="$checkout" bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_scoped_title fm-task1' "$ROOT" )
+  out_two=$( FM_HOME="$home_two" FM_ROOT_OVERRIDE="$checkout" bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_scoped_title fm-task1' "$ROOT" )
+  [ "$out_one" = "$expected_one" ] || fail "scoped title should include home-one hash as $expected_one, got '$out_one'"
+  [ "$out_two" = "$expected_two" ] || fail "scoped title should include home-two hash as $expected_two, got '$out_two'"
+  [ "$out_one" != "$out_two" ] || fail "scoped titles should differ for distinct FM_HOME paths sharing a checkout"
+  pass "fm_backend_cmux_scoped_title: includes the resolved FM_HOME hash in the home label"
 }
 
 # --- dispatch wiring (fm-backend.sh) ------------------------------------------
@@ -463,29 +473,30 @@ test_create_task_refuses_duplicate_label() {
   local dir fb out status title
   dir="$TMP_ROOT/dup-task"; mkdir -p "$dir/responses"
   title=$(cmux_expected_scoped_title fm-dup1)
-  cmux_workspace_list_response "$dir" 1 "aaaaaaaa-0000-0000-0000-000000000000" "$title"
+  cmux_windows_response "$dir" 1 "e1111111-0000-0000-0000-000000000000" 1 "e2222222-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 2 "ffffffff-0000-0000-0000-000000000000" "other"
+  cmux_workspace_list_response "$dir" 3 "aaaaaaaa-0000-0000-0000-000000000000" "$title"
   fb=$(make_cmux_fakebin "$dir")
-  out=$( PATH="$fb:$PATH" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
+  out=$( PATH="$fb:$PATH" FM_STATE_OVERRIDE="$dir/state" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
     bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_create_task fm-dup1 /tmp/proj' "$ROOT" 2>&1 )
   status=$?
   [ "$status" -ne 0 ] || fail "create_task should refuse an existing workspace title (cmux itself does not enforce uniqueness)"
   assert_contains "$out" "already exists" "create_task did not report the duplicate name"
-  pass "fm_backend_cmux_create_task: refuses a duplicate workspace title (cmux's own new-workspace has no uniqueness check)"
+  assert_not_contains "$(cat "$dir/log")" $'\x1f''new-workspace' \
+    "create_task created a duplicate whose title existed in another window"
+  pass "fm_backend_cmux_create_task: refuses duplicate workspace titles across windows"
 }
 
 test_create_task_creates_and_parses_ids() {
-  local dir fb out title
+  local dir fb out title list_windows_count
   dir="$TMP_ROOT/create-task"; mkdir -p "$dir/responses"
   title=$(cmux_expected_scoped_title fm-newtask)
-  # 1: workspace list --json (pre-create duplicate check) -> no match
-  printf '{"workspaces":[]}' > "$dir/responses/1.out"
-  # 2: new-workspace (silent on success)
-  # 3: workspace list --json (post-create id resolution) -> match
-  cmux_workspace_list_response "$dir" 3 "bbbbbbbb-1111-1111-1111-111111111111" "$title"
-  # 4: list-panes --json --id-format uuids -> default surface id
-  cmux_panes_response "$dir" 4 "cccccccc-2222-2222-2222-222222222222"
+  cmux_windows_response "$dir" 1 "e1111111-0000-0000-0000-000000000000" 1
+  printf '{"workspaces":[]}' > "$dir/responses/2.out"
+  cmux_workspace_list_response "$dir" 4 "bbbbbbbb-1111-1111-1111-111111111111" "$title"
+  cmux_panes_response "$dir" 5 "cccccccc-2222-2222-2222-222222222222"
   fb=$(make_cmux_fakebin "$dir")
-  out=$( PATH="$fb:$PATH" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
+  out=$( PATH="$fb:$PATH" FM_STATE_OVERRIDE="$dir/state" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
     bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_create_task fm-newtask /tmp/proj' "$ROOT" )
   [ "$out" = "bbbbbbbb-1111-1111-1111-111111111111 cccccccc-2222-2222-2222-222222222222" ] \
     || fail "create_task should echo '<workspace_id> <surface_id>', got '$out'"
@@ -493,7 +504,64 @@ test_create_task_creates_and_parses_ids() {
     "create_task did not call new-workspace with the right name/cwd"
   assert_contains "$(cat "$dir/log")" $'\x1f''--focus'$'\x1f''false' \
     "create_task did not pass --focus false"
+  list_windows_count=$(grep -c $'\x1f''list-windows' "$dir/log" || true)
+  [ "$list_windows_count" = 1 ] || fail "create_task should not rescan unrelated windows after successful creation"
+  [ ! -e "$dir/state/.cmux-create-fm-newtask.pending" ] || fail "create_task left its recovery record after publishing the endpoint"
   pass "fm_backend_cmux_create_task: creates a workspace and parses workspace_id/surface_id from list responses"
+}
+
+test_create_task_recovers_after_post_create_lookup_failure() {
+  local dir fb out status title log new_workspace_count
+  dir="$TMP_ROOT/create-task-recovery"; mkdir -p "$dir/responses"
+  title=$(cmux_expected_scoped_title fm-recover)
+  cmux_windows_response "$dir" 1 "e1111111-0000-0000-0000-000000000000" 1
+  printf '{"workspaces":[]}' > "$dir/responses/2.out"
+  cmux_windows_response "$dir" 5 "e1111111-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 6 "bbbbbbbb-1111-1111-1111-111111111111" "$title"
+  cmux_panes_response "$dir" 7 "cccccccc-2222-2222-2222-222222222222"
+  fb=$(make_cmux_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_STATE_OVERRIDE="$dir/state" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
+    bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_create_task fm-recover /tmp/proj' "$ROOT" 2>&1 )
+  status=$?
+  [ "$status" -ne 0 ] || fail "create_task should report a failed post-create workspace lookup"
+  [ -f "$dir/state/.cmux-create-fm-recover.pending" ] || fail "create_task did not retain a durable recovery record"
+  out=$( PATH="$fb:$PATH" FM_STATE_OVERRIDE="$dir/state" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
+    bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_create_task fm-recover /tmp/proj' "$ROOT" )
+  [ "$out" = "bbbbbbbb-1111-1111-1111-111111111111 cccccccc-2222-2222-2222-222222222222" ] \
+    || fail "create_task should recover its recorded workspace, got '$out'"
+  [ ! -e "$dir/state/.cmux-create-fm-recover.pending" ] || fail "create_task retained its recovery record after adoption"
+  log=$(cat "$dir/log")
+  new_workspace_count=$(grep -c $'\x1f''new-workspace' "$dir/log" || true)
+  [ "$new_workspace_count" = 1 ] || fail "create_task created a second workspace instead of recovering the recorded one"
+  assert_contains "$log" $'\x1f''list-panes'$'\x1f''--workspace'$'\x1f''bbbbbbbb-1111-1111-1111-111111111111' \
+    "create_task did not resolve the recovered workspace surface"
+  pass "fm_backend_cmux_create_task: durably recovers a workspace after post-create lookup failure"
+}
+
+test_create_task_recovers_after_uncertain_create_error() {
+  local dir fb out status title new_workspace_count
+  dir="$TMP_ROOT/create-task-error-recovery"; mkdir -p "$dir/responses"
+  title=$(cmux_expected_scoped_title fm-error-recover)
+  cmux_windows_response "$dir" 1 "e1111111-0000-0000-0000-000000000000" 1
+  printf '{"workspaces":[]}' > "$dir/responses/2.out"
+  printf '1\n' > "$dir/responses/3.exit"
+  cmux_windows_response "$dir" 4 "e1111111-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 5 "bbbbbbbb-1111-1111-1111-111111111111" "$title"
+  cmux_panes_response "$dir" 6 "cccccccc-2222-2222-2222-222222222222"
+  fb=$(make_cmux_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_STATE_OVERRIDE="$dir/state" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
+    bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_create_task fm-error-recover /tmp/proj' "$ROOT" 2>&1 )
+  status=$?
+  [ "$status" -ne 0 ] || fail "create_task should report the uncertain create error"
+  [ -f "$dir/state/.cmux-create-fm-error-recover.pending" ] || fail "create_task discarded recovery ownership after an uncertain create error"
+  out=$( PATH="$fb:$PATH" FM_STATE_OVERRIDE="$dir/state" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
+    bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_create_task fm-error-recover /tmp/proj' "$ROOT" )
+  [ "$out" = "bbbbbbbb-1111-1111-1111-111111111111 cccccccc-2222-2222-2222-222222222222" ] \
+    || fail "create_task should recover a workspace committed before the create error, got '$out'"
+  [ ! -e "$dir/state/.cmux-create-fm-error-recover.pending" ] || fail "create_task retained its recovery record after error recovery"
+  new_workspace_count=$(grep -c $'\x1f''new-workspace' "$dir/log" || true)
+  [ "$new_workspace_count" = 1 ] || fail "create_task retried creation instead of recovering the uncertain commit"
+  pass "fm_backend_cmux_create_task: recovers a workspace committed before a create error"
 }
 
 # --- target_ready / capture ---------------------------------------------------
@@ -539,6 +607,58 @@ test_target_ready_rejects_label_mismatch() {
   assert_not_contains "$(cat "$dir/log")" $'\x1f''list-panes' \
     "target_ready should not call list-panes after a label mismatch"
   pass "fm_backend_cmux_target_ready: rejects a workspace id reused under a different title"
+}
+
+test_target_ready_accepts_exact_legacy_root_tag() {
+  local dir home checkout fb legacy_title
+  dir="$TMP_ROOT/ready-legacy-root-tag"; home="$dir/home"; checkout="$dir/checkout"
+  mkdir -p "$dir/responses" "$home" "$checkout"
+  legacy_title=$(FM_HOME="$home" FM_ROOT_OVERRIDE="$checkout" bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_legacy_scoped_title fm-label' "$ROOT")
+  cmux_workspace_list_response "$dir" 1 "aaaaaaaa-0000-0000-0000-000000000000" "$legacy_title"
+  cmux_panes_response "$dir" 2 "bbbbbbbb-1111-1111-1111-111111111111"
+  fb=$(make_cmux_fakebin "$dir")
+  PATH="$fb:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$checkout" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
+    bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_target_ready "aaaaaaaa-0000-0000-0000-000000000000:bbbbbbbb-1111-1111-1111-111111111111" fm-label' "$ROOT"
+  expect_code 0 $? "target_ready should accept the exact root-tagged workspace from the prior release"
+  pass "fm_backend_cmux_target_ready: accepts an exact legacy root-tagged workspace"
+}
+
+test_target_ready_refuses_different_legacy_workspace_id() {
+  local dir home checkout fb legacy_title status
+  dir="$TMP_ROOT/ready-ambiguous-legacy-root-tag"; home="$dir/home"; checkout="$dir/checkout"
+  mkdir -p "$dir/responses" "$home" "$checkout"
+  legacy_title=$(FM_HOME="$home" FM_ROOT_OVERRIDE="$checkout" bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_legacy_scoped_title fm-label' "$ROOT")
+  cmux_workspace_list_response "$dir" 1 "cccccccc-2222-2222-2222-222222222222" "$legacy_title"
+  cmux_windows_response "$dir" 2 "e1111111-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 3 "cccccccc-2222-2222-2222-222222222222" "$legacy_title"
+  cmux_windows_response "$dir" 4 "e1111111-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 5 "cccccccc-2222-2222-2222-222222222222" "$legacy_title"
+  fb=$(make_cmux_fakebin "$dir")
+  PATH="$fb:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$checkout" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
+    bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_target_ready "aaaaaaaa-0000-0000-0000-000000000000:bbbbbbbb-1111-1111-1111-111111111111" fm-label' "$ROOT"
+  status=$?
+  [ "$status" -ne 0 ] || fail "target_ready should refuse a different workspace with the same legacy title"
+  assert_not_contains "$(cat "$dir/log")" $'\x1f''list-panes' \
+    "target_ready should not inspect another home's legacy workspace surfaces"
+  pass "fm_backend_cmux_target_ready: refuses cross-home legacy workspace adoption"
+}
+
+test_target_ready_recovers_current_title_across_windows() {
+  local dir fb title
+  dir="$TMP_ROOT/ready-current-title-other-window"; mkdir -p "$dir/responses"
+  title=$(cmux_expected_scoped_title fm-label)
+  cmux_workspace_list_response "$dir" 1 "dddddddd-3333-3333-3333-333333333333" "other"
+  cmux_windows_response "$dir" 2 "e1111111-0000-0000-0000-000000000000" 1 "e2222222-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 3 "aaaaaaaa-0000-0000-0000-000000000000" "$title"
+  cmux_workspace_list_response "$dir" 4 "dddddddd-3333-3333-3333-333333333333" "other"
+  cmux_panes_response "$dir" 5 "bbbbbbbb-1111-1111-1111-111111111111"
+  fb=$(make_cmux_fakebin "$dir")
+  PATH="$fb:$PATH" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
+    bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_target_ready "ffffffff-4444-4444-4444-444444444444:eeeeeeee-5555-5555-5555-555555555555" fm-label' "$ROOT"
+  expect_code 0 $? "target_ready should recover a current title from a non-current window"
+  assert_contains "$(cat "$dir/log")" $'\x1f''--window'$'\x1f''e1111111-0000-0000-0000-000000000000' \
+    "target_ready did not scan the task's non-current window"
+  pass "fm_backend_cmux_target_ready: recovers current titles across windows"
 }
 
 test_capture_trims_locally() {
@@ -610,8 +730,9 @@ test_send_key_recovers_stale_target_by_label() {
   dir="$TMP_ROOT/sendkey-stale-target"; mkdir -p "$dir/responses"
   title=$(cmux_expected_scoped_title fm-label)
   cmux_workspace_list_response "$dir" 1 "cccccccc-2222-2222-2222-222222222222" "$title"
-  cmux_workspace_list_response "$dir" 2 "cccccccc-2222-2222-2222-222222222222" "$title"
-  cmux_panes_response "$dir" 3 "dddddddd-3333-3333-3333-333333333333"
+  cmux_windows_response "$dir" 2 "eeeeeeee-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 3 "cccccccc-2222-2222-2222-222222222222" "$title"
+  cmux_panes_response "$dir" 4 "dddddddd-3333-3333-3333-333333333333"
   fb=$(make_cmux_fakebin "$dir")
   PATH="$fb:$PATH" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
     bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_send_key "aaaaaaaa-0000-0000-0000-000000000000:bbbbbbbb-1111-1111-1111-111111111111" Enter fm-label' "$ROOT"
@@ -1042,14 +1163,15 @@ test_kill_recovers_stale_target_by_label() {
   local dir fb title
   dir="$TMP_ROOT/kill-stale-target"; mkdir -p "$dir/responses"
   title=$(cmux_expected_scoped_title fm-label)
-  # target_ready label recovery: 1 workspace list (title lookup, misses stale id),
-  # 2 workspace list (id-for-label -> refreshed id), 3 list-panes (surface id).
+  # target_ready label recovery: 1 current workspace list misses the stale id,
+  # then 2 list-windows, 3 window-scoped workspace list, and 4 list-panes.
   cmux_workspace_list_response "$dir" 1 "cccccccc-2222-2222-2222-222222222222" "$title"
-  cmux_workspace_list_response "$dir" 2 "cccccccc-2222-2222-2222-222222222222" "$title"
-  cmux_panes_response "$dir" 3 "dddddddd-3333-3333-3333-333333333333"
-  # window_of_workspace on the REFRESHED id: 4 list-windows (not last), 5 workspace list --window.
-  cmux_windows_response "$dir" 4 "eeeeeeee-0000-0000-0000-000000000000" 2
-  cmux_workspace_list_response "$dir" 5 "cccccccc-2222-2222-2222-222222222222" "$title" "ffffffff-0000-0000-0000-000000000000" "other"
+  cmux_windows_response "$dir" 2 "eeeeeeee-0000-0000-0000-000000000000" 2
+  cmux_workspace_list_response "$dir" 3 "cccccccc-2222-2222-2222-222222222222" "$title" "ffffffff-0000-0000-0000-000000000000" "other"
+  cmux_panes_response "$dir" 4 "dddddddd-3333-3333-3333-333333333333"
+  # window_of_workspace on the refreshed id: 5 list-windows, 6 workspace list.
+  cmux_windows_response "$dir" 5 "eeeeeeee-0000-0000-0000-000000000000" 2
+  cmux_workspace_list_response "$dir" 6 "cccccccc-2222-2222-2222-222222222222" "$title" "ffffffff-0000-0000-0000-000000000000" "other"
   fb=$(make_cmux_fakebin "$dir")
   PATH="$fb:$PATH" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
     bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_kill "aaaaaaaa-0000-0000-0000-000000000000:bbbbbbbb-1111-1111-1111-111111111111" "" fm-label' "$ROOT"
@@ -1063,14 +1185,43 @@ test_kill_recovers_stale_target_by_label() {
   pass "fm_backend_cmux_kill: recovers stale workspace/surface ids by expected label"
 }
 
+test_endpoint_confirmation_refuses_renamed_recorded_workspace() {
+  local dir fb status recorded
+  dir="$TMP_ROOT/confirmed-gone-recorded-live"; mkdir -p "$dir/responses"
+  recorded=aaaaaaaa-0000-0000-0000-000000000000
+  cmux_windows_response "$dir" 1 eeeeeeee-0000-0000-0000-000000000000 1
+  cmux_workspace_list_response "$dir" 2 "$recorded" renamed-outside-firstmate
+  fb=$(make_cmux_fakebin "$dir")
+  PATH="$fb:$PATH" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
+    bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_endpoint_confirmed_gone "aaaaaaaa-0000-0000-0000-000000000000:bbbbbbbb-1111-1111-1111-111111111111" fm-task' "$ROOT"
+  status=$?
+  [ "$status" -ne 0 ] || fail "endpoint confirmation accepted a renamed live recorded workspace"
+  pass "fm_backend_cmux_endpoint_confirmed_gone: refuses a renamed live recorded workspace"
+}
+
+test_endpoint_confirmation_accepts_absent_recorded_workspace_and_titles() {
+  local dir fb title
+  dir="$TMP_ROOT/confirmed-gone-absent"; mkdir -p "$dir/responses"
+  title=$(cmux_expected_scoped_title fm-task)
+  cmux_windows_response "$dir" 1 eeeeeeee-0000-0000-0000-000000000000 1
+  cmux_workspace_list_response "$dir" 2 ffffffff-0000-0000-0000-000000000000 other
+  cmux_windows_response "$dir" 3 eeeeeeee-0000-0000-0000-000000000000 1
+  cmux_workspace_list_response "$dir" 4 ffffffff-0000-0000-0000-000000000000 other
+  fb=$(make_cmux_fakebin "$dir")
+  PATH="$fb:$PATH" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
+    bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_endpoint_confirmed_gone "aaaaaaaa-0000-0000-0000-000000000000:bbbbbbbb-1111-1111-1111-111111111111" fm-task' "$ROOT"
+  expect_code 0 $? "endpoint confirmation should accept an absent recorded workspace when no current or legacy title remains ($title)"
+  pass "fm_backend_cmux_endpoint_confirmed_gone: confirms exact UUID and title absence"
+}
+
 # --- list_live: label-based orphan discovery ---------------------------------
 
 test_list_live_filters_by_title_prefix() {
-  local dir fb out title other_title other_root
+  local dir fb out title other_title other_home
   dir="$TMP_ROOT/list-live"; mkdir -p "$dir/responses"
-  other_root="$dir/other-root"; mkdir -p "$other_root"
+  other_home="$dir/other-home"; mkdir -p "$other_home"
   title=$(cmux_expected_scoped_title fm-task1)
-  other_title=$(cmux_expected_scoped_title fm-task2 "$ROOT" "$other_root")
+  other_title=$(cmux_expected_scoped_title fm-task2 "$other_home")
   # 1: workspace list --json --id-format uuids -> one in-home task, two unrelated
   cmux_workspace_list_response "$dir" 1 \
     "aaaaaaaa-0000-0000-0000-000000000000" "$title" \
@@ -1084,6 +1235,109 @@ test_list_live_filters_by_title_prefix() {
   [ "$out" = $'aaaaaaaa-0000-0000-0000-000000000000:bbbbbbbb-1111-1111-1111-111111111111\tfm-task1' ] \
     || fail "list_live should list only the in-home task workspace with its plain label and surface id, got '$out'"
   pass "fm_backend_cmux_list_live: lists only this home's scoped task workspaces using plain fm-<id> labels"
+}
+
+test_forced_secondmate_teardown_kills_cmux_children_with_child_home_tag() {
+  local dir state data config home project fb out status child_title parent_title
+  dir="$TMP_ROOT/teardown-cmux-secondmate-child"; state="$dir/state"; data="$dir/data"; config="$dir/config"; home="$dir/secondmate-home"; project="$dir/project"
+  mkdir -p "$state" "$data" "$config" "$home/state" "$home/data" "$home/config" "$home/projects" "$project" "$dir/responses"
+  printf 'smc\n' > "$home/.fm-secondmate-home"
+  fm_write_meta "$state/smc.meta" \
+    "window=aaaaaaaa-0000-0000-0000-000000000000:bbbbbbbb-1111-1111-1111-111111111111" \
+    "endpoint_task_id=smc" \
+    "backend=cmux" \
+    "cmux_workspace_id=aaaaaaaa-0000-0000-0000-000000000000" \
+    "cmux_surface_id=bbbbbbbb-1111-1111-1111-111111111111" \
+    "worktree=$home" \
+    "project=$home" \
+    "kind=secondmate" \
+    "mode=secondmate" \
+    "home=$home"
+  fm_write_meta "$home/state/childc.meta" \
+    "window=cccccccc-2222-2222-2222-222222222222:dddddddd-3333-3333-3333-333333333333" \
+    "endpoint_task_id=childc" \
+    "backend=cmux" \
+    "cmux_workspace_id=cccccccc-2222-2222-2222-222222222222" \
+    "cmux_surface_id=dddddddd-3333-3333-3333-333333333333" \
+    "worktree=$dir/missing-child-worktree" \
+    "project=$project" \
+    "kind=scout"
+  child_title=$(cmux_expected_scoped_title fm-childc "$home" "$ROOT")
+  parent_title=$(cmux_expected_scoped_title fm-smc "$ROOT")
+  cmux_workspace_list_response "$dir" 1 "aaaaaaaa-0000-0000-0000-000000000000" "$parent_title"
+  cmux_panes_response "$dir" 2 "bbbbbbbb-1111-1111-1111-111111111111"
+  cmux_workspace_list_response "$dir" 3 "cccccccc-2222-2222-2222-222222222222" "$child_title"
+  cmux_panes_response "$dir" 4 "dddddddd-3333-3333-3333-333333333333"
+  cmux_workspace_list_response "$dir" 5 "aaaaaaaa-0000-0000-0000-000000000000" "$parent_title"
+  cmux_panes_response "$dir" 6 "bbbbbbbb-1111-1111-1111-111111111111"
+  cmux_windows_response "$dir" 7 "e2222222-0000-0000-0000-000000000000" 2
+  cmux_workspace_list_response "$dir" 8 "aaaaaaaa-0000-0000-0000-000000000000" "$parent_title" "ffffffff-5555-5555-5555-555555555555" other
+  cmux_windows_response "$dir" 10 "e2222222-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 11
+  cmux_windows_response "$dir" 12 "e2222222-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 13
+  cmux_workspace_list_response "$dir" 14 "cccccccc-2222-2222-2222-222222222222" "$child_title"
+  cmux_panes_response "$dir" 15 "dddddddd-3333-3333-3333-333333333333"
+  cmux_windows_response "$dir" 16 "e1111111-0000-0000-0000-000000000000" 2
+  cmux_workspace_list_response "$dir" 17 "cccccccc-2222-2222-2222-222222222222" "$child_title" "ffffffff-4444-4444-4444-444444444444" other
+  cmux_windows_response "$dir" 19 "e1111111-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 20
+  cmux_windows_response "$dir" 21 "e1111111-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 22
+  cmux_windows_response "$dir" 23 "e1111111-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 24
+  fb=$(make_cmux_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$data" FM_CONFIG_OVERRIDE="$config" \
+    FM_ROOT_OVERRIDE="$ROOT" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
+    "$ROOT/bin/fm-teardown.sh" smc --force 2>&1 )
+  status=$?
+  expect_code 0 "$status" "fm-teardown should force-retire a secondmate with a cmux child: $out"
+  assert_contains "$(cat "$dir/log")" $'\x1f''close-workspace'$'\x1f''--workspace'$'\x1f''cccccccc-2222-2222-2222-222222222222' \
+    "forced secondmate teardown did not close a child cmux workspace scoped to the child home"
+  pass "fm-teardown.sh: force cleanup reconstructs split-input legacy cmux child tags"
+}
+
+test_forced_secondmate_teardown_retains_unconfirmed_cmux_child() {
+  local dir state data config home project child_wt fb out status child_title parent_title
+  dir="$TMP_ROOT/teardown-cmux-unconfirmed-child"; state="$dir/state"; data="$dir/data"; config="$dir/config"; home="$dir/secondmate-home"; project="$dir/project"
+  child_wt="$dir/child-worktree"
+  mkdir -p "$state" "$data" "$config" "$home/state" "$home/data" "$home/config" "$home/projects" "$project" "$dir/responses"
+  git -C "$project" init -q
+  git -C "$project" -c user.name=test -c user.email=test@example.invalid commit -q --allow-empty -m init
+  git -C "$project" worktree add -q -b childc "$child_wt"
+  printf 'keep\n' > "$child_wt/uncommitted"
+  printf 'smc\n' > "$home/.fm-secondmate-home"
+  fm_write_meta "$state/smc.meta" "window=aaaaaaaa-0000-0000-0000-000000000000:bbbbbbbb-1111-1111-1111-111111111111" "endpoint_task_id=smc" "backend=cmux" "cmux_workspace_id=aaaaaaaa-0000-0000-0000-000000000000" "cmux_surface_id=bbbbbbbb-1111-1111-1111-111111111111" "worktree=$home" "project=$home" "kind=secondmate" "mode=secondmate" "home=$home"
+  fm_write_meta "$home/state/childc.meta" "window=cccccccc-2222-2222-2222-222222222222:dddddddd-3333-3333-3333-333333333333" "endpoint_task_id=childc" "backend=cmux" "cmux_workspace_id=cccccccc-2222-2222-2222-222222222222" "cmux_surface_id=dddddddd-3333-3333-3333-333333333333" "worktree=$child_wt" "project=$project" "kind=scout"
+  child_title=$(cmux_expected_scoped_title fm-childc "$home")
+  parent_title=$(cmux_expected_scoped_title fm-smc "$ROOT")
+  cmux_workspace_list_response "$dir" 1 "aaaaaaaa-0000-0000-0000-000000000000" "$parent_title"
+  cmux_panes_response "$dir" 2 "bbbbbbbb-1111-1111-1111-111111111111"
+  cmux_workspace_list_response "$dir" 3 "cccccccc-2222-2222-2222-222222222222" "$child_title"
+  cmux_panes_response "$dir" 4 "dddddddd-3333-3333-3333-333333333333"
+  cmux_workspace_list_response "$dir" 5 "aaaaaaaa-0000-0000-0000-000000000000" "$parent_title"
+  cmux_panes_response "$dir" 6 "bbbbbbbb-1111-1111-1111-111111111111"
+  cmux_windows_response "$dir" 7 "e2222222-0000-0000-0000-000000000000" 2
+  cmux_workspace_list_response "$dir" 8 "aaaaaaaa-0000-0000-0000-000000000000" "$parent_title" "ffffffff-5555-5555-5555-555555555555" other
+  cmux_windows_response "$dir" 10 "e2222222-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 11
+  cmux_windows_response "$dir" 12 "e2222222-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 13
+  cmux_workspace_list_response "$dir" 14 "cccccccc-2222-2222-2222-222222222222" "$child_title"
+  cmux_panes_response "$dir" 15 "dddddddd-3333-3333-3333-333333333333"
+  cmux_windows_response "$dir" 16 "e1111111-0000-0000-0000-000000000000" 2
+  cmux_workspace_list_response "$dir" 17 "cccccccc-2222-2222-2222-222222222222" "$child_title" "ffffffff-4444-4444-4444-444444444444" other
+  cmux_windows_response "$dir" 19 "e1111111-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 20 "cccccccc-2222-2222-2222-222222222222" "$child_title"
+  fb=$(make_cmux_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$data" FM_CONFIG_OVERRIDE="$config" FM_ROOT_OVERRIDE="$ROOT" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" "$ROOT/bin/fm-teardown.sh" smc --force 2>&1 )
+  status=$?
+  [ "$status" -ne 0 ] || fail "forced teardown should refuse an unconfirmed cmux child close"
+  [ -f "$home/state/childc.meta" ] || fail "forced teardown removed an unconfirmed cmux child's metadata"
+  [ -f "$child_wt/uncommitted" ] || fail "forced teardown removed an unconfirmed cmux child's worktree"
+  [ -d "$home" ] || fail "forced teardown removed the home containing an unconfirmed cmux child"
+  assert_contains "$out" "not confirmed gone" "forced teardown did not explain the retained cmux child"
+  pass "fm-teardown.sh: retains child lifecycle records until cmux closure is confirmed"
 }
 
 # --- fm-spawn.sh: --secondmate refuses backend=cmux --------------------------
@@ -1116,7 +1370,8 @@ test_parse_target
 test_normalize_key
 test_scoped_title_uses_primary_home_label
 test_scoped_title_uses_secondmate_home_label
-test_scoped_title_changes_with_root_path
+test_scoped_title_normalizes_secondmate_marker_whitespace
+test_scoped_title_changes_with_home_path
 test_dispatch_routes_cmux_backend
 test_dispatch_busy_state_unknown_for_cmux
 test_dispatch_composer_state_routes_cmux
@@ -1130,9 +1385,14 @@ test_ensure_running_fails_fast_on_denied_without_launching
 test_ensure_running_fails_fast_on_unauth_without_launching
 test_create_task_refuses_duplicate_label
 test_create_task_creates_and_parses_ids
+test_create_task_recovers_after_post_create_lookup_failure
+test_create_task_recovers_after_uncertain_create_error
 test_target_ready_fails_when_target_absent
 test_target_ready_checks_expected_label
 test_target_ready_rejects_label_mismatch
+test_target_ready_accepts_exact_legacy_root_tag
+test_target_ready_refuses_different_legacy_workspace_id
+test_target_ready_recovers_current_title_across_windows
 test_capture_trims_locally
 test_capture_fails_when_read_screen_fails_empty
 test_capture_fails_when_target_not_ready
@@ -1162,5 +1422,9 @@ test_kill_closes_workspace_directly_when_not_last
 test_kill_adds_sibling_when_last_in_window
 test_kill_is_best_effort_when_close_workspace_fails
 test_kill_recovers_stale_target_by_label
+test_endpoint_confirmation_refuses_renamed_recorded_workspace
+test_endpoint_confirmation_accepts_absent_recorded_workspace_and_titles
 test_list_live_filters_by_title_prefix
+test_forced_secondmate_teardown_kills_cmux_children_with_child_home_tag
+test_forced_secondmate_teardown_retains_unconfirmed_cmux_child
 test_secondmate_spawn_refuses_cmux_backend
