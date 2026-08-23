@@ -1,0 +1,20 @@
+Watcher-arm confirmation end-to-end evidence
+
+$ node bin/fm-arm-command-policy.mjs --root "$PWD" --home "$PWD" --command "bin/fm-watch-arm.sh"
+allow
+
+$ node ... --command "FM_ARM_CONFIRM_TIMEOUT=30 bin/fm-watch-arm.sh"
+deny	watcher-nested	a protected watcher command must not run through a wrapper, substitution, or compound command
+
+$ node ... --command "env FM_ARM_CONFIRM_TIMEOUT=30 bin/fm-watch-arm.sh"
+deny	watcher-nested	a protected watcher command must not run through a wrapper, substitution, or compound command
+
+$ env -u FM_ARM_CONFIRM_TIMEOUT FM_HOME=<isolated-home> bin/fm-watch-arm.sh
+watcher: FAILED - config/arm-confirm-timeout must contain one non-negative base-10 integer
+exit=2
+watcher-launched=no (no lock or beacon created)
+
+$ FM_HOME=<isolated-home> FM_ARM_CONFIRM_TIMEOUT=0 ... bin/fm-watch-arm.sh
+watcher: started pid=59339 (beacon fresh)
+signal: /Users/dela/.no-mistakes/evidence/01M0QTNGHQJWF6NQ2R5VE1FASQ/arm-grace-fixture/state/evidence.status
+exit=0 after a real status wake
