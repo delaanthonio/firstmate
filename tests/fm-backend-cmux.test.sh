@@ -547,8 +547,10 @@ test_target_ready_accepts_unique_legacy_root_tag() {
   mkdir -p "$dir/responses" "$home" "$checkout"
   legacy_title=$(FM_HOME="$home" FM_ROOT_OVERRIDE="$checkout" bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_legacy_scoped_title fm-label' "$ROOT")
   cmux_workspace_list_response "$dir" 1 "aaaaaaaa-0000-0000-0000-000000000000" "$legacy_title"
-  cmux_workspace_list_response "$dir" 2 "aaaaaaaa-0000-0000-0000-000000000000" "$legacy_title"
-  cmux_panes_response "$dir" 3 "bbbbbbbb-1111-1111-1111-111111111111"
+  cmux_windows_response "$dir" 2 "e1111111-0000-0000-0000-000000000000" 1 "e2222222-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 3 "aaaaaaaa-0000-0000-0000-000000000000" "$legacy_title"
+  cmux_workspace_list_response "$dir" 4 "dddddddd-3333-3333-3333-333333333333" "other"
+  cmux_panes_response "$dir" 5 "bbbbbbbb-1111-1111-1111-111111111111"
   fb=$(make_cmux_fakebin "$dir")
   PATH="$fb:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$checkout" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
     bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_target_ready "aaaaaaaa-0000-0000-0000-000000000000:bbbbbbbb-1111-1111-1111-111111111111" fm-label' "$ROOT"
@@ -561,8 +563,10 @@ test_target_ready_refuses_ambiguous_legacy_root_tag() {
   dir="$TMP_ROOT/ready-ambiguous-legacy-root-tag"; home="$dir/home"; checkout="$dir/checkout"
   mkdir -p "$dir/responses" "$home" "$checkout"
   legacy_title=$(FM_HOME="$home" FM_ROOT_OVERRIDE="$checkout" bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_legacy_scoped_title fm-label' "$ROOT")
-  cmux_workspace_list_response "$dir" 1 "aaaaaaaa-0000-0000-0000-000000000000" "$legacy_title" "cccccccc-2222-2222-2222-222222222222" "$legacy_title"
-  cmux_workspace_list_response "$dir" 2 "aaaaaaaa-0000-0000-0000-000000000000" "$legacy_title" "cccccccc-2222-2222-2222-222222222222" "$legacy_title"
+  cmux_workspace_list_response "$dir" 1 "aaaaaaaa-0000-0000-0000-000000000000" "$legacy_title"
+  cmux_windows_response "$dir" 2 "e1111111-0000-0000-0000-000000000000" 1 "e2222222-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 3 "aaaaaaaa-0000-0000-0000-000000000000" "$legacy_title"
+  cmux_workspace_list_response "$dir" 4 "cccccccc-2222-2222-2222-222222222222" "$legacy_title"
   fb=$(make_cmux_fakebin "$dir")
   PATH="$fb:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$checkout" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
     bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_target_ready "aaaaaaaa-0000-0000-0000-000000000000:bbbbbbbb-1111-1111-1111-111111111111" fm-label' "$ROOT"

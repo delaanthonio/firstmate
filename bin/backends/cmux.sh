@@ -346,9 +346,18 @@ fm_backend_cmux_workspace_id_for_label() {  # <label>
 }
 
 fm_backend_cmux_unique_workspace_id_for_label() {  # <label>
-  local label=$1 matches
-  matches=$(fm_backend_cmux_cli workspace list --json --id-format uuids 2>/dev/null \
-    | jq -r --arg want "$label" '.workspaces[]? | select(.title == $want) | .id' 2>/dev/null)
+  local label=$1 wins window_ids wid wss ids matches=
+  wins=$(fm_backend_cmux_cli list-windows --json --id-format uuids 2>/dev/null) || return 1
+  window_ids=$(printf '%s' "$wins" | jq -er '.[]? | .id' 2>/dev/null) || return 1
+  while IFS= read -r wid; do
+    [ -n "$wid" ] || continue
+    wss=$(fm_backend_cmux_cli workspace list --json --id-format uuids --window "$wid" 2>/dev/null) || return 1
+    printf '%s' "$wss" | jq -e '(.workspaces // []) | type == "array"' >/dev/null 2>&1 || return 1
+    ids=$(printf '%s' "$wss" | jq -r --arg want "$label" \
+      '(.workspaces // []) | .[]? | select(.title == $want) | .id' 2>/dev/null) || return 1
+    [ -z "$ids" ] || matches="$matches${matches:+
+}$ids"
+  done <<< "$window_ids"
   [ "$(printf '%s\n' "$matches" | sed '/^$/d' | wc -l | tr -d ' ')" = 1 ] || return 1
   printf '%s\n' "$matches"
 }

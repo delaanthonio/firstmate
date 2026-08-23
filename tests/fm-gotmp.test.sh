@@ -282,15 +282,22 @@ test_teardown_refuses_unexpected_tasktmp_dir() {
 }
 
 test_teardown_preserves_legacy_tasktmp_and_retires_task() {
-  local id=td-legacy-z6 task_tmp fake
+  local id=td-legacy-z6 task_tmp fake lsof_log
   task_tmp="/tmp/fm-$id"
   rm -rf "$task_tmp"
   mkdir -p "$task_tmp/gotmp"
   printf 'legacy\n' > "$task_tmp/gotmp/build-artifact"
   fake=$(make_fake_root "$id" "$task_tmp")
-  PATH="$fake/fakebin:$PATH" FM_HOME="$fake" bash "$fake/bin/fm-teardown.sh" "$id" >/dev/null 2>&1 \
+  lsof_log="$fake/lsof.log"
+  cat > "$fake/fakebin/lsof" <<'SH'
+#!/usr/bin/env bash
+printf 'called\n' >> "$FM_LSOF_LOG"
+SH
+  chmod +x "$fake/fakebin/lsof"
+  PATH="$fake/fakebin:$PATH" FM_HOME="$fake" FM_LSOF_LOG="$lsof_log" bash "$fake/bin/fm-teardown.sh" "$id" >/dev/null 2>&1 \
     || fail "teardown rejected a legacy tasktmp path"
   [ -f "$task_tmp/gotmp/build-artifact" ] || fail "teardown removed the unverifiable legacy tasktmp root"
+  [ ! -e "$lsof_log" ] || fail "teardown scanned the shared legacy tasktmp root for live processes"
   [ ! -e "$fake/state/$id.meta" ] || fail "teardown retained task metadata for a legacy tasktmp path"
   rm -rf "$task_tmp"
   pass "fm-teardown preserves legacy task temp roots while retiring their tasks"
