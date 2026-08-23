@@ -200,7 +200,7 @@
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FM_HOME_WAS_SET=${FM_HOME+x}
+FM_HOME_WAS_SET=${FM_HOME:+x}
 
 usage() {
   # The whole leading comment block, ending at the first line that is not a

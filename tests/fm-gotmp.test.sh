@@ -178,11 +178,11 @@ test_teardown_uses_state_override_home_for_tasktmp() {
   mv "$fake/state/$id.meta" "$home/state/$id.meta"
   remember_task_tmp_parent "$task_tmp"
   mkdir -p "$task_tmp/gotmp"
-  PATH="$fake/fakebin:$PATH" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" FM_CONFIG_OVERRIDE="$home/config" \
+  PATH="$fake/fakebin:$PATH" FM_HOME='' FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" FM_CONFIG_OVERRIDE="$home/config" \
     bash "$fake/bin/fm-teardown.sh" "$id" >/dev/null 2>&1 \
-    || fail "teardown did not validate tasktmp against the FM_STATE_OVERRIDE home"
-  [ ! -e "$task_tmp" ] || fail "teardown with FM_STATE_OVERRIDE did not remove the home-scoped tasktmp dir"
-  pass "fm-teardown validates tasktmp against FM_STATE_OVERRIDE's home when FM_HOME is unset"
+    || fail "teardown did not treat empty FM_HOME as unset for the FM_STATE_OVERRIDE home"
+  [ ! -e "$task_tmp" ] || fail "teardown with empty FM_HOME did not remove the override-home tasktmp dir"
+  pass "fm-teardown treats empty FM_HOME as unset for state-override temp isolation"
 }
 
 test_teardown_skips_gracefully_without_tasktmp() {

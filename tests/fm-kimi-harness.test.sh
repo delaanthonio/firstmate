@@ -170,6 +170,24 @@ run_spawn() {
     "$SPAWN" "$id" "$proj" --harness kimi --mode no-mistakes --yolo off "$@" 2>&1
 }
 
+run_spawn_empty_home() {
+  local case_dir=$1 home=$2 proj=$3 wt=$4 fakebin=$5 id=$6
+  HOME="$home" FM_ROOT_OVERRIDE='' FM_HOME='' \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
+    FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$wt" TMUX="fake,1,0" \
+    FM_FAKE_LAUNCH_LOG="$case_dir/launch.log" \
+    FM_FAKE_POINTER_LOG="$case_dir/pointer.log" \
+    FM_FAKE_KIMI_STATE="$case_dir/kimi.state" \
+    FM_FAKE_KIMI_SWALLOWED="$case_dir/kimi.swallowed" \
+    FM_FAKE_KIMI_SWALLOW_FIRST=no \
+    FM_FAKE_TMUX_CALL_LOG="$case_dir/tmux-calls.log" \
+    FM_FAKE_BRIEF_REAL="$(cd "$home/data/$id" && pwd -P)/brief.md" \
+    FM_KIMI_READY_POLLS=2 FM_KIMI_DELIVERY_POLLS=2 FM_KIMI_POLL_INTERVAL=0 \
+    PATH="$fakebin:$BASE_PATH" \
+    "$SPAWN" "$id" "$proj" --harness kimi --mode no-mistakes --yolo off 2>&1
+}
+
 read_spawn_record() {
   IFS='|' read -r CASE_DIR HOME_DIR PROJ_DIR WT_DIR FAKEBIN_DIR <<EOF
 $1
@@ -214,6 +232,27 @@ test_kimi_launch_then_send_is_verified() {
   assert_grep 'token=' "$WT_DIR/.fm-kimi-turnend" "kimi spawn did not write its token pointer"
   assert_present "$HOME_DIR/state/$id.kimi-turnend-token" "kimi spawn did not record its token"
   pass "fm-spawn: kimi launches, delivers its brief, and registers a guarded turn-end token"
+}
+
+test_empty_fm_home_uses_distinct_state_override_temp_roots() {
+  local id rec_a rec_b task_tmp_a task_tmp_b
+  id="kimi-empty-home-shared-id-$$"
+  rec_a=$(make_spawn_case empty-home-a "$id")
+  read_spawn_record "$rec_a"
+  run_spawn_empty_home "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" >/dev/null \
+    || fail "first empty-FM_HOME spawn failed"
+  task_tmp_a=$(sed -n 's/^tasktmp=//p' "$HOME_DIR/state/$id.meta" | tail -1)
+  rec_b=$(make_spawn_case empty-home-b "$id")
+  read_spawn_record "$rec_b"
+  run_spawn_empty_home "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" >/dev/null \
+    || fail "second empty-FM_HOME spawn failed"
+  task_tmp_b=$(sed -n 's/^tasktmp=//p' "$HOME_DIR/state/$id.meta" | tail -1)
+  [ -n "$task_tmp_a" ] && [ -d "$task_tmp_a/gotmp" ] || fail "first override-derived temp root was not created"
+  [ -n "$task_tmp_b" ] && [ -d "$task_tmp_b/gotmp" ] || fail "second override-derived temp root was not created"
+  [ "$task_tmp_a" != "$task_tmp_b" ] || fail "empty-FM_HOME spawns with distinct state homes shared a task temp root"
+  rm -rf "$task_tmp_a" "$task_tmp_b"
+  rmdir "${task_tmp_a%/*}" "${task_tmp_b%/*}" 2>/dev/null || true
+  pass "fm-spawn: empty FM_HOME preserves state-override temp isolation for reused task IDs"
 }
 
 test_spawn_refuses_unsafe_secondmate_home_marker() {
@@ -702,6 +741,7 @@ test_kimi_hook_remove_preserves_owned_newline_boundary
 test_kimi_hook_fails_closed_on_missing_malformed_or_partial_config
 test_kimi_hook_install_refuses_without_jq
 test_kimi_launch_then_send_is_verified
+test_empty_fm_home_uses_distinct_state_override_temp_roots
 test_spawn_refuses_unsafe_secondmate_home_marker
 test_spawn_refuses_unsafe_state_override_home_marker
 test_kimi_hook_is_silent_and_requires_registered_workspace_token
