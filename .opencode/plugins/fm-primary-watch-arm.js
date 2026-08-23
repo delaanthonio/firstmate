@@ -51,6 +51,14 @@ export function openCodeArmReadyTimeoutMs(configPath, platform = process.platfor
   return confirmSeconds === null ? configured : Math.max(configured, (confirmSeconds + 6) * 1000);
 }
 
+function openCodeArmStartupTimeoutMs(platform = process.platform) {
+  return positiveInteger("FM_OPENCODE_ARM_READY_TIMEOUT_MS", platform === "win32" ? 36000 : 16000);
+}
+
+function openCodeArmConfirmationTimeoutMs(confirmSeconds) {
+  return Math.max(openCodeArmStartupTimeoutMs(), (confirmSeconds + 6) * 1000);
+}
+
 function startDeadlineTimer(timeoutMs, onTimeout) {
   const deadline = Date.now() + timeoutMs;
   let timer = null;
@@ -73,19 +81,19 @@ function setArmStatus(status) {
   armStatus = status;
 }
 
-function waitForArmReady(armChild, configPath) {
+function waitForArmReady(armChild) {
   const readiness = armReadiness.get(armChild);
   if (!readiness) return Promise.resolve("failed");
   return new Promise((resolve) => {
     let settled = false;
-    let cancelTimeout = startDeadlineTimer(openCodeArmReadyTimeoutMs(configPath), () => {
+    let cancelTimeout = startDeadlineTimer(openCodeArmStartupTimeoutMs(), () => {
       settled = true;
       resolve("timeout");
     });
-    void armConfirmationBoundary.get(armChild)?.then(() => {
+    void armConfirmationBoundary.get(armChild)?.then((confirmSeconds) => {
       if (settled) return;
       cancelTimeout();
-      cancelTimeout = startDeadlineTimer(openCodeArmReadyTimeoutMs(configPath), () => {
+      cancelTimeout = startDeadlineTimer(openCodeArmConfirmationTimeoutMs(confirmSeconds), () => {
         settled = true;
         resolve("timeout");
       });
@@ -381,10 +389,10 @@ function spawnArm(paths, sessionID, client, predecessorArmPid = "") {
     readinessSettled = true;
     resolveReadiness(status);
   };
-  const settleBoundary = () => {
+  const settleBoundary = (confirmSeconds) => {
     if (boundarySettled) return;
     boundarySettled = true;
-    resolveBoundary();
+    resolveBoundary(confirmSeconds);
   };
   const closed = new Promise((resolveClosedChild) => {
     resolveClosed = resolveClosedChild;
@@ -402,7 +410,12 @@ function spawnArm(paths, sessionID, client, predecessorArmPid = "") {
       lines.push(boundaryBuffer);
       boundaryBuffer = "";
     }
-    if (lines.includes("watcher-confirmation-boundary")) settleBoundary();
+    for (const line of lines) {
+      const match = line.match(/^watcher-confirmation-boundary timeout=([0-9]{1,10})$/);
+      if (!match) continue;
+      const confirmSeconds = Number(match[1]);
+      if (Number.isSafeInteger(confirmSeconds) && confirmSeconds <= 2147483647) settleBoundary(confirmSeconds);
+    }
   };
   const observeRecovery = () => {
     const recovery = `${stdout}\n${stderr}`.match(/^watcher: started pid=([0-9]+).* recovery-generation=([A-Za-z0-9._-]+)$/m);
@@ -504,7 +517,7 @@ async function ensureArm(paths, sessionID, client, predecessorArmPid = "", inclu
   if (!armChild) {
     return armAttempt(launchResult.status, null, includeArmChild);
   }
-  return armAttempt(await waitForArmReady(armChild, paths.config), armChild, includeArmChild);
+  return armAttempt(await waitForArmReady(armChild), armChild, includeArmChild);
 }
 
 export const FmPrimaryWatchArm = async ({ client, directory, worktree }) => {

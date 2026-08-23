@@ -95,7 +95,7 @@ const shuttingDownMessage = "watcher: not armed - Pi session is shutting down";
 let nextGenerationId = 0;
 let activeGeneration: SessionGeneration | null = null;
 const armReadiness = new WeakMap<ChildProcess, Promise<boolean>>();
-const armConfirmationBoundary = new WeakMap<ChildProcess, Promise<void>>();
+const armConfirmationBoundary = new WeakMap<ChildProcess, Promise<number>>();
 const armClose = new WeakMap<ChildProcess, Promise<void>>();
 const armRecovery = new WeakMap<ChildProcess, { generation: string; watcherPid: string }>();
 
@@ -128,6 +128,14 @@ export function piArmReadyTimeoutMs(configPath = config, platform: NodeJS.Platfo
   const configured = positiveInteger("FM_PI_ARM_READY_TIMEOUT_MS", platform === "win32" ? 36000 : 16000);
   const confirmSeconds = selectedArmConfirmSeconds(configPath, platform);
   return confirmSeconds === null ? configured : Math.max(configured, (confirmSeconds + 6) * 1000);
+}
+
+function piArmStartupTimeoutMs(platform: NodeJS.Platform = process.platform): number {
+  return positiveInteger("FM_PI_ARM_READY_TIMEOUT_MS", platform === "win32" ? 36000 : 16000);
+}
+
+function piArmConfirmationTimeoutMs(confirmSeconds: number): number {
+  return Math.max(piArmStartupTimeoutMs(), (confirmSeconds + 6) * 1000);
 }
 
 function startDeadlineTimer(timeoutMs: number, onTimeout: () => void): () => void {
@@ -321,14 +329,14 @@ export default function (pi: ExtensionAPI) {
     if (!readiness) return Promise.resolve(false);
     return new Promise((resolveReady) => {
       let settled = false;
-      let cancelTimeout = startDeadlineTimer(piArmReadyTimeoutMs(), () => {
+      let cancelTimeout = startDeadlineTimer(piArmStartupTimeoutMs(), () => {
         settled = true;
         resolveReady(false);
       });
-      void armConfirmationBoundary.get(armChild)?.then(() => {
+      void armConfirmationBoundary.get(armChild)?.then((confirmSeconds) => {
         if (settled) return;
         cancelTimeout();
-        cancelTimeout = startDeadlineTimer(piArmReadyTimeoutMs(), () => {
+        cancelTimeout = startDeadlineTimer(piArmConfirmationTimeoutMs(confirmSeconds), () => {
           settled = true;
           resolveReady(false);
         });
@@ -456,13 +464,13 @@ export default function (pi: ExtensionAPI) {
     let readinessSettled = false;
     let resolveReadiness: (ready: boolean) => void = () => {};
     let boundarySettled = false;
-    let resolveBoundary: () => void = () => {};
+    let resolveBoundary: (confirmSeconds: number) => void = () => {};
     let resolveClosed: () => void = () => {};
     const readiness = new Promise<boolean>((resolveReady) => {
       resolveReadiness = resolveReady;
     });
     armReadiness.set(armChild, readiness);
-    const boundary = new Promise<void>((resolveArmBoundary) => {
+    const boundary = new Promise<number>((resolveArmBoundary) => {
       resolveBoundary = resolveArmBoundary;
     });
     armConfirmationBoundary.set(armChild, boundary);
@@ -475,10 +483,10 @@ export default function (pi: ExtensionAPI) {
       readinessSettled = true;
       resolveReadiness(ready);
     };
-    const settleBoundary = (): void => {
+    const settleBoundary = (confirmSeconds: number): void => {
       if (boundarySettled) return;
       boundarySettled = true;
-      resolveBoundary();
+      resolveBoundary(confirmSeconds);
     };
     const observeEstablishedArm = (): void => {
       const combined = `${stdout}\n${stderr}`;
@@ -500,7 +508,12 @@ export default function (pi: ExtensionAPI) {
         lines.push(boundaryBuffer);
         boundaryBuffer = "";
       }
-      if (lines.includes("watcher-confirmation-boundary")) settleBoundary();
+      for (const line of lines) {
+        const match = line.match(/^watcher-confirmation-boundary timeout=([0-9]{1,10})$/);
+        if (!match) continue;
+        const confirmSeconds = Number(match[1]);
+        if (Number.isSafeInteger(confirmSeconds) && confirmSeconds <= 2147483647) settleBoundary(confirmSeconds);
+      }
     };
     armChild.stdout.on("data", (chunk: Buffer) => {
       stdout += chunk.toString();

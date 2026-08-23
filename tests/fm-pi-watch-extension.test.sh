@@ -430,7 +430,7 @@ trap 'exit 0' TERM INT
 while :; do sleep 0.02; done
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
-  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_ARM_CONFIRM_TIMEOUT=invalid FM_PI_ARM_READY_TIMEOUT_MS=250 FM_WATCH_REARM_RETRY_BASE_MS=5 FM_WATCH_REARM_RETRY_MAX_MS=10 FM_WATCH_REARM_RETRY_LIMIT=2 node --input-type=module 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_ARM_CONFIRM_TIMEOUT=2147483647 FM_PI_ARM_READY_TIMEOUT_MS=250 FM_WATCH_REARM_RETRY_BASE_MS=5 FM_WATCH_REARM_RETRY_MAX_MS=10 FM_WATCH_REARM_RETRY_LIMIT=2 node --input-type=module 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -1606,7 +1606,7 @@ trap 'exit 0' TERM INT
 while :; do sleep 0.02; done
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
-  out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_ARM_CONFIRM_TIMEOUT=invalid FM_OPENCODE_ARM_READY_TIMEOUT_MS=250 FM_WATCH_REARM_RETRY_BASE_MS=5 FM_WATCH_REARM_RETRY_MAX_MS=10 FM_WATCH_REARM_RETRY_LIMIT=2 node 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_ARM_CONFIRM_TIMEOUT=2147483647 FM_OPENCODE_ARM_READY_TIMEOUT_MS=250 FM_WATCH_REARM_RETRY_BASE_MS=5 FM_WATCH_REARM_RETRY_MAX_MS=10 FM_WATCH_REARM_RETRY_LIMIT=2 node 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -2207,6 +2207,7 @@ test_pi_delayed_start_preserves_arm_bound() {
   retired="$TMP_ROOT/pi-selected-arm-bound.retired"
   stop="$TMP_ROOT/pi-selected-arm-bound.stop"
   mkdir -p "$home/state" "$home/config"
+  printf '1\n' > "$home/config/arm-confirm-timeout"
   install_pi_watch_extension_fixture "$repo"
   plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
@@ -2219,17 +2220,18 @@ if [ "$count" -eq 1 ]; then
   exit 0
 fi
 trap 'printf "retired\n" > "${FM_RETIRED_FILE:?}"; exit 0' TERM INT
-sleep 0.4
+selected=$(cat "$FM_HOME/config/arm-confirm-timeout")
+printf '0\n' > "$FM_HOME/config/arm-confirm-timeout"
 printf 'watcher-conf' >&4
 sleep 0.05
-printf 'irmation-boundary' >&4
+printf 'irmation-boundary timeout=%s' "$selected" >&4
 exec 4>&-
-sleep 0.4
+sleep 0.8
 printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
 while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
-  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_RETIRED_FILE="$retired" FM_STOP_FILE="$stop" FM_ARM_CONFIRM_TIMEOUT=invalid FM_PI_ARM_READY_TIMEOUT_MS=600 node --input-type=module 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_RETIRED_FILE="$retired" FM_STOP_FILE="$stop" FM_PI_ARM_READY_TIMEOUT_MS=600 node --input-type=module 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -2274,6 +2276,7 @@ test_opencode_delayed_start_preserves_arm_bound() {
   retired="$TMP_ROOT/opencode-selected-arm-bound.retired"
   stop="$TMP_ROOT/opencode-selected-arm-bound.stop"
   mkdir -p "$repo/bin" "$home/state" "$home/config"
+  printf '1\n' > "$home/config/arm-confirm-timeout"
   git init -q "$repo"
   : > "$repo/AGENTS.md"
   : > "$home/state/task.meta"
@@ -2287,17 +2290,18 @@ if [ "$count" -eq 1 ]; then
   exit 0
 fi
 trap 'printf "retired\n" > "${FM_RETIRED_FILE:?}"; exit 0' TERM INT
-sleep 0.4
+selected=$(cat "$FM_HOME/config/arm-confirm-timeout")
+printf '0\n' > "$FM_HOME/config/arm-confirm-timeout"
 printf 'watcher-conf' >&4
 sleep 0.05
-printf 'irmation-boundary' >&4
+printf 'irmation-boundary timeout=%s' "$selected" >&4
 exec 4>&-
-sleep 0.4
+sleep 0.8
 printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
 while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
-  out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_RETIRED_FILE="$retired" FM_STOP_FILE="$stop" FM_ARM_CONFIRM_TIMEOUT=invalid FM_OPENCODE_ARM_READY_TIMEOUT_MS=600 node --input-type=module 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_RETIRED_FILE="$retired" FM_STOP_FILE="$stop" FM_OPENCODE_ARM_READY_TIMEOUT_MS=600 node --input-type=module 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 

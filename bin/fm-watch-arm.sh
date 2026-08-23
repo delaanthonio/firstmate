@@ -689,7 +689,7 @@ owned_child_finished() {
 # collapsing when startup begins just before the next second boundary.
 deadline=$(( $(date +%s) + CONFIRM_TIMEOUT + 1 ))
 if [ "${FM_ARM_READY_FD:-}" = 4 ]; then
-  printf 'watcher-confirmation-boundary\n' 2>/dev/null >&4 || true
+  printf 'watcher-confirmation-boundary timeout=%s\n' "$CONFIRM_TIMEOUT" 2>/dev/null >&4 || true
   exec 4>&-
 fi
 confirm_grace_used=0

@@ -463,7 +463,7 @@ test_live_child_gets_one_bounded_confirmation_grace() {
   out="$dir/arm.out"
   start_confirmation_arm "$dir" "$out" 1
   wait_for_watcher_launch "$dir" || fail "grace confirmation fixture did not launch its watcher"
-  wait_for_file_text "$dir/boundary" 'watcher-confirmation-boundary' \
+  wait_for_file_text "$dir/boundary" 'watcher-confirmation-boundary timeout=0' \
     || fail "confirmation arm did not publish its owned readiness boundary"
   advance_confirmation_clock "$dir" 1
   wait_for_file_text "$out" 'watcher: started pid=' \
