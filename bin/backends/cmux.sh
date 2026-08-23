@@ -429,7 +429,6 @@ fm_backend_cmux_create_task() {  # <label> <cwd>
   fi
   fm_backend_cmux_write_create_record "$record" "$title" || return 1
   out=$(fm_backend_cmux_cli new-workspace --name "$title" --cwd "$cwd" --focus false --id-format uuids 2>&1) || {
-    rm -f -- "$record"
     echo "error: cmux new-workspace failed for '$title': $out" >&2
     return 1
   }

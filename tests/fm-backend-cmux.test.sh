@@ -538,6 +538,32 @@ test_create_task_recovers_after_post_create_lookup_failure() {
   pass "fm_backend_cmux_create_task: durably recovers a workspace after post-create lookup failure"
 }
 
+test_create_task_recovers_after_uncertain_create_error() {
+  local dir fb out status title new_workspace_count
+  dir="$TMP_ROOT/create-task-error-recovery"; mkdir -p "$dir/responses"
+  title=$(cmux_expected_scoped_title fm-error-recover)
+  cmux_windows_response "$dir" 1 "e1111111-0000-0000-0000-000000000000" 1
+  printf '{"workspaces":[]}' > "$dir/responses/2.out"
+  printf '1\n' > "$dir/responses/3.exit"
+  cmux_windows_response "$dir" 4 "e1111111-0000-0000-0000-000000000000" 1
+  cmux_workspace_list_response "$dir" 5 "bbbbbbbb-1111-1111-1111-111111111111" "$title"
+  cmux_panes_response "$dir" 6 "cccccccc-2222-2222-2222-222222222222"
+  fb=$(make_cmux_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_STATE_OVERRIDE="$dir/state" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
+    bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_create_task fm-error-recover /tmp/proj' "$ROOT" 2>&1 )
+  status=$?
+  [ "$status" -ne 0 ] || fail "create_task should report the uncertain create error"
+  [ -f "$dir/state/.cmux-create-fm-error-recover.pending" ] || fail "create_task discarded recovery ownership after an uncertain create error"
+  out=$( PATH="$fb:$PATH" FM_STATE_OVERRIDE="$dir/state" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
+    bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_create_task fm-error-recover /tmp/proj' "$ROOT" )
+  [ "$out" = "bbbbbbbb-1111-1111-1111-111111111111 cccccccc-2222-2222-2222-222222222222" ] \
+    || fail "create_task should recover a workspace committed before the create error, got '$out'"
+  [ ! -e "$dir/state/.cmux-create-fm-error-recover.pending" ] || fail "create_task retained its recovery record after error recovery"
+  new_workspace_count=$(grep -c $'\x1f''new-workspace' "$dir/log" || true)
+  [ "$new_workspace_count" = 1 ] || fail "create_task retried creation instead of recovering the uncertain commit"
+  pass "fm_backend_cmux_create_task: recovers a workspace committed before a create error"
+}
+
 # --- target_ready / capture ---------------------------------------------------
 
 test_target_ready_fails_when_target_absent() {
@@ -1274,6 +1300,7 @@ test_ensure_running_fails_fast_on_unauth_without_launching
 test_create_task_refuses_duplicate_label
 test_create_task_creates_and_parses_ids
 test_create_task_recovers_after_post_create_lookup_failure
+test_create_task_recovers_after_uncertain_create_error
 test_target_ready_fails_when_target_absent
 test_target_ready_checks_expected_label
 test_target_ready_rejects_label_mismatch
