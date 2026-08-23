@@ -569,7 +569,10 @@ stop_owned_child_bounded() {
   if owned_child_active; then
     kill -TERM "$child" 2>/dev/null || true
     i=0
-    while [ "$i" -lt 10 ] && owned_child_active; do
+    # The watcher may be finishing its own signal-coalescing interval before
+    # its EXIT trap durably publishes the watcher-down transition. Keep that
+    # graceful path bounded without racing a one-second child grace under load.
+    while [ "$i" -lt 50 ] && owned_child_active; do
       sleep 0.1
       i=$((i + 1))
     done
