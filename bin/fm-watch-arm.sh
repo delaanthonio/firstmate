@@ -76,6 +76,30 @@ WATCH="$SCRIPT_DIR/fm-watch.sh"
 WATCH_LOCK="$STATE/.watch.lock"
 BEAT="$STATE/.last-watcher-beat"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
+mode=arm
+handling_generation=
+handling_watcher_pid=
+case "${1:-}" in
+  ''|arm|--arm) mode=arm ;;
+  --restart) mode=restart ;;
+  --handling-delivered)
+    mode=handling-delivered
+    handling_generation=${2:-}
+    [ "${3:-}" = --watcher-pid ] || { echo "watcher: invalid handling delivery confirmation" >&2; exit 2; }
+    handling_watcher_pid=${4:-}
+    case "$handling_generation" in ''|*[!A-Za-z0-9._-]*) echo "watcher: invalid recovery generation" >&2; exit 2 ;; esac
+    case "$handling_watcher_pid" in ''|*[!0-9]*) echo "watcher: invalid successor watcher pid" >&2; exit 2 ;; esac
+    [ "$#" -eq 4 ] || { echo "watcher: unexpected handling delivery arguments" >&2; exit 2; }
+    ;;
+  *) echo "usage: $(basename "$0") [--restart | --handling-delivered GENERATION --watcher-pid PID]" >&2; exit 2 ;;
+esac
+
+if [ "$mode" = handling-delivered ]; then
+  fm_pid_alive "$handling_watcher_pid" \
+    && fm_watcher_lock_matches_pid "$STATE" "$WATCH" "$handling_watcher_pid" "$FM_HOME" \
+    && fm_recovery_marker_begin_handling "$STATE/.watcher-down" "$handling_generation"
+  exit $?
+fi
 # "Fresh" reuses the guard's threshold so there is one definition of liveness.
 GRACE=${FM_GUARD_GRACE:-300}
 # How long to wait for a freshly forked watcher to acquire the lock and beat.
@@ -484,31 +508,6 @@ handling_successor_generation() {
     *) return 1 ;;
   esac
 }
-
-mode=arm
-handling_generation=
-handling_watcher_pid=
-case "${1:-}" in
-  ''|arm|--arm) mode=arm ;;
-  --restart) mode=restart ;;
-  --handling-delivered)
-    mode=handling-delivered
-    handling_generation=${2:-}
-    [ "${3:-}" = --watcher-pid ] || { echo "watcher: invalid handling delivery confirmation" >&2; exit 2; }
-    handling_watcher_pid=${4:-}
-    case "$handling_generation" in ''|*[!A-Za-z0-9._-]*) echo "watcher: invalid recovery generation" >&2; exit 2 ;; esac
-    case "$handling_watcher_pid" in ''|*[!0-9]*) echo "watcher: invalid successor watcher pid" >&2; exit 2 ;; esac
-    [ "$#" -eq 4 ] || { echo "watcher: unexpected handling delivery arguments" >&2; exit 2; }
-    ;;
-  *) echo "usage: $(basename "$0") [--restart | --handling-delivered GENERATION --watcher-pid PID]" >&2; exit 2 ;;
-esac
-
-if [ "$mode" = handling-delivered ]; then
-  fm_pid_alive "$handling_watcher_pid" \
-    && fm_watcher_lock_matches_pid "$STATE" "$WATCH" "$handling_watcher_pid" "$FM_HOME" \
-    && fm_recovery_marker_begin_handling "$STATE/.watcher-down" "$handling_generation"
-  exit $?
-fi
 
 if [ "$mode" = restart ]; then
   # Home-scoped stop: only the watcher pid recorded in THIS home's lock.

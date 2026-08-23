@@ -1030,9 +1030,12 @@ test_interrupted_handling_is_redrained_on_rearm() {
   [ "$(cat "$state/.watcher-down" 2>/dev/null || true)" = "pending:downtime:$generation_before" ] \
     || fail "successor launch marked recovery handled before prompt delivery"
   handling_watcher_pid=$(sed -n 's/^watcher: started pid=\([0-9][0-9]*\).* recovery-generation=.*$/\1/p' "$dir/handling-successor-arm.out")
+  mkdir -p "$home/config"
+  printf 'not-an-integer\n' > "$home/config/arm-confirm-timeout"
   FM_HOME="$home" FM_STATE_OVERRIDE="$state" "$WATCH_ARM" --handling-delivered "$generation_before" \
     --watcher-pid "$handling_watcher_pid" \
-    || fail "confirmed prompt delivery did not begin handling"
+    || fail "malformed arm-only timeout configuration blocked recovery acknowledgement"
+  rm -f "$home/config/arm-confirm-timeout"
   [ "$(cat "$state/.watcher-down" 2>/dev/null || true)" = "pending:handling:$generation_before" ] \
     || fail "confirmed prompt delivery did not transition its recovery generation"
   ! grep -F 'check: rearm-resurface' "$dir/handling-successor-arm.out" >/dev/null \

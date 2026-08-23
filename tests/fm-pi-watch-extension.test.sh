@@ -529,6 +529,7 @@ await tool.execute("tool-call-unretired-successor", {}, undefined, undefined, {}
 for (let i = 0; i < 500 && !prompt; i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 10));
 }
+
 const rows = existsSync(process.env.FM_ARM_LOG)
   ? readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n")
   : [];
@@ -544,6 +545,68 @@ EOF
   expect_code 0 "$status" "Pi must fall back without overlapping an unretired successor"
   [ -z "$out" ] || fail "Pi unretired-successor test printed output: $out"
   pass "Pi unretired successor falls back without an overlapping retry"
+}
+
+test_pi_slow_cleanup_completes_before_adapter_retirement() {
+  local repo home plugin log stop out status
+  repo="$TMP_ROOT/pi-slow-cleanup-root"
+  home="$TMP_ROOT/pi-slow-cleanup-home"
+  log="$TMP_ROOT/pi-slow-cleanup.log"
+  stop="$TMP_ROOT/pi-slow-cleanup.stop"
+  mkdir -p "$repo/bin" "$home/state" "$home/config"
+  install_pi_watch_extension_fixture "$repo"
+  plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
+  cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
+count=$(wc -l < "$FM_ARM_LOG" | tr -d '[:space:]')
+if [ "$count" -eq 1 ]; then
+  printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
+  printf 'signal: synthetic wake\n'
+  exit 0
+fi
+if [ "$count" -eq 2 ]; then
+  trap 'sleep 2.1; exit 0' TERM INT
+  while :; do sleep 0.02; done
+fi
+printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
+while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+SH
+  chmod +x "$repo/bin/fm-watch-arm.sh"
+  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_STOP_FILE="$stop" FM_ARM_CONFIRM_TIMEOUT=invalid FM_PI_ARM_READY_TIMEOUT_MS=250 FM_WATCH_REARM_RETRY_BASE_MS=5 node --input-type=module 2>&1 <<'EOF'
+import { readFileSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
+let tool = null;
+let prompt = "";
+const pi = {
+  on() {},
+  registerCommand() {},
+  registerTool(candidate) {
+    if (candidate.name === "fm_watch_arm_pi") tool = candidate;
+  },
+  sendUserMessage: async (message) => {
+    prompt += message;
+  },
+};
+writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
+const mod = await import(pathToFileURL(process.env.PLUGIN).href);
+mod.default(pi);
+await tool.execute("tool-call-slow-cleanup", {}, undefined, undefined, {});
+for (let i = 0; i < 500 && !prompt; i += 1) {
+  await new Promise((resolve) => setTimeout(resolve, 10));
+}
+const rows = readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n");
+if (rows.length !== 3) throw new Error(`expected one slow cleanup then one successor, got ${rows.length}: ${rows.join(" | ")}`);
+if (!prompt.includes("signal: synthetic wake")) throw new Error(`original wake was lost: ${prompt}`);
+if (prompt.includes("unready successor arm did not exit")) throw new Error(`adapter abandoned bounded arm cleanup: ${prompt}`);
+writeFileSync(process.env.FM_STOP_FILE, "stop\n");
+EOF
+)
+  status=$?
+  expect_code 0 "$status" "Pi must wait through the arm's complete bounded cleanup"
+  [ -z "$out" ] || fail "Pi slow-cleanup test printed output: $out"
+  pass "Pi waits through bounded arm cleanup before restoring continuity"
 }
 
 test_pi_late_unretired_close_resumes_supervision() {
@@ -1707,6 +1770,7 @@ await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses
 for (let i = 0; i < 500 && !prompt; i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 10));
 }
+
 const rows = existsSync(process.env.FM_ARM_LOG)
   ? readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n")
   : [];
@@ -1722,6 +1786,70 @@ EOF
   expect_code 0 "$status" "OpenCode must fall back without overlapping an unretired successor"
   [ -z "$out" ] || fail "OpenCode unretired-successor test printed output: $out"
   pass "OpenCode unretired successor falls back without an overlapping retry"
+}
+
+test_opencode_slow_cleanup_completes_before_adapter_retirement() {
+  local plugin repo home log stop out status
+  plugin="$ROOT/.opencode/plugins/fm-primary-watch-arm.js"
+  repo="$TMP_ROOT/opencode-slow-cleanup-root"
+  home="$TMP_ROOT/opencode-slow-cleanup-home"
+  log="$TMP_ROOT/opencode-slow-cleanup.log"
+  stop="$TMP_ROOT/opencode-slow-cleanup.stop"
+  mkdir -p "$repo/bin" "$home/state" "$home/config"
+  git init -q "$repo"
+  : > "$repo/AGENTS.md"
+  : > "$home/state/task.meta"
+  cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
+count=$(wc -l < "$FM_ARM_LOG" | tr -d '[:space:]')
+if [ "$count" -eq 1 ]; then
+  printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
+  printf 'signal: synthetic wake\n'
+  exit 0
+fi
+if [ "$count" -eq 2 ]; then
+  trap 'sleep 2.1; exit 0' TERM INT
+  while :; do sleep 0.02; done
+fi
+printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
+while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+SH
+  chmod +x "$repo/bin/fm-watch-arm.sh"
+  out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_STOP_FILE="$stop" FM_ARM_CONFIRM_TIMEOUT=invalid FM_OPENCODE_ARM_READY_TIMEOUT_MS=250 FM_WATCH_REARM_RETRY_BASE_MS=5 node 2>&1 <<'EOF'
+import { readFileSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
+const mod = await import(pathToFileURL(process.env.PLUGIN).href);
+let prompt = "";
+const client = {
+  session: {
+    promptAsync: async (request) => {
+      prompt += request.body.parts[0].text;
+    },
+  },
+};
+const hooks = await mod.FmPrimaryWatchArm({
+  client,
+  directory: process.env.WORKTREE,
+  worktree: process.env.WORKTREE,
+});
+writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
+await hooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
+for (let i = 0; i < 500 && !prompt; i += 1) {
+  await new Promise((resolve) => setTimeout(resolve, 10));
+}
+const rows = readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n");
+if (rows.length !== 3) throw new Error(`expected one slow cleanup then one successor, got ${rows.length}: ${rows.join(" | ")}`);
+if (!prompt.includes("signal: synthetic wake")) throw new Error(`original wake was lost: ${prompt}`);
+if (prompt.includes("unready successor arm did not exit")) throw new Error(`adapter abandoned bounded arm cleanup: ${prompt}`);
+writeFileSync(process.env.FM_STOP_FILE, "stop\n");
+EOF
+)
+  status=$?
+  expect_code 0 "$status" "OpenCode must wait through the arm's complete bounded cleanup"
+  [ -z "$out" ] || fail "OpenCode slow-cleanup test printed output: $out"
+  pass "OpenCode waits through bounded arm cleanup before restoring continuity"
 }
 
 test_opencode_late_unretired_close_resumes_supervision() {
@@ -2377,6 +2505,7 @@ test_pi_scheduled_retry_call_is_owned_noop
 test_pi_actionable_close_starts_single_successor_before_delivery
 test_pi_hung_successor_falls_back_to_typed_wake
 test_pi_unretired_successor_falls_back_without_retry
+test_pi_slow_cleanup_completes_before_adapter_retirement
 test_pi_late_unretired_close_resumes_supervision
 test_pi_empty_close_retries_instead_of_disappearing
 test_pi_established_empty_close_honors_retry_limit
@@ -2394,6 +2523,7 @@ test_opencode_primary_watch_plugin_rearms_after_wake
 test_opencode_pre_ready_actionable_close_preserves_its_successor
 test_opencode_hung_successor_falls_back_to_typed_wake
 test_opencode_unretired_successor_falls_back_without_retry
+test_opencode_slow_cleanup_completes_before_adapter_retirement
 test_opencode_late_unretired_close_resumes_supervision
 test_opencode_empty_close_retries_instead_of_disappearing
 test_opencode_established_empty_close_honors_retry_limit

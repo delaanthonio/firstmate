@@ -88,7 +88,7 @@ const extensionVersion = `sha256:${createHash("sha256").update(readFileSync(exte
 const retryBaseMs = positiveInteger("FM_WATCH_REARM_RETRY_BASE_MS", 250);
 const retryMaxMs = positiveInteger("FM_WATCH_REARM_RETRY_MAX_MS", 4000);
 const retryLimit = positiveInteger("FM_WATCH_REARM_RETRY_LIMIT", 5);
-const armRetireTimeoutMs = positiveInteger("FM_WATCH_ARM_RETIRE_TIMEOUT_MS", 1000);
+const armRetireTimeoutMs = positiveInteger("FM_WATCH_ARM_RETIRE_TIMEOUT_MS", 2500);
 const repairOnlyHint = "call fm_watch_arm_pi again only after a later notification says the cycle is missing, failed, or unhealthy";
 const shuttingDownMessage = "watcher: not armed - Pi session is shutting down";
 
