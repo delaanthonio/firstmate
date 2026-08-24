@@ -44,6 +44,14 @@
 # so the failure is loud. A live cycle already present means re-arm attaches - do
 # not start a second watcher.
 #
+# A non-empty FM_ARM_CONFIRM_TIMEOUT is the highest-precedence confirmation
+# budget. Otherwise, config/arm-confirm-timeout under the effective config
+# directory overrides the platform default. The file must be a regular,
+# non-symlink file containing only one non-negative base-10 integer; malformed
+# selected environment or file values fail loudly before a watcher is launched.
+# If the launched watcher child still exists when that initial budget expires,
+# arm grants exactly one additional five-second grace window before failing.
+#
 # Every observed watcher cycle appends one tab-separated lifecycle record to
 # state/.watch-cycle-exits.log. The arm layer owns that bounded ledger; it records
 # arm/watcher identities, timestamps, exit/signal classification, beacon age,
@@ -67,6 +75,31 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WATCH="$SCRIPT_DIR/fm-watch.sh"
 WATCH_LOCK="$STATE/.watch.lock"
 BEAT="$STATE/.last-watcher-beat"
+CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
+mode=arm
+handling_generation=
+handling_watcher_pid=
+case "${1:-}" in
+  ''|arm|--arm) mode=arm ;;
+  --restart) mode=restart ;;
+  --handling-delivered)
+    mode=handling-delivered
+    handling_generation=${2:-}
+    [ "${3:-}" = --watcher-pid ] || { echo "watcher: invalid handling delivery confirmation" >&2; exit 2; }
+    handling_watcher_pid=${4:-}
+    case "$handling_generation" in ''|*[!A-Za-z0-9._-]*) echo "watcher: invalid recovery generation" >&2; exit 2 ;; esac
+    case "$handling_watcher_pid" in ''|*[!0-9]*) echo "watcher: invalid successor watcher pid" >&2; exit 2 ;; esac
+    [ "$#" -eq 4 ] || { echo "watcher: unexpected handling delivery arguments" >&2; exit 2; }
+    ;;
+  *) echo "usage: $(basename "$0") [--restart | --handling-delivered GENERATION --watcher-pid PID]" >&2; exit 2 ;;
+esac
+
+if [ "$mode" = handling-delivered ]; then
+  fm_pid_alive "$handling_watcher_pid" \
+    && fm_watcher_lock_matches_pid "$STATE" "$WATCH" "$handling_watcher_pid" "$FM_HOME" \
+    && fm_recovery_marker_begin_handling "$STATE/.watcher-down" "$handling_generation"
+  exit $?
+fi
 # "Fresh" reuses the guard's threshold so there is one definition of liveness.
 GRACE=${FM_GUARD_GRACE:-300}
 # How long to wait for a freshly forked watcher to acquire the lock and beat.
@@ -76,7 +109,101 @@ case "${OSTYPE:-}" in
   msys*|mingw*|cygwin*) ARM_CONFIRM_DEFAULT=30 ;;
   *) ARM_CONFIRM_DEFAULT=10 ;;
 esac
-CONFIRM_TIMEOUT=${FM_ARM_CONFIRM_TIMEOUT:-$ARM_CONFIRM_DEFAULT}
+CONFIRM_TIMEOUT=$ARM_CONFIRM_DEFAULT
+CONFIRM_TIMEOUT_FILE_INVALID=0
+if [ -n "${FM_ARM_CONFIRM_TIMEOUT:-}" ]; then
+  CONFIRM_TIMEOUT=$FM_ARM_CONFIRM_TIMEOUT
+elif [ -e "$CONFIG/arm-confirm-timeout" ] || [ -L "$CONFIG/arm-confirm-timeout" ]; then
+  if [ ! -f "$CONFIG/arm-confirm-timeout" ] || [ -L "$CONFIG/arm-confirm-timeout" ]; then
+    echo "watcher: FAILED - config/arm-confirm-timeout must be a regular non-symlink file containing one non-negative base-10 integer" >&2
+    exit 2
+  fi
+  CONFIRM_TIMEOUT=
+  confirm_timeout_extra=
+  confirm_timeout_had_newline=0
+  exec 3< "$CONFIG/arm-confirm-timeout" || {
+    echo "watcher: FAILED - config/arm-confirm-timeout could not be read" >&2
+    exit 2
+  }
+  if IFS= read -r CONFIRM_TIMEOUT <&3; then
+    confirm_timeout_had_newline=1
+  fi
+  if IFS= read -r confirm_timeout_extra <&3 || [ -n "$confirm_timeout_extra" ]; then
+    CONFIRM_TIMEOUT_FILE_INVALID=1
+  fi
+  exec 3<&-
+  confirm_timeout_bytes=$(LC_ALL=C wc -c < "$CONFIG/arm-confirm-timeout") || {
+    echo "watcher: FAILED - config/arm-confirm-timeout could not be read" >&2
+    exit 2
+  }
+  confirm_timeout_expected_bytes=${#CONFIRM_TIMEOUT}
+  if [ "$confirm_timeout_had_newline" -eq 1 ]; then
+    confirm_timeout_expected_bytes=$((confirm_timeout_expected_bytes + 1))
+  fi
+  if [ "$confirm_timeout_bytes" -ne "$confirm_timeout_expected_bytes" ]; then
+    CONFIRM_TIMEOUT_FILE_INVALID=1
+  fi
+fi
+case "$CONFIRM_TIMEOUT" in
+  ''|*[!0-9]*)
+    if [ -n "${FM_ARM_CONFIRM_TIMEOUT:-}" ]; then
+      echo "watcher: FAILED - FM_ARM_CONFIRM_TIMEOUT must be one non-negative base-10 integer" >&2
+    else
+      echo "watcher: FAILED - config/arm-confirm-timeout must contain one non-negative base-10 integer" >&2
+    fi
+    exit 2
+    ;;
+esac
+if [ "$CONFIRM_TIMEOUT_FILE_INVALID" -eq 1 ]; then
+  echo "watcher: FAILED - config/arm-confirm-timeout must contain one non-negative base-10 integer" >&2
+  exit 2
+fi
+ARM_CONFIRM_MAX=2147483647
+ARM_CONFIRM_RAW_MAX_DIGITS=${#ARM_CONFIRM_MAX}
+if [ "${#CONFIRM_TIMEOUT}" -gt "$ARM_CONFIRM_RAW_MAX_DIGITS" ]; then
+  if [ -n "${FM_ARM_CONFIRM_TIMEOUT:-}" ]; then
+    echo "watcher: FAILED - FM_ARM_CONFIRM_TIMEOUT must use at most $ARM_CONFIRM_RAW_MAX_DIGITS base-10 digits" >&2
+  else
+    echo "watcher: FAILED - config/arm-confirm-timeout must contain at most $ARM_CONFIRM_RAW_MAX_DIGITS base-10 digits" >&2
+  fi
+  exit 2
+fi
+# Normalize leading zeros so every accepted value remains decimal in Bash
+# arithmetic instead of acquiring the shell's legacy octal interpretation.
+while [ "${CONFIRM_TIMEOUT#0}" != "$CONFIRM_TIMEOUT" ]; do
+  CONFIRM_TIMEOUT=${CONFIRM_TIMEOUT#0}
+done
+[ -n "$CONFIRM_TIMEOUT" ] || CONFIRM_TIMEOUT=0
+confirm_timeout_exceeds_max=0
+if [ "${#CONFIRM_TIMEOUT}" -gt "${#ARM_CONFIRM_MAX}" ]; then
+  confirm_timeout_exceeds_max=1
+elif [ "${#CONFIRM_TIMEOUT}" -eq "${#ARM_CONFIRM_MAX}" ]; then
+  confirm_timeout_remaining=$CONFIRM_TIMEOUT
+  confirm_timeout_max_remaining=$ARM_CONFIRM_MAX
+  while [ -n "$confirm_timeout_remaining" ]; do
+    confirm_timeout_digit=${confirm_timeout_remaining%"${confirm_timeout_remaining#?}"}
+    confirm_timeout_max_digit=${confirm_timeout_max_remaining%"${confirm_timeout_max_remaining#?}"}
+    if [ "$confirm_timeout_digit" -gt "$confirm_timeout_max_digit" ]; then
+      confirm_timeout_exceeds_max=1
+      break
+    fi
+    if [ "$confirm_timeout_digit" -lt "$confirm_timeout_max_digit" ]; then
+      break
+    fi
+    confirm_timeout_remaining=${confirm_timeout_remaining#?}
+    confirm_timeout_max_remaining=${confirm_timeout_max_remaining#?}
+  done
+fi
+if [ "$confirm_timeout_exceeds_max" -eq 1 ]; then
+  if [ -n "${FM_ARM_CONFIRM_TIMEOUT:-}" ]; then
+    echo "watcher: FAILED - FM_ARM_CONFIRM_TIMEOUT must be between 0 and $ARM_CONFIRM_MAX" >&2
+  else
+    echo "watcher: FAILED - config/arm-confirm-timeout must contain an integer between 0 and $ARM_CONFIRM_MAX" >&2
+  fi
+  exit 2
+fi
+# A live launched child earns this one bounded defense-in-depth extension.
+ARM_CONFIRM_LIVE_GRACE=5
 # Poll interval while attached to an existing healthy watcher.
 ATTACH_POLL=${FM_ARM_ATTACH_POLL:-0.5}
 CYCLE_LOG="$STATE/.watch-cycle-exits.log"
@@ -382,31 +509,6 @@ handling_successor_generation() {
   esac
 }
 
-mode=arm
-handling_generation=
-handling_watcher_pid=
-case "${1:-}" in
-  ''|arm|--arm) mode=arm ;;
-  --restart) mode=restart ;;
-  --handling-delivered)
-    mode=handling-delivered
-    handling_generation=${2:-}
-    [ "${3:-}" = --watcher-pid ] || { echo "watcher: invalid handling delivery confirmation" >&2; exit 2; }
-    handling_watcher_pid=${4:-}
-    case "$handling_generation" in ''|*[!A-Za-z0-9._-]*) echo "watcher: invalid recovery generation" >&2; exit 2 ;; esac
-    case "$handling_watcher_pid" in ''|*[!0-9]*) echo "watcher: invalid successor watcher pid" >&2; exit 2 ;; esac
-    [ "$#" -eq 4 ] || { echo "watcher: unexpected handling delivery arguments" >&2; exit 2; }
-    ;;
-  *) echo "usage: $(basename "$0") [--restart | --handling-delivered GENERATION --watcher-pid PID]" >&2; exit 2 ;;
-esac
-
-if [ "$mode" = handling-delivered ]; then
-  fm_pid_alive "$handling_watcher_pid" \
-    && fm_watcher_lock_matches_pid "$STATE" "$WATCH" "$handling_watcher_pid" "$FM_HOME" \
-    && fm_recovery_marker_begin_handling "$STATE/.watcher-down" "$handling_generation"
-  exit $?
-fi
-
 if [ "$mode" = restart ]; then
   # Home-scoped stop: only the watcher pid recorded in THIS home's lock.
   lock_pid=$(cat "$WATCH_LOCK/pid" 2>/dev/null || true)
@@ -448,6 +550,51 @@ fi
 # wake exit propagates out so the harness re-notifies firstmate.
 child=
 child_out=
+OWNED_CHILD_RC=0
+owned_child_active() {
+  local active_pid active_pids
+  [ -n "$child" ] || return 1
+  fm_pid_alive "$child" || return 1
+  active_pids=$(jobs -p)
+  for active_pid in $active_pids; do
+    [ "$active_pid" = "$child" ] && return 0
+  done
+  return 1
+}
+
+stop_owned_child_bounded() {
+  local i
+  OWNED_CHILD_RC=0
+  [ -n "$child" ] || return 0
+  if owned_child_active; then
+    kill -TERM "$child" 2>/dev/null || true
+    i=0
+    # The watcher may be finishing its own signal-coalescing interval before
+    # its EXIT trap durably publishes the watcher-down transition. Keep that
+    # graceful path bounded without racing a one-second child grace under load.
+    while [ "$i" -lt 50 ] && owned_child_active; do
+      sleep 0.1
+      i=$((i + 1))
+    done
+  fi
+  if owned_child_active; then
+    kill -KILL "$child" 2>/dev/null || true
+    i=0
+    while [ "$i" -lt 10 ] && owned_child_active; do
+      sleep 0.1
+      i=$((i + 1))
+    done
+  fi
+  if owned_child_active; then
+    OWNED_CHILD_RC=124
+  else
+    wait "$child" 2>/dev/null
+    OWNED_CHILD_RC=$?
+  fi
+  child=
+  [ "$OWNED_CHILD_RC" -ne 124 ]
+}
+
 cleanup_child() {
   if [ -n "$child" ] && fm_pid_alive "$child"; then
     kill -TERM "$child" 2>/dev/null || true
@@ -461,10 +608,7 @@ cleanup_child() {
 handle_arm_signal() {
   local signal=$1 rc=$2
   trap - HUP TERM INT
-  if [ -n "$child" ] && fm_pid_alive "$child"; then
-    kill -TERM "$child" 2>/dev/null || true
-    wait "$child" 2>/dev/null || true
-  fi
+  stop_owned_child_bounded || true
   cycle_log_append "$rc" "$signal" arm-interrupted none
   cleanup_child
   exit "$rc"
@@ -546,13 +690,30 @@ owned_child_finished() {
 # date(1) exposes whole seconds. Keep the configured confirmation budget from
 # collapsing when startup begins just before the next second boundary.
 deadline=$(( $(date +%s) + CONFIRM_TIMEOUT + 1 ))
+if [ "${FM_ARM_READY_FD:-}" = 4 ]; then
+  printf 'watcher-confirmation-boundary timeout=%s\n' "$CONFIRM_TIMEOUT" 2>/dev/null >&4 || true
+  exec 4>&-
+fi
+confirm_grace_used=0
+confirmation_deadline_open() {
+  now=$(date +%s)
+  [ "$now" -lt "$deadline" ] && return 0
+  if [ "$confirm_grace_used" -eq 0 ] && fm_pid_alive "$child"; then
+    confirm_grace_used=1
+    deadline=$((deadline + ARM_CONFIRM_LIVE_GRACE))
+    [ "$now" -lt "$deadline" ] && return 0
+  fi
+  return 1
+}
 while :; do
+  confirmation_deadline_open || break
   if healthy_watcher; then
+    confirmation_deadline_open || break
     if [ "$HEALTHY_PID" = "$child" ]; then
       cycle_refresh_lock_before
       if ! handling_generation=$(handling_successor_generation); then
+        stop_owned_child_bounded || true
         cleanup_child
-        wait "$child" 2>/dev/null || true
         cycle_log_append 1 none handling-handoff-failed none
         echo "watcher: FAILED - established successor could not inspect handling state"
         exit 1
@@ -568,10 +729,38 @@ while :; do
       owned_child_finished "$rc"
       exit $?
     fi
-    # Another watcher won the singleton; our child stood down.
-    wait "$child"
-    rc=$?
-    owned_child_finished "$rc"
+    if ! fm_pid_alive "$child"; then
+      wait "$child" 2>/dev/null
+      OWNED_CHILD_RC=$?
+      child=
+    elif ! stop_owned_child_bounded; then
+      print_watch_output "$child_out"
+      rc=$OWNED_CHILD_RC
+      cleanup_child
+      cycle_log_append "$rc" "$(cycle_signal_name "$rc")" startup-race-retirement-failed "attached:$HEALTHY_PID"
+      echo "watcher: FAILED - competing watcher won but owned child could not be retired"
+      exit 1
+    fi
+    rc=$OWNED_CHILD_RC
+    if [ "$rc" -eq 0 ] && watch_output_has_wake "$child_out"; then
+      owned_child_finished "$rc"
+      exit $?
+    fi
+    if ! healthy_watcher; then
+      print_watch_output "$child_out"
+      cleanup_child
+      cycle_log_append "$rc" "$(cycle_signal_name "$rc")" startup-race-winner-lost none
+      echo "watcher: FAILED - competing watcher disappeared during bounded child retirement"
+      exit 1
+    fi
+    cycle_log_append "$rc" "$(cycle_signal_name "$rc")" startup-race-lost "attached:$HEALTHY_PID"
+    print_watch_output "$child_out"
+    rm -f "$child_out" 2>/dev/null || true
+    child_out=
+    cycle_mark_predecessor_successor "attached:$HEALTHY_PID"
+    report_attached
+    cycle_begin "$HEALTHY_PID" attached "$HEALTHY_IDENTITY"
+    attach_and_wait "$HEALTHY_PID"
     exit $?
   fi
   if [ "$child_done" -eq 0 ] && ! fm_pid_alive "$child"; then
@@ -581,15 +770,24 @@ while :; do
     owned_child_finished "$rc"
     exit $?
   fi
-  [ "$(date +%s)" -ge "$deadline" ] && break
   sleep 0.2
 done
 
 trap - HUP TERM INT
+if ! fm_pid_alive "$child"; then
+  wait "$child" 2>/dev/null
+  rc=$?
+  child_done=1
+else
+  stop_owned_child_bounded || true
+  rc=$OWNED_CHILD_RC
+fi
+if [ "$rc" -eq 0 ] && watch_output_has_wake "$child_out"; then
+  owned_child_finished "$rc"
+  exit $?
+fi
 print_watch_output "$child_out"
 cleanup_child
-wait "$child" 2>/dev/null
-rc=$?
 cycle_log_append "$rc" "$(cycle_signal_name "$rc")" confirmation-timeout none
 echo "watcher: FAILED - no live watcher with a fresh beacon"
 exit 1

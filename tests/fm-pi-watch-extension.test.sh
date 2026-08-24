@@ -430,7 +430,7 @@ trap 'exit 0' TERM INT
 while :; do sleep 0.02; done
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
-  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_PI_ARM_READY_TIMEOUT_MS=250 FM_WATCH_REARM_RETRY_BASE_MS=5 FM_WATCH_REARM_RETRY_MAX_MS=10 FM_WATCH_REARM_RETRY_LIMIT=2 node --input-type=module 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_ARM_CONFIRM_TIMEOUT=2147483647 FM_PI_ARM_READY_TIMEOUT_MS=250 FM_WATCH_REARM_RETRY_BASE_MS=5 FM_WATCH_REARM_RETRY_MAX_MS=10 FM_WATCH_REARM_RETRY_LIMIT=2 node --input-type=module 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -502,7 +502,7 @@ printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
 while [ ! -e "$FM_RELEASE_FILE" ]; do sleep 0.1; done
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
-  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_RELEASE_FILE="$release" FM_PI_ARM_READY_TIMEOUT_MS=250 FM_WATCH_ARM_RETIRE_TIMEOUT_MS=20 FM_WATCH_REARM_RETRY_BASE_MS=5 FM_WATCH_REARM_RETRY_MAX_MS=10 FM_WATCH_REARM_RETRY_LIMIT=2 node --input-type=module 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_RELEASE_FILE="$release" FM_ARM_CONFIRM_TIMEOUT=invalid FM_PI_ARM_READY_TIMEOUT_MS=250 FM_WATCH_ARM_RETIRE_TIMEOUT_MS=20 FM_WATCH_REARM_RETRY_BASE_MS=5 FM_WATCH_REARM_RETRY_MAX_MS=10 FM_WATCH_REARM_RETRY_LIMIT=2 node --input-type=module 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -529,6 +529,7 @@ await tool.execute("tool-call-unretired-successor", {}, undefined, undefined, {}
 for (let i = 0; i < 500 && !prompt; i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 10));
 }
+
 const rows = existsSync(process.env.FM_ARM_LOG)
   ? readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n")
   : [];
@@ -544,6 +545,80 @@ EOF
   expect_code 0 "$status" "Pi must fall back without overlapping an unretired successor"
   [ -z "$out" ] || fail "Pi unretired-successor test printed output: $out"
   pass "Pi unretired successor falls back without an overlapping retry"
+}
+
+test_pi_slow_cleanup_completes_before_adapter_retirement() {
+  local repo home plugin log stop out status
+  repo="$TMP_ROOT/pi-slow-cleanup-root"
+  home="$TMP_ROOT/pi-slow-cleanup-home"
+  log="$TMP_ROOT/pi-slow-cleanup.log"
+  stop="$TMP_ROOT/pi-slow-cleanup.stop"
+  mkdir -p "$repo/bin" "$home/state" "$home/config"
+  install_pi_watch_extension_fixture "$repo"
+  plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
+  cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
+count=$(wc -l < "$FM_ARM_LOG" | tr -d '[:space:]')
+if [ "$count" -eq 1 ]; then
+  printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
+  printf 'signal: synthetic wake\n'
+  exit 0
+fi
+if [ "$count" -eq 2 ]; then
+  stop_owned_child_bounded() {
+    sleep 1
+    sleep 1
+  }
+  cycle_log_append() {
+    sleep 0.4
+  }
+  handle_signal() {
+    stop_owned_child_bounded
+    cycle_log_append
+    exit 0
+  }
+  trap handle_signal TERM INT
+  while :; do sleep 0.2; done
+fi
+printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
+while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+SH
+  chmod +x "$repo/bin/fm-watch-arm.sh"
+  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_STOP_FILE="$stop" FM_ARM_CONFIRM_TIMEOUT=invalid FM_PI_ARM_READY_TIMEOUT_MS=250 FM_WATCH_REARM_RETRY_BASE_MS=5 node --input-type=module 2>&1 <<'EOF'
+import { readFileSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
+let tool = null;
+let prompt = "";
+const pi = {
+  on() {},
+  registerCommand() {},
+  registerTool(candidate) {
+    if (candidate.name === "fm_watch_arm_pi") tool = candidate;
+  },
+  sendUserMessage: async (message) => {
+    prompt += message;
+  },
+};
+writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
+const mod = await import(pathToFileURL(process.env.PLUGIN).href);
+mod.default(pi);
+await tool.execute("tool-call-slow-cleanup", {}, undefined, undefined, {});
+for (let i = 0; i < 500 && !prompt; i += 1) {
+  await new Promise((resolve) => setTimeout(resolve, 10));
+}
+const rows = readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n");
+if (rows.length !== 3) throw new Error(`expected one slow cleanup then one successor, got ${rows.length}: ${rows.join(" | ")}`);
+if (!prompt.includes("signal: synthetic wake")) throw new Error(`original wake was lost: ${prompt}`);
+if (prompt.includes("unready successor arm did not exit")) throw new Error(`adapter abandoned bounded arm cleanup: ${prompt}`);
+writeFileSync(process.env.FM_STOP_FILE, "stop\n");
+EOF
+)
+  status=$?
+  expect_code 0 "$status" "Pi must wait through the arm's complete bounded cleanup"
+  [ -z "$out" ] || fail "Pi slow-cleanup test printed output: $out"
+  pass "Pi waits through bounded arm cleanup before restoring continuity"
 }
 
 test_pi_late_unretired_close_resumes_supervision() {
@@ -580,7 +655,7 @@ trap 'exit 0' TERM INT
 while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
 SH
     chmod +x "$repo/bin/fm-watch-arm.sh"
-    out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_UNRETIRED_READY_FILE="$ready" FM_UNRETIRED_RETIRE_FILE="$retired" FM_RELEASE_FILE="$release" FM_STOP_FILE="$stop" FM_LATE_KIND="$kind" FM_PI_ARM_READY_TIMEOUT_MS=250 FM_WATCH_ARM_RETIRE_TIMEOUT_MS=20 FM_WATCH_REARM_RETRY_BASE_MS=5 FM_WATCH_REARM_RETRY_MAX_MS=10 FM_WATCH_REARM_RETRY_LIMIT=2 node --input-type=module 2>&1 <<'EOF'
+    out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_UNRETIRED_READY_FILE="$ready" FM_UNRETIRED_RETIRE_FILE="$retired" FM_RELEASE_FILE="$release" FM_STOP_FILE="$stop" FM_LATE_KIND="$kind" FM_ARM_CONFIRM_TIMEOUT=invalid FM_PI_ARM_READY_TIMEOUT_MS=250 FM_WATCH_ARM_RETIRE_TIMEOUT_MS=20 FM_WATCH_REARM_RETRY_BASE_MS=5 FM_WATCH_REARM_RETRY_MAX_MS=10 FM_WATCH_REARM_RETRY_LIMIT=2 node --input-type=module 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -1338,16 +1413,17 @@ const hooks = await mod.FmPrimaryWatchArm({
 const event = { event: { type: "session.idle", properties: { sessionID: "session-test" } } };
 writeFileSync(`${process.env.FM_HOME}/state/.lock`, "999999\n");
 await hooks.event(event);
-await new Promise((resolve) => setTimeout(resolve, 120));
+const readOnlyStatus = await globalThis.__firstmateOpenCodeWatchArm.ensureArmed("session-test", client);
+if (readOnlyStatus !== "read-only") {
+  console.error(`expected read-only without lock ownership, got ${readOnlyStatus}`);
+  process.exit(1);
+}
 if (existsSync(process.env.FM_ARM_LOG)) {
   console.error("watch arm ran without owning the session lock");
   process.exit(1);
 }
 writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
-await hooks.event(event);
-for (let i = 0; i < 250 && !existsSync(process.env.FM_ARM_LOG); i += 1) {
-  await new Promise((resolve) => setTimeout(resolve, 20));
-}
+await globalThis.__firstmateOpenCodeWatchArm.ensureArmed("session-test", client);
 if (!existsSync(process.env.FM_ARM_LOG)) {
   console.error("watch arm did not run after the session lock matched");
   process.exit(1);
@@ -1605,7 +1681,7 @@ trap 'exit 0' TERM INT
 while :; do sleep 0.02; done
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
-  out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_OPENCODE_ARM_READY_TIMEOUT_MS=250 FM_WATCH_REARM_RETRY_BASE_MS=5 FM_WATCH_REARM_RETRY_MAX_MS=10 FM_WATCH_REARM_RETRY_LIMIT=2 node 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_ARM_CONFIRM_TIMEOUT=2147483647 FM_OPENCODE_ARM_READY_TIMEOUT_MS=250 FM_WATCH_REARM_RETRY_BASE_MS=5 FM_WATCH_REARM_RETRY_MAX_MS=10 FM_WATCH_REARM_RETRY_LIMIT=2 node 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -1679,7 +1755,7 @@ printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
 while [ ! -e "$FM_RELEASE_FILE" ]; do sleep 0.1; done
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
-  out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_RELEASE_FILE="$release" FM_OPENCODE_ARM_READY_TIMEOUT_MS=250 FM_WATCH_ARM_RETIRE_TIMEOUT_MS=20 FM_WATCH_REARM_RETRY_BASE_MS=5 FM_WATCH_REARM_RETRY_MAX_MS=10 FM_WATCH_REARM_RETRY_LIMIT=2 node 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_RELEASE_FILE="$release" FM_ARM_CONFIRM_TIMEOUT=invalid FM_OPENCODE_ARM_READY_TIMEOUT_MS=250 FM_WATCH_ARM_RETIRE_TIMEOUT_MS=20 FM_WATCH_REARM_RETRY_BASE_MS=5 FM_WATCH_REARM_RETRY_MAX_MS=10 FM_WATCH_REARM_RETRY_LIMIT=2 node 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -1706,6 +1782,7 @@ await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses
 for (let i = 0; i < 500 && !prompt; i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 10));
 }
+
 const rows = existsSync(process.env.FM_ARM_LOG)
   ? readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n")
   : [];
@@ -1721,6 +1798,82 @@ EOF
   expect_code 0 "$status" "OpenCode must fall back without overlapping an unretired successor"
   [ -z "$out" ] || fail "OpenCode unretired-successor test printed output: $out"
   pass "OpenCode unretired successor falls back without an overlapping retry"
+}
+
+test_opencode_slow_cleanup_completes_before_adapter_retirement() {
+  local plugin repo home log stop out status
+  plugin="$ROOT/.opencode/plugins/fm-primary-watch-arm.js"
+  repo="$TMP_ROOT/opencode-slow-cleanup-root"
+  home="$TMP_ROOT/opencode-slow-cleanup-home"
+  log="$TMP_ROOT/opencode-slow-cleanup.log"
+  stop="$TMP_ROOT/opencode-slow-cleanup.stop"
+  mkdir -p "$repo/bin" "$home/state" "$home/config"
+  git init -q "$repo"
+  : > "$repo/AGENTS.md"
+  : > "$home/state/task.meta"
+  cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
+count=$(wc -l < "$FM_ARM_LOG" | tr -d '[:space:]')
+if [ "$count" -eq 1 ]; then
+  printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
+  printf 'signal: synthetic wake\n'
+  exit 0
+fi
+if [ "$count" -eq 2 ]; then
+  stop_owned_child_bounded() {
+    sleep 1
+    sleep 1
+  }
+  cycle_log_append() {
+    sleep 0.4
+  }
+  handle_signal() {
+    stop_owned_child_bounded
+    cycle_log_append
+    exit 0
+  }
+  trap handle_signal TERM INT
+  while :; do sleep 0.2; done
+fi
+printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
+while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+SH
+  chmod +x "$repo/bin/fm-watch-arm.sh"
+  out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_STOP_FILE="$stop" FM_ARM_CONFIRM_TIMEOUT=invalid FM_OPENCODE_ARM_READY_TIMEOUT_MS=250 FM_WATCH_REARM_RETRY_BASE_MS=5 node 2>&1 <<'EOF'
+import { readFileSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
+const mod = await import(pathToFileURL(process.env.PLUGIN).href);
+let prompt = "";
+const client = {
+  session: {
+    promptAsync: async (request) => {
+      prompt += request.body.parts[0].text;
+    },
+  },
+};
+const hooks = await mod.FmPrimaryWatchArm({
+  client,
+  directory: process.env.WORKTREE,
+  worktree: process.env.WORKTREE,
+});
+writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
+await hooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
+for (let i = 0; i < 500 && !prompt; i += 1) {
+  await new Promise((resolve) => setTimeout(resolve, 10));
+}
+const rows = readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n");
+if (rows.length !== 3) throw new Error(`expected one slow cleanup then one successor, got ${rows.length}: ${rows.join(" | ")}`);
+if (!prompt.includes("signal: synthetic wake")) throw new Error(`original wake was lost: ${prompt}`);
+if (prompt.includes("unready successor arm did not exit")) throw new Error(`adapter abandoned bounded arm cleanup: ${prompt}`);
+writeFileSync(process.env.FM_STOP_FILE, "stop\n");
+EOF
+)
+  status=$?
+  expect_code 0 "$status" "OpenCode must wait through the arm's complete bounded cleanup"
+  [ -z "$out" ] || fail "OpenCode slow-cleanup test printed output: $out"
+  pass "OpenCode waits through bounded arm cleanup before restoring continuity"
 }
 
 test_opencode_late_unretired_close_resumes_supervision() {
@@ -1759,7 +1912,7 @@ trap 'exit 0' TERM INT
 while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
 SH
     chmod +x "$repo/bin/fm-watch-arm.sh"
-    out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_UNRETIRED_READY_FILE="$ready" FM_UNRETIRED_RETIRE_FILE="$retired" FM_RELEASE_FILE="$release" FM_STOP_FILE="$stop" FM_LATE_KIND="$kind" FM_OPENCODE_ARM_READY_TIMEOUT_MS=250 FM_WATCH_ARM_RETIRE_TIMEOUT_MS=20 FM_WATCH_REARM_RETRY_BASE_MS=5 FM_WATCH_REARM_RETRY_MAX_MS=10 FM_WATCH_REARM_RETRY_LIMIT=2 node 2>&1 <<'EOF'
+    out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_UNRETIRED_READY_FILE="$ready" FM_UNRETIRED_RETIRE_FILE="$retired" FM_RELEASE_FILE="$release" FM_STOP_FILE="$stop" FM_LATE_KIND="$kind" FM_ARM_CONFIRM_TIMEOUT=invalid FM_OPENCODE_ARM_READY_TIMEOUT_MS=250 FM_WATCH_ARM_RETIRE_TIMEOUT_MS=20 FM_WATCH_REARM_RETRY_BASE_MS=5 FM_WATCH_REARM_RETRY_MAX_MS=10 FM_WATCH_REARM_RETRY_LIMIT=2 node 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -2150,6 +2303,223 @@ EOF
   pass "OpenCode healthy arm output does not suppress the turn-end guard"
 }
 
+test_adapter_arm_ready_timeout_resolution() {
+  local repo pi_plugin opencode_plugin out status
+  repo="$TMP_ROOT/adapter-ready-timeout-root"
+  install_pi_watch_extension_fixture "$repo"
+  pi_plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
+  opencode_plugin="$ROOT/.opencode/plugins/fm-primary-watch-arm.js"
+  out=$(PI_PLUGIN="$pi_plugin" OPENCODE_PLUGIN="$opencode_plugin" node --input-type=module 2>&1 <<'EOF'
+import { pathToFileURL } from "node:url";
+
+const pi = await import(pathToFileURL(process.env.PI_PLUGIN).href);
+const opencode = await import(pathToFileURL(process.env.OPENCODE_PLUGIN).href);
+const checkStartup = (platform, expected, label) => {
+  const piValue = pi.piArmStartupTimeoutMs(platform);
+  const opencodeValue = opencode.openCodeArmStartupTimeoutMs(platform);
+  if (piValue !== expected || opencodeValue !== expected) {
+    throw new Error(`${label}: Pi=${piValue} OpenCode=${opencodeValue} expected=${expected}`);
+  }
+};
+const checkConfirmation = (confirmSeconds, platform, expected, label) => {
+  const piValue = pi.piArmConfirmationTimeoutMs(confirmSeconds, platform);
+  const opencodeValue = opencode.openCodeArmConfirmationTimeoutMs(confirmSeconds, platform);
+  if (piValue !== expected || opencodeValue !== expected) {
+    throw new Error(`${label}: Pi=${piValue} OpenCode=${opencodeValue} expected=${expected}`);
+  }
+};
+
+delete process.env.FM_PI_ARM_READY_TIMEOUT_MS;
+delete process.env.FM_OPENCODE_ARM_READY_TIMEOUT_MS;
+checkStartup("darwin", 16000, "Unix startup default");
+checkStartup("win32", 36000, "Windows startup default");
+checkConfirmation(10, "darwin", 16000, "Unix confirmation default");
+checkConfirmation(30, "win32", 36000, "Windows confirmation default");
+checkConfirmation(40, "darwin", 46000, "boundary-selected arm bound");
+checkConfirmation(50, "darwin", 56000, "larger boundary-selected arm bound");
+process.env.FM_PI_ARM_READY_TIMEOUT_MS = "60000";
+process.env.FM_OPENCODE_ARM_READY_TIMEOUT_MS = "60000";
+checkStartup("darwin", 60000, "larger adapter startup minimum");
+checkConfirmation(50, "darwin", 60000, "larger adapter confirmation minimum");
+EOF
+)
+  status=$?
+  expect_code 0 "$status" "Pi and OpenCode readiness bounds must cover dynamic arm confirmation and platform defaults"
+  [ -z "$out" ] || fail "adapter readiness-bound resolution test printed output: $out"
+  pass "Pi and OpenCode readiness bounds cover selected arm budgets and platform defaults"
+}
+
+test_pi_delayed_start_preserves_arm_bound() {
+  local repo home plugin log retired stop boundary out status
+  repo="$TMP_ROOT/pi-selected-arm-bound-root"
+  home="$TMP_ROOT/pi-selected-arm-bound-home"
+  log="$TMP_ROOT/pi-selected-arm-bound.log"
+  retired="$TMP_ROOT/pi-selected-arm-bound.retired"
+  stop="$TMP_ROOT/pi-selected-arm-bound.stop"
+  boundary="$TMP_ROOT/pi-selected-arm-bound.boundary"
+  mkdir -p "$home/state" "$home/config"
+  printf '1\n' > "$home/config/arm-confirm-timeout"
+  install_pi_watch_extension_fixture "$repo"
+  plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
+  cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
+count=$(wc -l < "$FM_ARM_LOG" | tr -d '[:space:]')
+if [ "$count" -eq 1 ]; then
+  printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
+  printf 'signal: synthetic wake\n'
+  exit 0
+fi
+trap 'printf "retired\n" > "${FM_RETIRED_FILE:?}"; exit 0' TERM INT
+selected=$(cat "$FM_HOME/config/arm-confirm-timeout")
+printf '0\n' > "$FM_HOME/config/arm-confirm-timeout"
+printf 'watcher-conf' >&4
+sleep 0.05
+printf 'irmation-boundary timeout=%s' "$selected" >&4
+exec 4>&-
+: > "$FM_BOUNDARY_PUBLISHED_FILE"
+sleep 0.8
+printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
+while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+SH
+  chmod +x "$repo/bin/fm-watch-arm.sh"
+  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_RETIRED_FILE="$retired" FM_STOP_FILE="$stop" FM_BOUNDARY_PUBLISHED_FILE="$boundary" FM_PI_ARM_READY_TIMEOUT_MS=600 node --input-type=module 2>&1 <<'EOF'
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
+let tool = null;
+let prompt = "";
+const pi = {
+  on() {},
+  registerCommand() {},
+  registerTool(candidate) {
+    if (candidate.name === "fm_watch_arm_pi") tool = candidate;
+  },
+  sendUserMessage: async (message) => {
+    prompt += message;
+  },
+};
+writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
+const mod = await import(pathToFileURL(process.env.PLUGIN).href);
+mod.default(pi);
+await tool.execute("tool-call-selected-bound", {}, undefined, undefined, {});
+for (let i = 0; i < 100; i += 1) {
+  const rows = existsSync(process.env.FM_ARM_LOG)
+    ? readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n").length
+    : 0;
+  if (rows >= 2) break;
+  await new Promise((resolve) => setTimeout(resolve, 10));
+}
+if (readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n").length < 2) throw new Error("Pi successor did not launch");
+const boundaryWaitDeadline = Date.now() + 2000;
+while (!existsSync(process.env.FM_BOUNDARY_PUBLISHED_FILE) && Date.now() < boundaryWaitDeadline) {}
+if (!existsSync(process.env.FM_BOUNDARY_PUBLISHED_FILE)) throw new Error("Pi successor did not publish its readiness boundary");
+const unblockAt = Date.now() + 800;
+while (Date.now() < unblockAt) {}
+for (let i = 0; i < 250 && !prompt; i += 1) {
+  await new Promise((resolve) => setTimeout(resolve, 20));
+}
+const rows = readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n");
+if (rows.length !== 2) throw new Error(`Pi retired or retried the delayed successor: ${rows.join(" | ")}`);
+if (existsSync(process.env.FM_RETIRED_FILE)) throw new Error("Pi retired the successor inside its arm-owned interval");
+if (!prompt.includes("signal: synthetic wake")) throw new Error(`Pi lost the original wake: ${prompt}`);
+writeFileSync(process.env.FM_STOP_FILE, "stop\n");
+EOF
+)
+  status=$?
+  expect_code 0 "$status" "Pi must grant the complete arm interval after delayed startup"
+  [ -z "$out" ] || fail "Pi delayed-start arm-bound test printed output: $out"
+  pass "Pi grants a split-boundary delayed successor its complete arm-owned readiness interval"
+}
+
+test_opencode_delayed_start_preserves_arm_bound() {
+  local plugin repo home log retired stop boundary out status
+  plugin="$ROOT/.opencode/plugins/fm-primary-watch-arm.js"
+  repo="$TMP_ROOT/opencode-selected-arm-bound-root"
+  home="$TMP_ROOT/opencode-selected-arm-bound-home"
+  log="$TMP_ROOT/opencode-selected-arm-bound.log"
+  retired="$TMP_ROOT/opencode-selected-arm-bound.retired"
+  stop="$TMP_ROOT/opencode-selected-arm-bound.stop"
+  boundary="$TMP_ROOT/opencode-selected-arm-bound.boundary"
+  mkdir -p "$repo/bin" "$home/state" "$home/config"
+  printf '1\n' > "$home/config/arm-confirm-timeout"
+  git init -q "$repo"
+  : > "$repo/AGENTS.md"
+  : > "$home/state/task.meta"
+  cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
+count=$(wc -l < "$FM_ARM_LOG" | tr -d '[:space:]')
+if [ "$count" -eq 1 ]; then
+  printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
+  printf 'signal: synthetic wake\n'
+  exit 0
+fi
+trap 'printf "retired\n" > "${FM_RETIRED_FILE:?}"; exit 0' TERM INT
+selected=$(cat "$FM_HOME/config/arm-confirm-timeout")
+printf '0\n' > "$FM_HOME/config/arm-confirm-timeout"
+printf 'watcher-conf' >&4
+sleep 0.05
+printf 'irmation-boundary timeout=%s' "$selected" >&4
+exec 4>&-
+: > "$FM_BOUNDARY_PUBLISHED_FILE"
+sleep 0.8
+printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
+while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+SH
+  chmod +x "$repo/bin/fm-watch-arm.sh"
+  out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_RETIRED_FILE="$retired" FM_STOP_FILE="$stop" FM_BOUNDARY_PUBLISHED_FILE="$boundary" FM_OPENCODE_ARM_READY_TIMEOUT_MS=600 node --input-type=module 2>&1 <<'EOF'
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
+const mod = await import(pathToFileURL(process.env.PLUGIN).href);
+let prompt = "";
+const client = {
+  session: {
+    promptAsync: async (request) => {
+      prompt += request.body.parts[0].text;
+    },
+  },
+};
+const hooks = await mod.FmPrimaryWatchArm({
+  client,
+  directory: process.env.WORKTREE,
+  worktree: process.env.WORKTREE,
+});
+writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
+await hooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
+for (let i = 0; i < 100; i += 1) {
+  const rows = existsSync(process.env.FM_ARM_LOG)
+    ? readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n").length
+    : 0;
+  if (rows >= 2) break;
+  await new Promise((resolve) => setTimeout(resolve, 10));
+}
+if (readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n").length < 2) throw new Error("OpenCode successor did not launch");
+const boundaryWaitDeadline = Date.now() + 2000;
+while (!existsSync(process.env.FM_BOUNDARY_PUBLISHED_FILE) && Date.now() < boundaryWaitDeadline) {}
+if (!existsSync(process.env.FM_BOUNDARY_PUBLISHED_FILE)) throw new Error("OpenCode successor did not publish its readiness boundary");
+const unblockAt = Date.now() + 800;
+while (Date.now() < unblockAt) {}
+for (let i = 0; i < 250 && !prompt; i += 1) {
+  await new Promise((resolve) => setTimeout(resolve, 20));
+}
+const rows = readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n");
+if (rows.length !== 2) throw new Error(`OpenCode retired or retried the delayed successor: ${rows.join(" | ")}`);
+if (existsSync(process.env.FM_RETIRED_FILE)) throw new Error("OpenCode retired the successor inside its arm-owned interval");
+if (!prompt.includes("signal: synthetic wake")) throw new Error(`OpenCode lost the original wake: ${prompt}`);
+writeFileSync(process.env.FM_STOP_FILE, "stop\n");
+EOF
+)
+  status=$?
+  expect_code 0 "$status" "OpenCode must grant the complete arm interval after delayed startup"
+  [ -z "$out" ] || fail "OpenCode delayed-start arm-bound test printed output: $out"
+  pass "OpenCode grants a split-boundary delayed successor its complete arm-owned readiness interval"
+}
+
+test_adapter_arm_ready_timeout_resolution
+test_pi_delayed_start_preserves_arm_bound
+test_opencode_delayed_start_preserves_arm_bound
 test_pi_extension_reports_external_healthy_watcher
 test_pi_tool_returns_agent_tool_result
 test_pi_redundant_tool_call_is_owned_noop
@@ -2157,6 +2527,7 @@ test_pi_scheduled_retry_call_is_owned_noop
 test_pi_actionable_close_starts_single_successor_before_delivery
 test_pi_hung_successor_falls_back_to_typed_wake
 test_pi_unretired_successor_falls_back_without_retry
+test_pi_slow_cleanup_completes_before_adapter_retirement
 test_pi_late_unretired_close_resumes_supervision
 test_pi_empty_close_retries_instead_of_disappearing
 test_pi_established_empty_close_honors_retry_limit
@@ -2174,6 +2545,7 @@ test_opencode_primary_watch_plugin_rearms_after_wake
 test_opencode_pre_ready_actionable_close_preserves_its_successor
 test_opencode_hung_successor_falls_back_to_typed_wake
 test_opencode_unretired_successor_falls_back_without_retry
+test_opencode_slow_cleanup_completes_before_adapter_retirement
 test_opencode_late_unretired_close_resumes_supervision
 test_opencode_empty_close_retries_instead_of_disappearing
 test_opencode_established_empty_close_honors_retry_limit

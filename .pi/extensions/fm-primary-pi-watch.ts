@@ -88,20 +88,14 @@ const extensionVersion = `sha256:${createHash("sha256").update(readFileSync(exte
 const retryBaseMs = positiveInteger("FM_WATCH_REARM_RETRY_BASE_MS", 250);
 const retryMaxMs = positiveInteger("FM_WATCH_REARM_RETRY_MAX_MS", 4000);
 const retryLimit = positiveInteger("FM_WATCH_REARM_RETRY_LIMIT", 5);
-// 35s on Windows so the budget stays above arm's MSYS confirm default (30s in
-// bin/fm-watch-arm.sh): a slow but successful Git Bash cold start must not be
-// SIGTERMed mid-confirmation. Conditioned on win32 so other platforms keep 12s.
-const armReadyTimeoutMs = positiveInteger(
-  "FM_PI_ARM_READY_TIMEOUT_MS",
-  process.platform === "win32" ? 35000 : 12000,
-);
-const armRetireTimeoutMs = positiveInteger("FM_WATCH_ARM_RETIRE_TIMEOUT_MS", 1000);
+const armRetireTimeoutMs = positiveInteger("FM_WATCH_ARM_RETIRE_TIMEOUT_MS", 4000);
 const repairOnlyHint = "call fm_watch_arm_pi again only after a later notification says the cycle is missing, failed, or unhealthy";
 const shuttingDownMessage = "watcher: not armed - Pi session is shutting down";
 
 let nextGenerationId = 0;
 let activeGeneration: SessionGeneration | null = null;
 const armReadiness = new WeakMap<ChildProcess, Promise<boolean>>();
+const armConfirmationBoundary = new WeakMap<ChildProcess, Promise<number>>();
 const armClose = new WeakMap<ChildProcess, Promise<void>>();
 const armRecovery = new WeakMap<ChildProcess, { generation: string; watcherPid: string }>();
 
@@ -109,6 +103,41 @@ function positiveInteger(name: string, fallback: number): number {
   const value = Number(process.env[name]);
   if (!Number.isFinite(value) || value <= 0) return fallback;
   return Math.floor(value);
+}
+
+export function piArmStartupTimeoutMs(platform: NodeJS.Platform = process.platform): number {
+  return positiveInteger("FM_PI_ARM_READY_TIMEOUT_MS", platform === "win32" ? 36000 : 16000);
+}
+
+export function piArmConfirmationTimeoutMs(
+  confirmSeconds: number,
+  platform: NodeJS.Platform = process.platform,
+): number {
+  return Math.max(piArmStartupTimeoutMs(platform), (confirmSeconds + 6) * 1000);
+}
+
+function startDeadlineTimer(timeoutMs: number, onTimeout: () => void): () => void {
+  const deadline = Date.now() + timeoutMs;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const schedule = (): void => {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      onTimeout();
+      return;
+    }
+    timer = setTimeout(schedule, Math.min(remaining, 2147483647));
+    timer.unref();
+  };
+  schedule();
+  return () => {
+    if (timer) clearTimeout(timer);
+  };
+}
+
+function afterQueuedEvents(callback: () => void): () => void {
+  const immediate = setImmediate(callback);
+  immediate.unref();
+  return () => clearImmediate(immediate);
 }
 
 function parentPid(pid: string): string {
@@ -283,10 +312,27 @@ export default function (pi: ExtensionAPI) {
     const readiness = armReadiness.get(armChild);
     if (!readiness) return Promise.resolve(false);
     return new Promise((resolveReady) => {
-      const timer = setTimeout(() => resolveReady(false), armReadyTimeoutMs);
-      timer.unref();
+      let settled = false;
+      let cancelQueuedSettlement = (): void => {};
+      const expire = (): void => {
+        cancelQueuedSettlement();
+        cancelQueuedSettlement = afterQueuedEvents(() => {
+          if (settled) return;
+          settled = true;
+          resolveReady(false);
+        });
+      };
+      let cancelTimeout = startDeadlineTimer(piArmStartupTimeoutMs(), expire);
+      void armConfirmationBoundary.get(armChild)?.then((confirmSeconds) => {
+        if (settled) return;
+        cancelQueuedSettlement();
+        cancelTimeout();
+        cancelTimeout = startDeadlineTimer(piArmConfirmationTimeoutMs(confirmSeconds), expire);
+      });
       void readiness.then((ready) => {
-        clearTimeout(timer);
+        settled = true;
+        cancelQueuedSettlement();
+        cancelTimeout();
         resolveReady(ready);
       });
     });
@@ -391,13 +437,14 @@ export default function (pi: ExtensionAPI) {
       FM_HOME: fmHome,
       FM_ROOT_OVERRIDE: fmRoot,
       FM_CONFIG_OVERRIDE: config,
+      FM_ARM_READY_FD: "4",
       FM_WATCH_ARM_SCRIPT: armScript,
       FM_WATCH_PREDECESSOR_ARM_PID: predecessorArmPid,
     };
     const armChild = spawn("bash", ["-lc", "config_dir=\"${FM_CONFIG_OVERRIDE:-$FM_HOME/config}\"; [ -f \"$config_dir/x-mode.env\" ] && . \"$config_dir/x-mode.env\"; exec \"$FM_WATCH_ARM_SCRIPT\" --restart"], {
       cwd: fmRoot,
       env,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["ignore", "pipe", "pipe", "ignore", "pipe"],
     });
     owner.child = armChild;
     let stdout = "";
@@ -405,11 +452,17 @@ export default function (pi: ExtensionAPI) {
     let settled = false;
     let readinessSettled = false;
     let resolveReadiness: (ready: boolean) => void = () => {};
+    let boundarySettled = false;
+    let resolveBoundary: (confirmSeconds: number) => void = () => {};
     let resolveClosed: () => void = () => {};
     const readiness = new Promise<boolean>((resolveReady) => {
       resolveReadiness = resolveReady;
     });
     armReadiness.set(armChild, readiness);
+    const boundary = new Promise<number>((resolveArmBoundary) => {
+      resolveBoundary = resolveArmBoundary;
+    });
+    armConfirmationBoundary.set(armChild, boundary);
     const closed = new Promise<void>((resolveClosedChild) => {
       resolveClosed = resolveClosedChild;
     });
@@ -418,6 +471,11 @@ export default function (pi: ExtensionAPI) {
       if (readinessSettled) return;
       readinessSettled = true;
       resolveReadiness(ready);
+    };
+    const settleBoundary = (confirmSeconds: number): void => {
+      if (boundarySettled) return;
+      boundarySettled = true;
+      resolveBoundary(confirmSeconds);
     };
     const observeEstablishedArm = (): void => {
       const combined = `${stdout}\n${stderr}`;
@@ -430,6 +488,22 @@ export default function (pi: ExtensionAPI) {
     const releaseChild = (): void => {
       if (owner.child === armChild) owner.child = null;
     };
+    let boundaryBuffer = "";
+    const observeBoundary = (text: string, flush = false): void => {
+      boundaryBuffer += text;
+      const lines = boundaryBuffer.split(/\r?\n/);
+      boundaryBuffer = lines.pop() ?? "";
+      if (flush && boundaryBuffer) {
+        lines.push(boundaryBuffer);
+        boundaryBuffer = "";
+      }
+      for (const line of lines) {
+        const match = line.match(/^watcher-confirmation-boundary timeout=([0-9]{1,10})$/);
+        if (!match) continue;
+        const confirmSeconds = Number(match[1]);
+        if (Number.isSafeInteger(confirmSeconds) && confirmSeconds <= 2147483647) settleBoundary(confirmSeconds);
+      }
+    };
     armChild.stdout.on("data", (chunk: Buffer) => {
       stdout += chunk.toString();
       observeEstablishedArm();
@@ -438,6 +512,10 @@ export default function (pi: ExtensionAPI) {
       stderr += chunk.toString();
       observeEstablishedArm();
     });
+    armChild.stdio[4]?.on("data", (chunk: Buffer) => {
+      observeBoundary(chunk.toString());
+    });
+    armChild.stdio[4]?.on("end", () => observeBoundary("", true));
     armChild.on("close", (code: number | null, signal: NodeJS.Signals | null) => {
       if (settled) return;
       settled = true;

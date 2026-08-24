@@ -4,12 +4,7 @@ import { resolve } from "node:path";
 import { encodeFirstmateOperationalInput } from "./lib/fm-operational-input.js";
 
 const COORDINATOR_KEY = "__firstmateOpenCodeWatchArm";
-// 35s on Windows so the budget stays above arm's MSYS confirm default (30s in
-// bin/fm-watch-arm.sh): a slow but successful Git Bash cold start must not be
-// SIGTERMed mid-confirmation. Conditioned on win32 so other platforms keep 12s.
-const ARM_READY_TIMEOUT_DEFAULT_MS = process.platform === "win32" ? 35000 : 12000;
-const ARM_READY_TIMEOUT_MS = positiveInteger("FM_OPENCODE_ARM_READY_TIMEOUT_MS", ARM_READY_TIMEOUT_DEFAULT_MS);
-const ARM_RETIRE_TIMEOUT_MS = positiveInteger("FM_WATCH_ARM_RETIRE_TIMEOUT_MS", 1000);
+const ARM_RETIRE_TIMEOUT_MS = positiveInteger("FM_WATCH_ARM_RETIRE_TIMEOUT_MS", 4000);
 const REARM_RETRY_BASE_MS = positiveInteger("FM_WATCH_REARM_RETRY_BASE_MS", 250);
 const REARM_RETRY_MAX_MS = positiveInteger("FM_WATCH_REARM_RETRY_MAX_MS", 4000);
 const REARM_RETRY_LIMIT = positiveInteger("FM_WATCH_REARM_RETRY_LIMIT", 5);
@@ -22,12 +17,45 @@ let launchInFlight = null;
 let restorationInFlight = null;
 let armClose = new WeakMap();
 let armReadiness = new WeakMap();
+let armConfirmationBoundary = new WeakMap();
 let armRecovery = new WeakMap();
 
 function positiveInteger(name, fallback) {
   const value = Number(process.env[name]);
   if (!Number.isFinite(value) || value <= 0) return fallback;
   return Math.floor(value);
+}
+
+export function openCodeArmStartupTimeoutMs(platform = process.platform) {
+  return positiveInteger("FM_OPENCODE_ARM_READY_TIMEOUT_MS", platform === "win32" ? 36000 : 16000);
+}
+
+export function openCodeArmConfirmationTimeoutMs(confirmSeconds, platform = process.platform) {
+  return Math.max(openCodeArmStartupTimeoutMs(platform), (confirmSeconds + 6) * 1000);
+}
+
+function startDeadlineTimer(timeoutMs, onTimeout) {
+  const deadline = Date.now() + timeoutMs;
+  let timer = null;
+  const schedule = () => {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      onTimeout();
+      return;
+    }
+    timer = setTimeout(schedule, Math.min(remaining, 2147483647));
+    timer.unref();
+  };
+  schedule();
+  return () => {
+    if (timer) clearTimeout(timer);
+  };
+}
+
+function afterQueuedEvents(callback) {
+  const immediate = setImmediate(callback);
+  immediate.unref();
+  return () => clearImmediate(immediate);
 }
 
 function setArmStatus(status) {
@@ -38,10 +66,27 @@ function waitForArmReady(armChild) {
   const readiness = armReadiness.get(armChild);
   if (!readiness) return Promise.resolve("failed");
   return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve("timeout"), ARM_READY_TIMEOUT_MS);
-    timer.unref();
+    let settled = false;
+    let cancelQueuedSettlement = () => {};
+    const expire = () => {
+      cancelQueuedSettlement();
+      cancelQueuedSettlement = afterQueuedEvents(() => {
+        if (settled) return;
+        settled = true;
+        resolve("timeout");
+      });
+    };
+    let cancelTimeout = startDeadlineTimer(openCodeArmStartupTimeoutMs(), expire);
+    void armConfirmationBoundary.get(armChild)?.then((confirmSeconds) => {
+      if (settled) return;
+      cancelQueuedSettlement();
+      cancelTimeout();
+      cancelTimeout = startDeadlineTimer(openCodeArmConfirmationTimeoutMs(confirmSeconds), expire);
+    });
     void readiness.then((status) => {
-      clearTimeout(timer);
+      settled = true;
+      cancelQueuedSettlement();
+      cancelTimeout();
       resolve(status);
     });
   });
@@ -300,12 +345,13 @@ function spawnArm(paths, sessionID, client, predecessorArmPid = "") {
     FM_HOME: paths.home,
     FM_ROOT_OVERRIDE: paths.root,
     FM_CONFIG_OVERRIDE: paths.config,
+    FM_ARM_READY_FD: "4",
     FM_WATCH_PREDECESSOR_ARM_PID: predecessorArmPid,
   };
   const armChild = spawn("bash", ["-lc", 'config_dir="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"; [ -f "$config_dir/x-mode.env" ] && . "$config_dir/x-mode.env"; exec "$FM_ROOT_OVERRIDE/bin/fm-watch-arm.sh" --restart'], {
     cwd: paths.root,
     env,
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ["ignore", "pipe", "pipe", "ignore", "pipe"],
   });
   child = armChild;
   let stdout = "";
@@ -314,14 +360,25 @@ function spawnArm(paths, sessionID, client, predecessorArmPid = "") {
   let resolveClosed = null;
   let readinessSettled = false;
   let resolveReadiness = null;
+  let boundarySettled = false;
+  let resolveBoundary = null;
   const readiness = new Promise((resolve) => {
     resolveReadiness = resolve;
   });
   armReadiness.set(armChild, readiness);
+  const boundary = new Promise((resolveArmBoundary) => {
+    resolveBoundary = resolveArmBoundary;
+  });
+  armConfirmationBoundary.set(armChild, boundary);
   const settleReadiness = (status) => {
     if (readinessSettled) return;
     readinessSettled = true;
     resolveReadiness(status);
+  };
+  const settleBoundary = (confirmSeconds) => {
+    if (boundarySettled) return;
+    boundarySettled = true;
+    resolveBoundary(confirmSeconds);
   };
   const closed = new Promise((resolveClosedChild) => {
     resolveClosed = resolveClosedChild;
@@ -329,6 +386,22 @@ function spawnArm(paths, sessionID, client, predecessorArmPid = "") {
   armClose.set(armChild, closed);
   const releaseChild = () => {
     if (child === armChild) child = null;
+  };
+  let boundaryBuffer = "";
+  const observeBoundary = (text, flush = false) => {
+    boundaryBuffer += text;
+    const lines = boundaryBuffer.split(/\r?\n/);
+    boundaryBuffer = lines.pop() ?? "";
+    if (flush && boundaryBuffer) {
+      lines.push(boundaryBuffer);
+      boundaryBuffer = "";
+    }
+    for (const line of lines) {
+      const match = line.match(/^watcher-confirmation-boundary timeout=([0-9]{1,10})$/);
+      if (!match) continue;
+      const confirmSeconds = Number(match[1]);
+      if (Number.isSafeInteger(confirmSeconds) && confirmSeconds <= 2147483647) settleBoundary(confirmSeconds);
+    }
   };
   const observeRecovery = () => {
     const recovery = `${stdout}\n${stderr}`.match(/^watcher: started pid=([0-9]+).* recovery-generation=([A-Za-z0-9._-]+)$/m);
@@ -344,6 +417,10 @@ function spawnArm(paths, sessionID, client, predecessorArmPid = "") {
     observeRecovery();
     observeArmOutput(stdout, stderr, settleReadiness);
   });
+  armChild.stdio[4]?.on("data", (chunk) => {
+    observeBoundary(chunk.toString());
+  });
+  armChild.stdio[4]?.on("end", () => observeBoundary("", true));
   armChild.on("close", (code, signal) => {
     if (settled) return;
     settled = true;

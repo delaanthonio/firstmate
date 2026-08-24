@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# tests/fm-watch-arm.test.sh - the arm layer's cycle-close contract when the arm
-# did not own the cycle.
+# tests/fm-watch-arm.test.sh - the arm layer's confirmation and cycle-close
+# contracts.
 #
 # The watcher prints its one reason line to its OWN stdout, so only the arm that
 # forked it ever reads that line. An arm that ATTACHED to an existing cycle holds
@@ -27,6 +27,132 @@ TMP_ROOT=$(fm_test_tmproot fm-watch-arm-tests)
 # a subshell this shell can no longer wait for.
 SEED_PID=
 ARM_PID=
+
+# Build a minimal executable arm fixture around the production script and wake
+# library so confirmation timing can be driven deterministically through a fake
+# clock while liveness still uses real processes and process identities.
+make_confirmation_fixture() {  # <name>
+  local name=$1 dir
+  dir="$TMP_ROOT/$name"
+  mkdir -p "$dir/bin" "$dir/config" "$dir/fakebin" "$dir/state"
+  cp "$WATCH_ARM" "$dir/bin/fm-watch-arm.sh"
+  cp "$ROOT/bin/fm-wake-lib.sh" "$dir/bin/fm-wake-lib.sh"
+  cat > "$dir/bin/fm-watch.sh" <<'SH'
+#!/usr/bin/env bash
+set -u
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=bin/fm-wake-lib.sh
+. "$SCRIPT_DIR/fm-wake-lib.sh"
+WATCH_LOCK="$STATE/.watch.lock"
+WATCH_PATH="$SCRIPT_DIR/fm-watch.sh"
+printf 'launched\n' >> "$FM_TEST_WATCHER_LOG"
+printf '%s\n' "${BASHPID:-$$}" > "$FM_TEST_WATCHER_PID_FILE"
+if [ "${FM_TEST_WATCHER_TERM_RESISTANT:-0}" = 1 ]; then
+  trap '' TERM
+fi
+if [ "${FM_TEST_WATCHER_ACTIONABLE_ON_TERM:-0}" = 1 ]; then
+  trap 'printf "signal: synthetic cleanup-race wake\n"; printf "ready\n" > "$FM_TEST_WATCHER_ACTIONABLE_READY"; exit 0' TERM
+  while :; do sleep 0.02; done
+fi
+if [ "${FM_TEST_WATCHER_ACTIONABLE:-0}" = 1 ]; then
+  while [ ! -e "$FM_TEST_WATCHER_ACTIONABLE_TRIGGER" ]; do sleep 0.02; done
+  printf 'signal: synthetic startup-race wake\n'
+  printf 'ready\n' > "$FM_TEST_WATCHER_ACTIONABLE_READY"
+  exit 0
+fi
+if [ "${FM_TEST_WATCHER_READY_DELAY:-never}" = never ]; then
+  while :; do sleep 1; done
+fi
+sleep "$FM_TEST_WATCHER_READY_DELAY"
+mkdir "$WATCH_LOCK"
+watcher_pid=${BASHPID:-$$}
+printf '%s\n' "$watcher_pid" > "$WATCH_LOCK/pid"
+printf '%s\n' "$FM_HOME" > "$WATCH_LOCK/fm-home"
+printf '%s\n' "$WATCH_PATH" > "$WATCH_LOCK/watcher-path"
+fm_pid_identity "$watcher_pid" > "$WATCH_LOCK/pid-identity"
+touch "$STATE/.last-watcher-beat"
+cleanup_lock() {
+  rm -f "$WATCH_LOCK/pid" "$WATCH_LOCK/fm-home" "$WATCH_LOCK/watcher-path" "$WATCH_LOCK/pid-identity"
+  rmdir "$WATCH_LOCK" 2>/dev/null || true
+}
+trap cleanup_lock EXIT
+trap 'exit 0' HUP INT TERM
+while :; do sleep 1; done
+SH
+  cat > "$dir/fakebin/date" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = +%s ]; then
+  cat "$FM_TEST_NOW_FILE"
+  exit 0
+fi
+exec /bin/date "$@"
+SH
+  chmod +x "$dir/bin/fm-watch-arm.sh" "$dir/bin/fm-watch.sh" "$dir/bin/fm-wake-lib.sh" "$dir/fakebin/date"
+  printf '0\n' > "$dir/now"
+  printf '%s\n' "$dir"
+}
+
+start_confirmation_arm() {  # <fixture> <output> <ready-delay> [environment-timeout] [term-resistant] [actionable] [actionable-on-term]
+  local dir=$1 out=$2 delay=$3 timeout=${4:-} term_resistant=${5:-0} actionable=${6:-0} actionable_on_term=${7:-0}
+  if [ -n "$timeout" ]; then
+    PATH="$dir/fakebin:$PATH" FM_HOME="$dir" FM_ARM_CONFIRM_TIMEOUT="$timeout" \
+      FM_ARM_READY_FD=4 \
+      FM_TEST_NOW_FILE="$dir/now" FM_TEST_WATCHER_LOG="$dir/watcher.log" \
+      FM_TEST_WATCHER_PID_FILE="$dir/watcher.pid" FM_TEST_WATCHER_TERM_RESISTANT="$term_resistant" \
+      FM_TEST_WATCHER_ACTIONABLE="$actionable" FM_TEST_WATCHER_ACTIONABLE_TRIGGER="$dir/actionable-trigger" \
+      FM_TEST_WATCHER_ACTIONABLE_READY="$dir/actionable-ready" \
+      FM_TEST_WATCHER_ACTIONABLE_ON_TERM="$actionable_on_term" \
+      FM_TEST_WATCHER_READY_DELAY="$delay" \
+      FM_TEST_HEALTH_BLOCK_REQUEST="$dir/health-block-request" FM_TEST_HEALTH_BLOCK_LOCK="$dir/health-block-lock" \
+      FM_TEST_HEALTH_BLOCKED="$dir/health-blocked" FM_TEST_HEALTH_BLOCK_RELEASE="$dir/health-block-release" \
+      "$dir/bin/fm-watch-arm.sh" > "$out" 2>&1 4>"$dir/boundary" &
+  else
+    env -u FM_ARM_CONFIRM_TIMEOUT PATH="$dir/fakebin:$PATH" FM_HOME="$dir" \
+      FM_ARM_READY_FD=4 \
+      FM_TEST_NOW_FILE="$dir/now" FM_TEST_WATCHER_LOG="$dir/watcher.log" \
+      FM_TEST_WATCHER_PID_FILE="$dir/watcher.pid" FM_TEST_WATCHER_TERM_RESISTANT="$term_resistant" \
+      FM_TEST_WATCHER_ACTIONABLE="$actionable" FM_TEST_WATCHER_ACTIONABLE_TRIGGER="$dir/actionable-trigger" \
+      FM_TEST_WATCHER_ACTIONABLE_READY="$dir/actionable-ready" \
+      FM_TEST_WATCHER_ACTIONABLE_ON_TERM="$actionable_on_term" \
+      FM_TEST_WATCHER_READY_DELAY="$delay" \
+      FM_TEST_HEALTH_BLOCK_REQUEST="$dir/health-block-request" FM_TEST_HEALTH_BLOCK_LOCK="$dir/health-block-lock" \
+      FM_TEST_HEALTH_BLOCKED="$dir/health-blocked" FM_TEST_HEALTH_BLOCK_RELEASE="$dir/health-block-release" \
+      "$dir/bin/fm-watch-arm.sh" > "$out" 2>&1 4>"$dir/boundary" &
+  fi
+  ARM_PID=$!
+}
+
+wait_for_watcher_launch() {  # <fixture>
+  local dir=$1 i=0
+  while [ "$i" -lt 100 ]; do
+    if [ -s "$dir/watcher.log" ]; then
+      sleep 0.3
+      return 0
+    fi
+    is_live_non_zombie "$ARM_PID" || return 1
+    sleep 0.02
+    i=$((i + 1))
+  done
+  return 1
+}
+
+advance_confirmation_clock() {  # <fixture> <epoch>
+  printf '%s\n' "$2" > "$1/now"
+  sleep 0.4
+}
+
+assert_single_confirmation_failure() {  # <pid> <output> <label>
+  local pid=$1 out=$2 label=$3 status failures launches dir
+  wait_for_exit "$pid" 80
+  status=$?
+  [ "$status" -ne 124 ] || fail "$label did not fail within its bounded confirmation window"
+  [ "$status" -ne 0 ] || fail "$label exited successfully without a confirmed watcher"
+  failures=$(grep -c '^watcher: FAILED' "$out" 2>/dev/null || true)
+  [ "$failures" -eq 1 ] || fail "$label emitted $failures failure lines instead of one: $(cat "$out")"
+  dir=${out%/*}
+  launches=$(wc -l < "$dir/watcher.log" | tr -d ' ')
+  [ "$launches" -eq 1 ] || fail "$label launched $launches watcher attempts instead of one"
+}
 
 # Start the real watcher as the singleton holder.
 start_seed_watcher() {  # <state> <fakebin> <watch-out>
@@ -102,9 +228,9 @@ status_signature() {  # <status-path>
   fi
 }
 
-wait_for_file_text() {  # <file> <fixed-text>
-  local file=$1 expected=$2 i=0
-  while [ "$i" -lt 100 ]; do
+wait_for_file_text() {  # <file> <fixed-text> [attempts]
+  local file=$1 expected=$2 attempts=${3:-100} i=0
+  while [ "$i" -lt "$attempts" ]; do
     grep -F "$expected" "$file" >/dev/null 2>&1 && return 0
     sleep 0.05
     i=$((i + 1))
@@ -153,6 +279,432 @@ start_rearm_arm() {  # <home> <state> <fakebin> <arm-out> [predecessor-arm-pid]
     i=$((i + 1))
   done
   return 0
+}
+
+test_confirmation_timeout_precedence() {
+  local default_dir file_dir env_dir out initial_deadline grace_deadline
+
+  case "${OSTYPE:-}" in
+    msys*|mingw*|cygwin*) initial_deadline=31; grace_deadline=37 ;;
+    *) initial_deadline=11; grace_deadline=17 ;;
+  esac
+
+  default_dir=$(make_confirmation_fixture confirm-default)
+  out="$default_dir/arm.out"
+  start_confirmation_arm "$default_dir" "$out" never
+  wait_for_watcher_launch "$default_dir" || fail "default confirmation fixture did not launch its watcher"
+  advance_confirmation_clock "$default_dir" "$initial_deadline"
+  is_live_non_zombie "$ARM_PID" || fail "default confirmation arm skipped its one live-child grace window"
+  advance_confirmation_clock "$default_dir" "$grace_deadline"
+  assert_single_confirmation_failure "$ARM_PID" "$out" "default confirmation arm"
+
+  file_dir=$(make_confirmation_fixture confirm-file)
+  printf '40\n' > "$file_dir/config/arm-confirm-timeout"
+  out="$file_dir/arm.out"
+  start_confirmation_arm "$file_dir" "$out" never
+  wait_for_watcher_launch "$file_dir" || fail "file confirmation fixture did not launch its watcher"
+  advance_confirmation_clock "$file_dir" 37
+  is_live_non_zombie "$ARM_PID" || fail "config/arm-confirm-timeout did not override the lower platform default"
+  advance_confirmation_clock "$file_dir" 41
+  advance_confirmation_clock "$file_dir" 47
+  assert_single_confirmation_failure "$ARM_PID" "$out" "file confirmation arm"
+
+  env_dir=$(make_confirmation_fixture confirm-env)
+  printf '40\n' > "$env_dir/config/arm-confirm-timeout"
+  out="$env_dir/arm.out"
+  start_confirmation_arm "$env_dir" "$out" never 50
+  wait_for_watcher_launch "$env_dir" || fail "environment confirmation fixture did not launch its watcher"
+  advance_confirmation_clock "$env_dir" 47
+  is_live_non_zombie "$ARM_PID" || fail "FM_ARM_CONFIRM_TIMEOUT did not override config/arm-confirm-timeout"
+  advance_confirmation_clock "$env_dir" 51
+  advance_confirmation_clock "$env_dir" 57
+  assert_single_confirmation_failure "$ARM_PID" "$out" "environment confirmation arm"
+
+  pass "watch-arm: confirmation timeout precedence is platform default, then config file, then environment"
+}
+
+test_malformed_confirmation_timeout_file_refuses() {
+  local dir blank_line_dir out status
+  dir=$(make_confirmation_fixture confirm-malformed)
+  printf 'not-an-integer\n' > "$dir/config/arm-confirm-timeout"
+  out="$dir/arm.out"
+  status=0
+  env -u FM_ARM_CONFIRM_TIMEOUT PATH="$dir/fakebin:$PATH" FM_HOME="$dir" \
+    FM_TEST_NOW_FILE="$dir/now" FM_TEST_WATCHER_LOG="$dir/watcher.log" \
+    FM_TEST_WATCHER_READY_DELAY=never "$dir/bin/fm-watch-arm.sh" > "$out" 2>&1 || status=$?
+  expect_code 2 "$status" "malformed config/arm-confirm-timeout"
+  grep -F 'config/arm-confirm-timeout must contain one non-negative base-10 integer' "$out" >/dev/null \
+    || fail "malformed timeout refusal did not name the file contract: $(cat "$out")"
+  [ ! -e "$dir/watcher.log" ] || fail "malformed timeout file launched a watcher before refusing"
+
+  blank_line_dir=$(make_confirmation_fixture confirm-extra-blank-line)
+  printf '10\n\n' > "$blank_line_dir/config/arm-confirm-timeout"
+  out="$blank_line_dir/arm.out"
+  status=0
+  env -u FM_ARM_CONFIRM_TIMEOUT PATH="$blank_line_dir/fakebin:$PATH" FM_HOME="$blank_line_dir" \
+    FM_TEST_NOW_FILE="$blank_line_dir/now" FM_TEST_WATCHER_LOG="$blank_line_dir/watcher.log" \
+    FM_TEST_WATCHER_PID_FILE="$blank_line_dir/watcher.pid" FM_TEST_WATCHER_READY_DELAY=never \
+    "$blank_line_dir/bin/fm-watch-arm.sh" > "$out" 2>&1 || status=$?
+  expect_code 2 "$status" "config/arm-confirm-timeout with an extra blank line"
+  grep -F 'config/arm-confirm-timeout must contain one non-negative base-10 integer' "$out" >/dev/null \
+    || fail "extra blank-line refusal did not name the file contract: $(cat "$out")"
+  [ ! -e "$blank_line_dir/watcher.log" ] || fail "timeout file with an extra blank line launched a watcher before refusing"
+  pass "watch-arm: malformed config/arm-confirm-timeout refuses loudly before watcher launch"
+}
+
+test_confirmation_timeout_range_is_bounded() {
+  local accepted_dir refused_dir out status watcher_pid
+  accepted_dir=$(make_confirmation_fixture confirm-max-accepted)
+  printf '2147483647\n' > "$accepted_dir/config/arm-confirm-timeout"
+  out="$accepted_dir/arm.out"
+  start_confirmation_arm "$accepted_dir" "$out" never
+  wait_for_watcher_launch "$accepted_dir" || fail "maximum confirmation timeout did not launch its watcher"
+  watcher_pid=$(cat "$accepted_dir/watcher.pid")
+  kill -TERM "$ARM_PID" 2>/dev/null || fail "could not stop maximum confirmation timeout fixture"
+  wait_for_exit "$ARM_PID" 50 >/dev/null 2>&1
+  status=$?
+  [ "$status" -ne 124 ] || fail "maximum confirmation timeout fixture did not stop within its cleanup bound"
+  ! is_live_non_zombie "$watcher_pid" || fail "maximum confirmation timeout fixture left its watcher running"
+
+  refused_dir=$(make_confirmation_fixture confirm-overflow-refused)
+  printf '2147483648\n' > "$refused_dir/config/arm-confirm-timeout"
+  out="$refused_dir/arm.out"
+  status=0
+  env -u FM_ARM_CONFIRM_TIMEOUT PATH="$refused_dir/fakebin:$PATH" FM_HOME="$refused_dir" \
+    FM_TEST_NOW_FILE="$refused_dir/now" FM_TEST_WATCHER_LOG="$refused_dir/watcher.log" \
+    FM_TEST_WATCHER_PID_FILE="$refused_dir/watcher.pid" FM_TEST_WATCHER_READY_DELAY=never \
+    "$refused_dir/bin/fm-watch-arm.sh" > "$out" 2>&1 || status=$?
+  expect_code 2 "$status" "out-of-range config/arm-confirm-timeout"
+  grep -F 'config/arm-confirm-timeout must contain an integer between 0 and 2147483647' "$out" >/dev/null \
+    || fail "out-of-range timeout refusal did not report the supported range: $(cat "$out")"
+  [ ! -e "$refused_dir/watcher.log" ] || fail "out-of-range timeout launched a watcher before refusing"
+  pass "watch-arm: confirmation timeout accepts its maximum and refuses larger values"
+}
+
+test_confirmation_timeout_raw_length_is_bounded() {
+  local accepted_dir file_dir env_dir out status
+  accepted_dir=$(make_confirmation_fixture confirm-leading-zeros-accepted)
+  printf '0000000000\n' > "$accepted_dir/config/arm-confirm-timeout"
+  out="$accepted_dir/arm.out"
+  start_confirmation_arm "$accepted_dir" "$out" never
+  wait_for_watcher_launch "$accepted_dir" || fail "ten-digit zero-padded timeout did not launch its watcher"
+  advance_confirmation_clock "$accepted_dir" 1
+  advance_confirmation_clock "$accepted_dir" 7
+  assert_single_confirmation_failure "$ARM_PID" "$out" "ten-digit zero-padded confirmation arm"
+
+  file_dir=$(make_confirmation_fixture confirm-file-overlong-zeros)
+  printf '00000000000\n' > "$file_dir/config/arm-confirm-timeout"
+  out="$file_dir/arm.out"
+  status=0
+  env -u FM_ARM_CONFIRM_TIMEOUT PATH="$file_dir/fakebin:$PATH" FM_HOME="$file_dir" \
+    FM_TEST_NOW_FILE="$file_dir/now" FM_TEST_WATCHER_LOG="$file_dir/watcher.log" \
+    FM_TEST_WATCHER_PID_FILE="$file_dir/watcher.pid" FM_TEST_WATCHER_READY_DELAY=never \
+    "$file_dir/bin/fm-watch-arm.sh" > "$out" 2>&1 || status=$?
+  expect_code 2 "$status" "overlong all-zero config/arm-confirm-timeout"
+  grep -F 'config/arm-confirm-timeout must contain at most 10 base-10 digits' "$out" >/dev/null \
+    || fail "overlong all-zero file refusal did not report the representation bound: $(cat "$out")"
+  [ ! -e "$file_dir/watcher.log" ] || fail "overlong all-zero timeout file launched a watcher before refusing"
+
+  env_dir=$(make_confirmation_fixture confirm-env-overlong-zeros)
+  out="$env_dir/arm.out"
+  status=0
+  PATH="$env_dir/fakebin:$PATH" FM_HOME="$env_dir" FM_ARM_CONFIRM_TIMEOUT=00000000000 \
+    FM_TEST_NOW_FILE="$env_dir/now" FM_TEST_WATCHER_LOG="$env_dir/watcher.log" \
+    FM_TEST_WATCHER_PID_FILE="$env_dir/watcher.pid" FM_TEST_WATCHER_READY_DELAY=never \
+    "$env_dir/bin/fm-watch-arm.sh" > "$out" 2>&1 || status=$?
+  expect_code 2 "$status" "overlong all-zero FM_ARM_CONFIRM_TIMEOUT"
+  grep -F 'FM_ARM_CONFIRM_TIMEOUT must use at most 10 base-10 digits' "$out" >/dev/null \
+    || fail "overlong all-zero environment refusal did not report the representation bound: $(cat "$out")"
+  [ ! -e "$env_dir/watcher.log" ] || fail "overlong all-zero environment timeout launched a watcher before refusing"
+  pass "watch-arm: timeout representations are bounded before leading-zero normalization"
+}
+
+test_confirmation_timeout_reaps_term_resistant_child() {
+  local dir out watcher_pid
+  dir=$(make_confirmation_fixture confirm-term-resistant)
+  printf '0\n' > "$dir/config/arm-confirm-timeout"
+  out="$dir/arm.out"
+  start_confirmation_arm "$dir" "$out" never '' 1
+  wait_for_watcher_launch "$dir" || fail "TERM-resistant confirmation fixture did not launch its watcher"
+  watcher_pid=$(cat "$dir/watcher.pid")
+  advance_confirmation_clock "$dir" 1
+  advance_confirmation_clock "$dir" 7
+  assert_single_confirmation_failure "$ARM_PID" "$out" "TERM-resistant confirmation arm"
+  ! is_live_non_zombie "$watcher_pid" || fail "TERM-resistant watcher survived bounded KILL escalation"
+  pass "watch-arm: confirmation timeout boundedly escalates and reaps a TERM-resistant child"
+}
+
+test_confirmation_timeout_reaps_stopped_child() {
+  local dir out watcher_pid watcher_state i
+  dir=$(make_confirmation_fixture confirm-stopped)
+  printf '0\n' > "$dir/config/arm-confirm-timeout"
+  out="$dir/arm.out"
+  start_confirmation_arm "$dir" "$out" never
+  wait_for_watcher_launch "$dir" || fail "stopped-child confirmation fixture did not launch its watcher"
+  watcher_pid=$(cat "$dir/watcher.pid")
+  kill -STOP "$watcher_pid" 2>/dev/null || fail "could not stop confirmation watcher child"
+  i=0
+  watcher_state=
+  while [ "$i" -lt 50 ]; do
+    watcher_state=$(ps -p "$watcher_pid" -o stat= 2>/dev/null | tr -d ' ' || true)
+    case "$watcher_state" in T*) break ;; esac
+    sleep 0.02
+    i=$((i + 1))
+  done
+  case "$watcher_state" in
+    T*) ;;
+    *) fail "confirmation watcher child did not enter the stopped state: $watcher_state" ;;
+  esac
+  advance_confirmation_clock "$dir" 1
+  advance_confirmation_clock "$dir" 7
+  assert_single_confirmation_failure "$ARM_PID" "$out" "stopped-child confirmation arm"
+  ! is_live_non_zombie "$watcher_pid" || fail "stopped watcher survived bounded KILL escalation"
+  pass "watch-arm: confirmation timeout boundedly escalates and reaps a stopped child"
+}
+
+test_live_child_gets_one_bounded_confirmation_grace() {
+  local dir out started_pid
+  dir=$(make_confirmation_fixture confirm-live-grace)
+  printf '0\n' > "$dir/config/arm-confirm-timeout"
+  out="$dir/arm.out"
+  start_confirmation_arm "$dir" "$out" 1
+  wait_for_watcher_launch "$dir" || fail "grace confirmation fixture did not launch its watcher"
+  wait_for_file_text "$dir/boundary" 'watcher-confirmation-boundary timeout=0' \
+    || fail "confirmation arm did not publish its owned readiness boundary"
+  advance_confirmation_clock "$dir" 1
+  wait_for_file_text "$out" 'watcher: started pid=' \
+    || fail "live watcher child was failed at the initial bound instead of confirming in grace: $(cat "$out")"
+  started_pid=$(cat "$dir/state/.watch.lock/pid" 2>/dev/null || true)
+  grep -F "watcher: started pid=$started_pid (beacon fresh)" "$out" >/dev/null \
+    || fail "grace-confirmed arm did not report the verified child: $(cat "$out")"
+  is_live_non_zombie "$ARM_PID" || fail "grace-confirmed arm exited instead of following its watcher"
+  kill -TERM "$ARM_PID" 2>/dev/null || fail "could not stop grace-confirmed arm fixture"
+  wait "$ARM_PID" 2>/dev/null || true
+  pass "watch-arm: a live slow-starting child receives one bounded grace window and confirms"
+}
+
+test_confirmation_rejects_health_after_grace_deadline() {
+  local dir out watcher_pid watcher_state i
+  dir=$(make_confirmation_fixture confirm-expired-grace-health)
+  printf '0\n' > "$dir/config/arm-confirm-timeout"
+  out="$dir/arm.out"
+  start_confirmation_arm "$dir" "$out" 2
+  wait_for_watcher_launch "$dir" || fail "expired-grace fixture did not launch its watcher"
+  watcher_pid=$(cat "$dir/watcher.pid")
+  advance_confirmation_clock "$dir" 1
+  kill -STOP "$ARM_PID" 2>/dev/null || fail "could not suspend confirmation arm during grace"
+  i=0
+  watcher_state=
+  while [ "$i" -lt 50 ]; do
+    watcher_state=$(ps -p "$ARM_PID" -o stat= 2>/dev/null | tr -d ' ' || true)
+    case "$watcher_state" in T*) break ;; esac
+    sleep 0.02
+    i=$((i + 1))
+  done
+  case "$watcher_state" in
+    T*) ;;
+    *) fail "confirmation arm did not enter the stopped state: $watcher_state" ;;
+  esac
+  printf '7\n' > "$dir/now"
+  wait_for_file_text "$dir/state/.watch.lock/pid" "$watcher_pid" \
+    || fail "expired-grace watcher did not become healthy while its arm was suspended"
+  kill -CONT "$ARM_PID" 2>/dev/null || fail "could not resume confirmation arm after grace"
+  assert_single_confirmation_failure "$ARM_PID" "$out" "expired-grace confirmation arm"
+  ! is_live_non_zombie "$watcher_pid" || fail "watcher accepted after the grace deadline survived cleanup"
+  pass "watch-arm: health appearing after the grace deadline is refused"
+}
+
+test_confirmation_rejects_health_check_straddling_grace_deadline() {
+  local dir out watcher_pid
+  dir=$(make_confirmation_fixture confirm-health-check-straddles-grace)
+  sed 's/^fm_watcher_healthy()/fm_watcher_healthy_unblocked()/' "$dir/bin/fm-wake-lib.sh" > "$dir/bin/fm-wake-lib.sh.tmp"
+  mv "$dir/bin/fm-wake-lib.sh.tmp" "$dir/bin/fm-wake-lib.sh"
+  cat >> "$dir/bin/fm-wake-lib.sh" <<'SH'
+fm_watcher_healthy() {
+  fm_watcher_healthy_unblocked "$@" || return 1
+  if mkdir "$FM_TEST_HEALTH_BLOCK_LOCK" 2>/dev/null; then
+    printf 'blocked\n' > "$FM_TEST_HEALTH_BLOCKED"
+    while [ ! -e "$FM_TEST_HEALTH_BLOCK_RELEASE" ]; do sleep 0.02; done
+  fi
+}
+SH
+  printf '0\n' > "$dir/config/arm-confirm-timeout"
+  out="$dir/arm.out"
+  start_confirmation_arm "$dir" "$out" 0.5
+  wait_for_watcher_launch "$dir" || fail "straddling-health fixture did not launch its watcher"
+  advance_confirmation_clock "$dir" 1
+  wait_for_file_text "$dir/health-blocked" 'blocked' \
+    || fail "straddling-health fixture did not block inside watcher verification"
+  watcher_pid=$(cat "$dir/watcher.pid")
+  printf '7\n' > "$dir/now"
+  : > "$dir/health-block-release"
+  assert_single_confirmation_failure "$ARM_PID" "$out" "straddling-health confirmation arm"
+  ! is_live_non_zombie "$watcher_pid" || fail "watcher accepted after health verification crossed grace expiry"
+  pass "watch-arm: health verification crossing grace expiry is refused"
+}
+
+test_confirmation_grace_uses_initial_deadline() {
+  local dir out watcher_pid watcher_state i
+  dir=$(make_confirmation_fixture confirm-suspended-before-initial-deadline)
+  printf '0\n' > "$dir/config/arm-confirm-timeout"
+  out="$dir/arm.out"
+  start_confirmation_arm "$dir" "$out" 2
+  wait_for_watcher_launch "$dir" || fail "pre-deadline suspension fixture did not launch its watcher"
+  watcher_pid=$(cat "$dir/watcher.pid")
+  kill -STOP "$ARM_PID" 2>/dev/null || fail "could not suspend confirmation arm before initial expiry"
+  i=0
+  watcher_state=
+  while [ "$i" -lt 50 ]; do
+    watcher_state=$(ps -p "$ARM_PID" -o stat= 2>/dev/null | tr -d ' ' || true)
+    case "$watcher_state" in T*) break ;; esac
+    sleep 0.02
+    i=$((i + 1))
+  done
+  case "$watcher_state" in
+    T*) ;;
+    *) fail "pre-deadline confirmation arm did not enter the stopped state: $watcher_state" ;;
+  esac
+  printf '7\n' > "$dir/now"
+  wait_for_file_text "$dir/state/.watch.lock/pid" "$watcher_pid" \
+    || fail "pre-deadline suspension watcher did not become healthy while its arm was suspended"
+  kill -CONT "$ARM_PID" 2>/dev/null || fail "could not resume confirmation arm after pre-deadline suspension"
+  assert_single_confirmation_failure "$ARM_PID" "$out" "pre-deadline suspended confirmation arm"
+  ! is_live_non_zombie "$watcher_pid" || fail "watcher survived grace derived after delayed expiry observation"
+  pass "watch-arm: confirmation grace remains anchored to the initial deadline"
+}
+
+test_confirmation_timeout_returns_finished_actionable_wake() {
+  local dir out watcher_pid watcher_state status i
+  dir=$(make_confirmation_fixture confirm-expired-actionable)
+  printf '0\n' > "$dir/config/arm-confirm-timeout"
+  out="$dir/arm.out"
+  start_confirmation_arm "$dir" "$out" never '' 0 1
+  wait_for_watcher_launch "$dir" || fail "expired-actionable fixture did not launch its watcher"
+  watcher_pid=$(cat "$dir/watcher.pid")
+  advance_confirmation_clock "$dir" 1
+  kill -STOP "$ARM_PID" 2>/dev/null || fail "could not suspend expired-actionable confirmation arm"
+  i=0
+  watcher_state=
+  while [ "$i" -lt 50 ]; do
+    watcher_state=$(ps -p "$ARM_PID" -o stat= 2>/dev/null | tr -d ' ' || true)
+    case "$watcher_state" in T*) break ;; esac
+    sleep 0.02
+    i=$((i + 1))
+  done
+  case "$watcher_state" in
+    T*) ;;
+    *) fail "expired-actionable confirmation arm did not enter the stopped state: $watcher_state" ;;
+  esac
+  touch "$dir/actionable-trigger"
+  wait_for_file_text "$dir/actionable-ready" ready \
+    || fail "watcher did not deliver its actionable wake before confirmation expiry"
+  i=0
+  while [ "$i" -lt 50 ] && is_live_non_zombie "$watcher_pid"; do
+    sleep 0.02
+    i=$((i + 1))
+  done
+  ! is_live_non_zombie "$watcher_pid" \
+    || fail "actionable watcher did not exit before confirmation expiry"
+  printf '6\n' > "$dir/now"
+  kill -CONT "$ARM_PID" 2>/dev/null || fail "could not resume expired-actionable confirmation arm"
+  wait_for_exit "$ARM_PID" 80
+  status=$?
+  expect_code 0 "$status" "expired confirmation must return a delivered actionable wake"
+  grep -F 'signal: synthetic startup-race wake' "$out" >/dev/null \
+    || fail "expired confirmation did not return its actionable wake: $(cat "$out")"
+  ! grep -q '^watcher: FAILED' "$out" \
+    || fail "expired confirmation appended a false failure after an actionable wake: $(cat "$out")"
+  pass "watch-arm: an actionable wake wins over expired confirmation cleanup"
+}
+
+test_confirmation_cleanup_returns_actionable_wake() {
+  local dir out status
+  dir=$(make_confirmation_fixture confirm-cleanup-actionable)
+  printf '0\n' > "$dir/config/arm-confirm-timeout"
+  out="$dir/arm.out"
+  start_confirmation_arm "$dir" "$out" never '' 0 0 1
+  wait_for_watcher_launch "$dir" || fail "cleanup-actionable fixture did not launch its watcher"
+  advance_confirmation_clock "$dir" 1
+  advance_confirmation_clock "$dir" 6
+  wait_for_exit "$ARM_PID" 80
+  status=$?
+  expect_code 0 "$status" "confirmation cleanup must return a delivered actionable wake: $(cat "$out")"
+  grep -F 'signal: synthetic cleanup-race wake' "$out" >/dev/null \
+    || fail "confirmation cleanup did not return its actionable wake: $(cat "$out")"
+  ! grep -q '^watcher: FAILED' "$out" \
+    || fail "confirmation cleanup appended a false failure after an actionable wake: $(cat "$out")"
+  pass "watch-arm: a cleanup-race actionable wake returns without failure"
+}
+
+test_startup_race_boundedly_retires_owned_child() {
+  local dir out child_pid winner_pid
+  dir=$(make_confirmation_fixture confirm-competing-winner)
+  out="$dir/arm.out"
+  start_confirmation_arm "$dir" "$out" never '' 1
+  wait_for_watcher_launch "$dir" || fail "competing-winner fixture did not launch its watcher"
+  child_pid=$(cat "$dir/watcher.pid")
+  FM_HOME="$dir" FM_TEST_WATCHER_LOG="$dir/winner.log" \
+    FM_TEST_WATCHER_PID_FILE="$dir/winner.pid" FM_TEST_WATCHER_TERM_RESISTANT=0 \
+    FM_TEST_WATCHER_READY_DELAY=0 "$dir/bin/fm-watch.sh" > "$dir/winner.out" 2>&1 &
+  winner_pid=$!
+  wait_for_file_text "$dir/state/.watch.lock/pid" "$winner_pid" \
+    || fail "competing watcher fixture did not publish a healthy lock: $(cat "$dir/winner.out")"
+  wait_for_file_text "$out" "watcher: attached pid=$winner_pid" 160 \
+    || fail "arm did not boundedly retire its child and attach to the competing watcher: $(cat "$out")"
+  ! is_live_non_zombie "$child_pid" || fail "owned child survived bounded startup-race retirement"
+  is_live_non_zombie "$ARM_PID" || fail "arm exited instead of attaching to the competing watcher"
+  [ "$(grep -c '^watcher: FAILED' "$out" 2>/dev/null || true)" -eq 0 ] \
+    || fail "successful startup-race retirement emitted a failure: $(cat "$out")"
+  kill -TERM "$ARM_PID" 2>/dev/null || fail "could not stop competing-winner arm fixture"
+  wait "$ARM_PID" 2>/dev/null || true
+  kill -TERM "$winner_pid" 2>/dev/null || true
+  wait "$winner_pid" 2>/dev/null || true
+  pass "watch-arm: a startup-race winner is attached after bounded child retirement"
+}
+
+test_startup_race_returns_owned_actionable_wake() {
+  local dir out winner_pid watcher_state status i
+  dir=$(make_confirmation_fixture confirm-competing-actionable)
+  out="$dir/arm.out"
+  start_confirmation_arm "$dir" "$out" never '' 0 1
+  wait_for_watcher_launch "$dir" || fail "actionable startup-race fixture did not launch its watcher"
+  kill -STOP "$ARM_PID" 2>/dev/null || fail "could not suspend actionable startup-race arm"
+  i=0
+  watcher_state=
+  while [ "$i" -lt 50 ]; do
+    watcher_state=$(ps -p "$ARM_PID" -o stat= 2>/dev/null | tr -d ' ' || true)
+    case "$watcher_state" in T*) break ;; esac
+    sleep 0.02
+    i=$((i + 1))
+  done
+  case "$watcher_state" in
+    T*) ;;
+    *) fail "actionable startup-race arm did not enter the stopped state: $watcher_state" ;;
+  esac
+  touch "$dir/actionable-trigger"
+  wait_for_file_text "$dir/actionable-ready" ready \
+    || fail "owned watcher did not deliver its actionable startup-race wake"
+  FM_HOME="$dir" FM_TEST_WATCHER_LOG="$dir/winner.log" \
+    FM_TEST_WATCHER_PID_FILE="$dir/winner.pid" FM_TEST_WATCHER_TERM_RESISTANT=0 \
+    FM_TEST_WATCHER_ACTIONABLE=0 FM_TEST_WATCHER_READY_DELAY=0 \
+    "$dir/bin/fm-watch.sh" > "$dir/winner.out" 2>&1 &
+  winner_pid=$!
+  wait_for_file_text "$dir/state/.watch.lock/pid" "$winner_pid" \
+    || fail "actionable-race competing watcher did not publish a healthy lock: $(cat "$dir/winner.out")"
+  kill -CONT "$ARM_PID" 2>/dev/null || fail "could not resume actionable startup-race arm"
+  wait_for_exit "$ARM_PID" 80
+  status=$?
+  expect_code 0 "$status" "actionable startup-race arm must return its delivered wake: $(cat "$out")"
+  grep -F 'signal: synthetic startup-race wake' "$out" >/dev/null \
+    || fail "arm did not return the owned child's actionable startup-race wake: $(cat "$out")"
+  ! grep -q '^watcher: attached' "$out" \
+    || fail "arm attached over an already delivered actionable wake: $(cat "$out")"
+  ! grep -q '^watcher: FAILED' "$out" \
+    || fail "arm failed after an owned child delivered an actionable wake: $(cat "$out")"
+  is_live_non_zombie "$winner_pid" || fail "competing watcher did not remain live after actionable wake return"
+  kill -TERM "$winner_pid" 2>/dev/null || true
+  wait "$winner_pid" 2>/dev/null || true
+  pass "watch-arm: a startup-race wake returns before competing watcher attachment"
 }
 
 test_attached_arm_reports_the_delivered_wake() {
@@ -287,16 +839,11 @@ test_rearm_resurfaces_durable_queue_and_remote_open_decision() {
   append_wake "$state" check startup-network 'check: startup-network'
 
   start_rearm_arm "$home" "$state" "$fakebin" "$armout"
-  sleep 0.25
-  if is_live_non_zombie "$ARM_PID"; then
-    # End the fixture through an ordinary actionable status transition so this
-    # failing pre-fix path leaves no child behind.
-    printf 'done: fixture cleanup\n' > "$state/cleanup.status"
-    wait_for_exit "$ARM_PID" 80 || true
+  wait_for_exit "$ARM_PID" 80
+  status=$?
+  if [ "$status" -eq 124 ]; then
     fail "re-arm stayed live instead of surfacing durable wakes and the still-open remote decision"
   fi
-  wait "$ARM_PID"
-  status=$?
   expect_code 0 "$status" "re-arm re-surface wake must close successfully"
   grep -F 'check: rearm-resurface' "$armout" >/dev/null \
     || fail "re-arm did not report the durable recovery wake: $(cat "$armout")"
@@ -483,9 +1030,12 @@ test_interrupted_handling_is_redrained_on_rearm() {
   [ "$(cat "$state/.watcher-down" 2>/dev/null || true)" = "pending:downtime:$generation_before" ] \
     || fail "successor launch marked recovery handled before prompt delivery"
   handling_watcher_pid=$(sed -n 's/^watcher: started pid=\([0-9][0-9]*\).* recovery-generation=.*$/\1/p' "$dir/handling-successor-arm.out")
+  mkdir -p "$home/config"
+  printf 'not-an-integer\n' > "$home/config/arm-confirm-timeout"
   FM_HOME="$home" FM_STATE_OVERRIDE="$state" "$WATCH_ARM" --handling-delivered "$generation_before" \
     --watcher-pid "$handling_watcher_pid" \
-    || fail "confirmed prompt delivery did not begin handling"
+    || fail "malformed arm-only timeout configuration blocked recovery acknowledgement"
+  rm -f "$home/config/arm-confirm-timeout"
   [ "$(cat "$state/.watcher-down" 2>/dev/null || true)" = "pending:handling:$generation_before" ] \
     || fail "confirmed prompt delivery did not transition its recovery generation"
   ! grep -F 'check: rearm-resurface' "$dir/handling-successor-arm.out" >/dev/null \
@@ -797,6 +1347,20 @@ test_downtime_marker_does_not_follow_symlink() {
   pass "watch-arm: downtime marker publication does not follow symlinks"
 }
 
+test_confirmation_timeout_precedence
+test_malformed_confirmation_timeout_file_refuses
+test_confirmation_timeout_range_is_bounded
+test_confirmation_timeout_raw_length_is_bounded
+test_confirmation_timeout_reaps_term_resistant_child
+test_confirmation_timeout_reaps_stopped_child
+test_live_child_gets_one_bounded_confirmation_grace
+test_confirmation_rejects_health_after_grace_deadline
+test_confirmation_rejects_health_check_straddling_grace_deadline
+test_confirmation_grace_uses_initial_deadline
+test_confirmation_timeout_returns_finished_actionable_wake
+test_confirmation_cleanup_returns_actionable_wake
+test_startup_race_boundedly_retires_owned_child
+test_startup_race_returns_owned_actionable_wake
 test_attached_arm_reports_the_delivered_wake
 test_attached_arm_reports_the_delivered_wake_after_drain
 test_attached_arm_still_fails_on_a_wake_it_did_not_deliver
