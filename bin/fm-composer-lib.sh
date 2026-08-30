@@ -51,10 +51,14 @@
 # docs/verification/runtime-backends.md):
 #   bordered   - a complete boxed composer: a top border, side-bordered content
 #                rows of the same family, and a bottom border (grok, kimi,
-#                older claude). The bottom border may carry a TITLE (grok
+#                droid, older claude). The bottom border may carry a TITLE (grok
 #                writes its model name there); a titled bottom border that
 #                still starts and ends with the family's rule glyph is
 #                tolerated, not ambiguity.
+#                Droid parks its terminal cursor below the box and draws its
+#                elapsed-time status row immediately after it; that exact
+#                footer prefix is tolerated when selecting the box without a
+#                cursor.
 #   bare       - an agent prompt glyph row with no border at all (claude `❯`,
 #                codex `›`, muse `⟩`, cursor `→`). The agent glyph is itself the container
 #                proof; a bare SHELL glyph (`>` `$` `%` `#`) never is.
@@ -1025,6 +1029,13 @@ _fm_composer_leftbar_floor_row() {  # <trimmed-row>
   [ -z "${blocks//▀/}" ]
 }
 
+_fm_composer_droid_status_row() {  # <trimmed-row>
+  case "$1" in
+    '[⏱ '[0-9]*[smh]'] '*) return 0 ;;
+  esac
+  return 1
+}
+
 _fm_composer_select_cursorless() {
   local plain=$1 generic=-1 next boundary raw trimmed
   FM_COMPOSER_SELECTED_KIND=
@@ -1101,7 +1112,9 @@ _fm_composer_select_cursorless() {
     raw=$(_fm_composer_screen_row "$next" "$plain")
     trimmed=$raw
     fm_composer_normalize_trim_var trimmed
-    if [ -n "$trimmed" ] && ! fm_composer_row_has_edge "$trimmed"; then
+    if [ -n "$trimmed" ] \
+       && ! fm_composer_row_has_edge "$trimmed" \
+       && ! _fm_composer_droid_status_row "$trimmed"; then
       FM_COMPOSER_SELECTED_KIND=
       return 1
     fi

@@ -305,6 +305,10 @@
       "audience": "agent-runtime"
     },
     {
+      "path": "docs/supervision-protocols/droid.md",
+      "audience": "agent-runtime"
+    },
+    {
       "path": "docs/supervision-protocols/grok.md",
       "audience": "agent-runtime"
     },
@@ -334,6 +338,10 @@
     },
     {
       "path": "docs/verification/dispatch-auth.md",
+      "audience": "maintainer-verification"
+    },
+    {
+      "path": "docs/verification/droid-primary.md",
       "audience": "maintainer-verification"
     },
     {

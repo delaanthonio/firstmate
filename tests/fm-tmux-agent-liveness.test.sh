@@ -270,6 +270,7 @@ pass "tmux liveness: an absent window classifies missing rather than inheriting 
 
 ln -s "$SLEEP_BIN" "$LAB/bin/cursor-agent"
 ln -s "$SLEEP_BIN" "$LAB/bin/notcursor"
+ln -s "$SLEEP_BIN" "$LAB/bin/droid"
 
 # Cursor's real screen shape: a BARE composer row carrying its U+2192 glyph, two
 # footer rows below it, and the terminal cursor left on a blank row past the
@@ -349,6 +350,55 @@ fi
 [ "$(fm_tmux_composer_state "$SESSION:cursor-exited")" != empty ] \
   || fail "a dead-shell pane still showing Cursor's composer must never read empty"
 pass "cursor composer: a stale Cursor screen over a dead shell never reads empty"
+
+# --- Droid's composer: the cursor is below a bordered composer ---------------
+
+droid_screen() {  # <composer-text> <ghost 0|1>
+  local text=$1 ghost=$2 open='' close='' rendered
+  if [ "$ghost" = 1 ]; then
+    open=$(printf '\033[2m')
+    close=$(printf '\033[0m')
+  fi
+  rendered="${open}${text}${close}"
+  printf '\n Auto (High) · allow all commands                            GPT-5.6 Sol [BYOK]\n╭──────────────────────────────────────────────────────────────────────────────╮\n│ > %-74s │\n╰──────────────────────────────────────────────────────────────────────────────╯\n[⏱ 9s] 1 config issue — /diagnostics\n%s   main\n\n' \
+    "$rendered" "$LAB/wt"
+}
+
+open_droid_composer_pane() {  # <window> <binary> <composer-text> <ghost 0|1>
+  local window=$1 binary=$2 text=$3 ghost=$4
+  new_window "$window" bash -c "$(declare -f droid_screen); LAB='$LAB'; droid_screen '$text' '$ghost'; exec '$binary' 900"
+  local i=0
+  while [ "$i" -lt 100 ]; do
+    case "$("$REAL_TMUX" -L "$SOCKET" capture-pane -p -t "$SESSION:$window" 2>/dev/null)" in
+      *"$text"*) return 0 ;;
+    esac
+    sleep 0.1
+    i=$((i + 1))
+  done
+  fail "pane $window never rendered its Droid composer"
+}
+
+open_droid_composer_pane droid-idle "$LAB/bin/droid" '' 0
+fm_tmux_pane_is_droid "$SESSION:droid-idle" \
+  || fail "a pane whose foreground process is exactly droid must be identified as Droid"
+[ "$(cursor_anchored_verdict "$SESSION:droid-idle")" = unknown ] \
+  || fail "the cursor-anchored source must be blind for the Droid fixture"
+[ "$(fm_tmux_composer_state "$SESSION:droid-idle")" = empty ] \
+  || fail "an idle Droid composer must read empty despite its detached terminal cursor"
+pass "droid composer: an idle pane reads empty through exact process-gated reclassification"
+
+open_droid_composer_pane droid-typed "$LAB/bin/droid" 'half typed captain text' 0
+[ "$(fm_tmux_composer_state "$SESSION:droid-typed")" = pending ] \
+  || fail "real unsubmitted text in a Droid composer must read pending"
+pass "droid composer: real typed text stays pending"
+
+open_droid_composer_pane notdroid-idle "$LAB/bin/notcursor" 'Enter to steer · Ctrl+Enter to queue' 1
+if fm_tmux_pane_is_droid "$SESSION:notdroid-idle"; then
+  fail "a non-Droid process must not receive Droid identity"
+fi
+[ "$(fm_tmux_composer_state "$SESSION:notdroid-idle")" = unknown ] \
+  || fail "the same detached-cursor screen must stay unknown without Droid process identity"
+pass "droid composer: identical non-Droid screen stays unknown"
 
 cleanup_all
 trap - EXIT
