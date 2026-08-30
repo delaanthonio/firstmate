@@ -162,44 +162,60 @@ PWD=/Users/dela/.treehouse/firstmate-395343/1/firstmate
 
 ## Foreground tool behavior
 
-The probe launched Droid with a request to run a foreground loop and continue reasoning visibly during execution.
-Captures were taken while the tool was running and after it finished.
+The final 0.208.1 refresh used a new nested scratch Git repository and this exact launch command:
 
-```text
---- capture t+12 ---
-⛬  Captain, I’m running the exact command in the foreground now. If the
-   interface allows updates during execution, I’ll continue visibly.
-
-   Execute bash -lc 'for i in 1 2 3 4 5 6; do echo FOREGROUND_TICK_; s...
-    ↳ FOREGROUND_TICK_
-
- ⡄ Executing...  (Press ESC to stop)
+```sh
+mktemp -d .droid-primary-refresh.XXXXXX
+git init -q .droid-primary-refresh.lNozC3
+tmux -L fm-droid-primary-doc-20260829 new-session -d \
+  -s droid-primary-doc -n foreground \
+  -c /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M1833BFEWKKS7G30HE3K7VET/.droid-primary-refresh.lNozC3 -- \
+  droid --auto high \
+  "Run this exact foreground shell command: bash -lc 'touch foreground-running; sleep 30; rm foreground-running; echo DROID_DOC_TOOL_DONE'. While it is still running, visibly publish the concatenation of DROID_DOC_MIDCALL_ and UPDATE. After it completes, publish the concatenation of DROID_DOC_FOREGROUND_ and FINISHED."
 ```
 
-```text
---- capture t+22 ---
-⛬  Captain, I’m running the exact command in the foreground now. If the
-   interface allows updates during execution, I’ll continue visibly.
+`mktemp` returned `.droid-primary-refresh.lNozC3`.
+While `foreground-running` still existed, the exact capture command was:
 
-   Execute bash -lc 'for i in 1 2 3 4 5 6; do echo FOREGROUND_TICK_; s...
-    ↳ FOREGROUND_TICK_
-
- ⠘ Executing...  (Press ESC to stop)
+```sh
+test -e .droid-primary-refresh.lNozC3/foreground-running
+tmux -L fm-droid-primary-doc-20260829 capture-pane -p \
+  -t droid-primary-doc:foreground -S -100
 ```
 
-```text
---- capture t+34 ---
-   Execute bash -lc 'for i in 1 2 3 4 5 6; do echo FOREGROUND_TICK_; s...
-    ↳ FOREGROUND_TICK_
-      FOREGROUND_TICK_
-      FOREGROUND_TICK_
-      FOREGROUND_TICK_
-    ... 2 more, Ctrl+O to view
+The relevant exact active-tool output was:
 
-⛬  Captain, FOREGROUND_FINISHED.
+```text
+   Execute bash -lc 'touch foreground-running; sleep 30; rm foreground...
+
+ ⠇ Executing...  (Press ESC to stop)
+
+ Auto (Med) · allow reversible commands                      GPT-5.6 Sol [BYOK]
+╭───────────────────────────────────────────────────────────────────────────────╮
+│ > Enter to steer · Ctrl+Enter to queue                                       │
+╰───────────────────────────────────────────────────────────────────────────────╯
+[⏱ 20s] 1 config issue — /diagnostics                             MCP ✗ | TMUX ⧉
+~/.n/w/5/0/.droid-primary-refresh.lNozC3   main
 ```
 
-Result: no new reasoning appeared between the two running captures; the next model output appeared only after the foreground tool completed.
+The requested `DROID_DOC_MIDCALL_UPDATE` response is absent from that capture.
+After the foreground command completed, the same capture command returned:
+
+```text
+   Execute bash -lc 'touch foreground-running; sleep 30; rm foreground...
+    ↳ DROID_DOC_TOOL_DONE
+
+⛬  DROID_DOC_FOREGROUND_FINISHED
+
+ Auto (Med) · allow reversible commands                      GPT-5.6 Sol [BYOK]
+╭───────────────────────────────────────────────────────────────────────────────╮
+│ >                                                                            │
+╰────────────────────────────────────────────────────────────────────────────────╯
+[⏱ 46s] 1 config issue — /diagnostics                             MCP ✗ | TMUX ⧉
+~/.n/w/5/0/.droid-primary-refresh.lNozC3   main
+```
+
+Result: no new reasoning appeared in the running capture; the requested model output appeared only after `DROID_DOC_TOOL_DONE`.
 Droid therefore uses bounded foreground watcher checkpoints.
 
 ## Busy and composer signatures
@@ -216,7 +232,7 @@ Thinking used the same stable token:
 ⢠ Thinking...  (Press ESC to stop)
 ```
 
-The idle composer and the busy placeholder were:
+The active-tool and post-tool captures above established the busy placeholder and empty idle composer:
 
 ```text
 ╭──────────────────────────────────────────────────────────────────────────────╮
@@ -233,24 +249,42 @@ The idle composer and the busy placeholder were:
 Tmux reported:
 
 ```sh
-tmux display-message -p -t fm-droid-primary-foreground \
-  'cursor_y=#{cursor_y} cursor_x=#{cursor_x} cursor_flag=#{cursor_flag} pane_tty=#{pane_tty} pane_pid=#{pane_pid}'
+tmux -L fm-droid-primary-doc-20260829 display-message -p \
+  -t droid-primary-doc:foreground \
+  'cursor_y=#{cursor_y} cursor_x=#{cursor_x} cursor_flag=#{cursor_flag} pane_tty=#{pane_tty} pane_pid=#{pane_pid} pane_current_command=#{pane_current_command}'
 ```
 
 ```text
-cursor_y=21 cursor_x=0 cursor_flag=0 pane_tty=/dev/ttys017 pane_pid=44448
+cursor_y=23 cursor_x=0 cursor_flag=0 pane_tty=/dev/ttys017 pane_pid=56362 pane_current_command=droid
 ```
 
-The foreground process group contained an exact `droid` process even though tmux's current command was the launching `fish` shell.
-After teaching the shared screen owner the elapsed-time footer and gating tmux's cursorless read on that exact process identity, the live checks were:
+The exact typed-input and capture commands were:
+
+```sh
+tmux -L fm-droid-primary-doc-20260829 send-keys \
+  -t droid-primary-doc:foreground -l DROID_DOC_TYPED
+tmux -L fm-droid-primary-doc-20260829 capture-pane -p \
+  -t droid-primary-doc:foreground -S -30
+```
+
+The exact composer output was:
 
 ```text
-droid_identity=yes
-idle_verdict=empty
-typed_verdict=pending
+╭────────────────────────────────────────────────────────────────────────────────╮
+│ > DROID_DOC_TYPED                                                            │
+╰───────────────────────────────────────────────────────────────────────────────╯
 ```
 
-The placeholder is de-emphasized in the styled capture and real typed text is bright.
+The exact styled-capture command was:
+
+```sh
+tmux -L fm-droid-primary-doc-20260829 capture-pane -p -e \
+  -t droid-primary-doc:foreground -S -8 | \
+  perl -pe 's/\e/\\e/g' | tail -n 8
+```
+
+Its relevant exact output rendered the placeholder as `\e[7m\e[39mE\e[0;2mnter to steer · Ctrl+Enter to queue\e[0m`.
+The reverse-video `E` is the parked cursor and `\e[0;2m` de-emphasizes the remaining ghost text, while the typed capture contains no dim styling around `DROID_DOC_TYPED`.
 No other idle ghost or placeholder was observed.
 
 ## Refresh
@@ -259,6 +293,15 @@ Run the opt-in guard after a Droid upgrade:
 
 ```sh
 FM_DROID_PRIMARY_LIVE_E2E=1 tests/fm-droid-primary-live-e2e.test.sh
+```
+
+The final credentialed refresh returned:
+
+```text
+ok - Droid live primary hooks: project settings, SessionStart, PreToolUse, Stop blocking, and loop guard
+ok - Droid live composer: detached cursor remains safe for idle and typed input
+ok - Droid live foreground tool: no reasoning continuation until tool completion
+ok - Droid 0.208.1 primary live verification complete
 ```
 
 If any required fact cannot be reproduced, leave Droid's primary status unverified rather than substituting another harness's behavior.
