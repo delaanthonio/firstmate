@@ -50,7 +50,7 @@ Verify setup by spawning a small task and confirming its `fm-<id>` window appear
 
 A target-existence check proves only that the pane exists.
 The deeper tmux agent-liveness probe first verifies exact window membership, then reads process names to distinguish a running harness from a bare idle shell.
-It classifies recognized Claude, Codex, OpenCode, Pi, pi-signed, Grok, Kimi, Cursor, and Muse process identities as `alive`, common shells as `dead`, an authoritatively absent window as `missing`, unreadable state as `unreadable`, and every other process as `ambiguous`.
+It classifies recognized Claude, Codex, OpenCode, Pi, pi-signed, Grok, Kimi, Cursor, Muse, and Droid process identities as `alive`, common shells as `dead`, an authoritatively absent window as `missing`, unreadable state as `unreadable`, and every other process as `ambiguous`.
 Only `dead` and `missing` authorize recovery because a false dead result could launch a duplicate agent.
 
 For positive attribution, the probe combines two independent name sources rather than making either one load-bearing.
@@ -63,6 +63,7 @@ The same scoping covers multi-process launchers without a special case, so the P
 Direct executable identities `pi`, `pi-signed`, and `Pi` remain accepted exactly, and similar or prefixed process names are not accepted through those exact Pi-family entries.
 Muse is likewise anchored to the exact `muse` launcher identity or the installed `muse-bin-<version>` prefix, so unrelated names such as `musescore` and `amuse` remain ambiguous.
 Cursor is identified from its exact `cursor-agent` identity or versioned install tree in the foreground process path or structured argv[0]; a bare `node` or unrelated `agent` remains ambiguous.
+Droid is identified from its harness process name, while the stricter composer exception below requires the exact `droid` foreground-process basename.
 
 The CI-enforced portable regression and opt-in real-harness drift guard follow the split owned by `.agents/skills/firstmate-coding-guidelines/SKILL.md`.
 Run the real-harness guard after any harness upgrade and before trusting refreshed evidence.
@@ -72,7 +73,7 @@ Run the real-harness guard after any harness upgrade and before trusting refresh
 Agent liveness and composer safety are separate checks.
 The tmux reader is a thin adapter over the fleet-wide classifier in `bin/fm-composer-lib.sh`: it contributes one styled full-pane capture, the `#{cursor_y}` cursor row, and foreground-process identity probes, and the shape containing the cursor - a complete bordered box (titled bottom borders tolerated), a bare agent-glyph row with its wrapped input, opencode's left bar, or Pi's identity-corroborated separator pair - normally decides the verdict.
 Real text in an identified shape is pending, while only positively proven emptiness reads empty.
-A blank or otherwise unidentified cursor row is `unknown` and every consumer defers, except that a foreground process proven to be Cursor is re-read cursorlessly because Cursor parks its terminal cursor below its footer.
+A blank or otherwise unidentified cursor row is `unknown` and every consumer defers, except that a foreground process proven to be Cursor or Droid is re-read cursorlessly because both harnesses park their terminal cursors below their composers.
 That identity-gated exception preserves the strict container-proof rule for every other pane, so a modal dialog, a dead shell between stale rules, or a mid-redraw pane is never an injection target.
 The shared classifier accepts a shell glyph as an empty agent composer only inside a bordered container.
 A bare shell prompt is `unknown`, so away-mode escalation is never injected into a dead shell.

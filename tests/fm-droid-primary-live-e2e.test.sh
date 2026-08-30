@@ -85,8 +85,14 @@ chmod +x "$PROJECT/.factory/sessionstart.sh" "$PROJECT/.factory/pretool.sh" "$PR
   'Report the startup nonce using the format requested by the SessionStart context, use a shell tool to run exactly: touch droid-live-denied-sentinel, report the denial, then end your turn.'
 
 capture=
+trust_confirmed=0
 for _ in $(seq 1 180); do
   capture=$("$REAL_TMUX" -L "$SOCKET" capture-pane -p -t "$SESSION:hooks" -S -120 2>/dev/null || true)
+  if [ "$trust_confirmed" -eq 0 ] \
+     && printf '%s' "$capture" | grep -q 'Trust this folder?'; then
+    "$REAL_TMUX" -L "$SOCKET" send-keys -t "$SESSION:hooks" Enter
+    trust_confirmed=1
+  fi
   if [ -s "$PROJECT/.factory/stop-payloads.jsonl" ] \
      && [ "$(wc -l < "$PROJECT/.factory/stop-payloads.jsonl" | tr -d ' ')" -ge 2 ] \
      && printf '%s' "$capture" | grep -q 'DROID_LIVE_STOP_ALLOW'; then
@@ -147,18 +153,32 @@ done
   || fail "Droid live foreground probe was no longer active during its busy capture"
 printf '%s' "$running_capture" | grep -q 'Press ESC to stop' \
   || fail "Droid live foreground probe never exposed the verified busy token"
-printf '%s' "$running_capture" | grep -q 'DROID_LIVE_MIDCALL_UPDATE' \
-  && fail "Droid unexpectedly emitted the requested visible update during the active foreground tool"
-printf '%s' "$running_capture" | grep -q 'DROID_LIVE_FOREGROUND_FINISHED' \
-  && fail "Droid reasoned past the foreground tool before it completed"
+printf '%s\n' "$running_capture" | awk '
+  /Execute bash -lc/ { execute = NR }
+  /DROID_LIVE_MIDCALL_UPDATE/ && execute && NR > execute { found = 1 }
+  END { exit !found }
+' && fail "Droid unexpectedly emitted the requested visible update during the active foreground tool"
+printf '%s\n' "$running_capture" | awk '
+  /Execute bash -lc/ { execute = NR }
+  /DROID_LIVE_FOREGROUND_FINISHED/ && execute && NR > execute { found = 1 }
+  END { exit !found }
+' && fail "Droid reasoned past the foreground tool before it completed"
 
 finished_capture=
 for _ in $(seq 1 160); do
   finished_capture=$("$REAL_TMUX" -L "$SOCKET" capture-pane -p -t "$SESSION:foreground" -S -100 2>/dev/null || true)
-  printf '%s' "$finished_capture" | grep -q 'DROID_LIVE_FOREGROUND_FINISHED' && break
+  printf '%s\n' "$finished_capture" | awk '
+    /DROID_LIVE_TOOL_DONE/ { tool_done = NR }
+    /DROID_LIVE_FOREGROUND_FINISHED/ && tool_done && NR > tool_done { found = 1 }
+    END { exit !found }
+  ' && break
   sleep 0.25
 done
-printf '%s' "$finished_capture" | grep -q 'DROID_LIVE_FOREGROUND_FINISHED' \
+printf '%s\n' "$finished_capture" | awk '
+  /DROID_LIVE_TOOL_DONE/ { tool_done = NR }
+  /DROID_LIVE_FOREGROUND_FINISHED/ && tool_done && NR > tool_done { found = 1 }
+  END { exit !found }
+' \
   || fail "Droid did not resume reasoning after the foreground tool completed"
 pass "Droid live foreground tool: no reasoning continuation until tool completion"
 

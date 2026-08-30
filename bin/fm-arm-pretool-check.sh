@@ -16,7 +16,7 @@
 #   bin/fm-arm-pretool-check.sh --primary-only
 #
 # Stdin mode extracts .toolInput.command for Grok or .tool_input.command for
-# Claude and Codex. Cursor delivers the same .tool_input.command shape with
+# Claude, Codex, and Droid. Cursor delivers the same .tool_input.command shape with
 # tool_name "Shell" (verified live, cursor-agent 2026.08.11-e8db854), so it needs
 # no new extraction - only --cursor, which selects Cursor's own deny rendering
 # and marks this invocation as the Cursor registration rather than the
