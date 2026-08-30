@@ -1,0 +1,4 @@
+ok - Droid live primary hooks: project settings, SessionStart, PreToolUse, Stop blocking, and loop guard
+ok - Droid live composer: detached cursor remains safe for idle and typed input
+ok - Droid live foreground tool: no reasoning continuation until tool completion
+ok - Droid 0.208.1 primary live verification complete

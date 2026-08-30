@@ -1,0 +1,3 @@
+ok - Droid live primary hooks: project settings, SessionStart, PreToolUse, Stop blocking, and loop guard
+ok - Droid live composer: detached cursor remains safe for idle and typed input
+not ok - Droid live foreground probe was no longer active during its busy capture
