@@ -5,7 +5,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "exec \"$DROID_PROJECT_DIR\"/bin/fm-sessionstart-run.sh"
+            "command": "exec \"$DROID_PROJECT_DIR\"/bin/fm-sessionstart-run.sh",
+            "timeout": 180
           }
         ]
       }
@@ -16,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "exec \"$DROID_PROJECT_DIR\"/bin/fm-arm-pretool-check.sh"
+            "command": "exec \"$DROID_PROJECT_DIR\"/bin/fm-arm-pretool-check.sh --primary-only"
           }
         ]
       }

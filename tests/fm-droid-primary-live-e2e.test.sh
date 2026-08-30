@@ -39,7 +39,7 @@ chmod +x "$LAB/shim/tmux"
 cat > "$PROJECT/.factory/sessionstart.sh" <<'SH'
 #!/usr/bin/env bash
 cat > .factory/sessionstart-payload.json
-printf '%s\n' DROID_LIVE_SESSIONSTART_8291
+printf '%s\n' 'Startup nonce: DROID_LIVE_SESSIONSTART_8291. When asked, report SESSIONSTART_OBSERVED_ followed by the nonce.'
 SH
 
 cat > "$PROJECT/.factory/pretool.sh" <<'SH'
@@ -82,7 +82,7 @@ chmod +x "$PROJECT/.factory/sessionstart.sh" "$PROJECT/.factory/pretool.sh" "$PR
 
 "$REAL_TMUX" -L "$SOCKET" new-session -d -s "$SESSION" -n hooks -c "$PROJECT" -- \
   droid --auto high \
-  'Repeat DROID_LIVE_SESSIONSTART_8291, use a shell tool to run exactly: touch droid-live-denied-sentinel, report the denial, then end your turn.'
+  'Report the startup nonce using the format requested by the SessionStart context, use a shell tool to run exactly: touch droid-live-denied-sentinel, report the denial, then end your turn.'
 
 capture=
 for _ in $(seq 1 180); do
@@ -95,7 +95,7 @@ for _ in $(seq 1 180); do
   sleep 0.5
 done
 
-printf '%s' "$capture" | grep -q 'DROID_LIVE_SESSIONSTART_8291' \
+printf '%s' "$capture" | grep -q 'SESSIONSTART_OBSERVED_DROID_LIVE_SESSIONSTART_8291' \
   || fail "Droid SessionStart stdout did not reach model-visible context"
 [ ! -e "$PROJECT/droid-live-denied-sentinel" ] \
   || fail "Droid PreToolUse denial did not stop the command before execution"
@@ -132,16 +132,23 @@ pass "Droid live composer: detached cursor remains safe for idle and typed input
 
 "$REAL_TMUX" -L "$SOCKET" new-window -d -t "$SESSION:" -n foreground -c "$PROJECT" -- \
   droid --auto high \
-  "Run this exact foreground shell command: bash -lc 'sleep 20; echo DROID_LIVE_TOOL_DONE'. Say DROID_LIVE_FOREGROUND_FINISHED only after it completes."
+  "Run this exact foreground shell command: bash -lc 'touch .factory/foreground-running; sleep 20; rm .factory/foreground-running; echo DROID_LIVE_TOOL_DONE'. While it is still running, visibly publish the concatenation of DROID_LIVE_MIDCALL_ and UPDATE. After it completes, publish the concatenation of DROID_LIVE_FOREGROUND_ and FINISHED."
 
 running_capture=
 for _ in $(seq 1 80); do
   running_capture=$("$REAL_TMUX" -L "$SOCKET" capture-pane -p -t "$SESSION:foreground" -S -80 2>/dev/null || true)
-  printf '%s' "$running_capture" | grep -q 'Press ESC to stop' && break
+  if [ -e "$PROJECT/.factory/foreground-running" ] \
+     && printf '%s' "$running_capture" | grep -q 'Press ESC to stop'; then
+    break
+  fi
   sleep 0.25
 done
+[ -e "$PROJECT/.factory/foreground-running" ] \
+  || fail "Droid live foreground probe was no longer active during its busy capture"
 printf '%s' "$running_capture" | grep -q 'Press ESC to stop' \
   || fail "Droid live foreground probe never exposed the verified busy token"
+printf '%s' "$running_capture" | grep -q 'DROID_LIVE_MIDCALL_UPDATE' \
+  && fail "Droid unexpectedly emitted the requested visible update during the active foreground tool"
 printf '%s' "$running_capture" | grep -q 'DROID_LIVE_FOREGROUND_FINISHED' \
   && fail "Droid reasoned past the foreground tool before it completed"
 

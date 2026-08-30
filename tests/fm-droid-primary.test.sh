@@ -16,9 +16,12 @@ test_registration_inventory() {
     (.hooks.PreToolUse | length) == 1 and
     (.hooks.Stop | length) == 1 and
     .hooks.PreToolUse[0].matcher == "Execute" and
-    any(.hooks.SessionStart[0].hooks[]; .command | contains("fm-sessionstart-run.sh")) and
-    any(.hooks.PreToolUse[0].hooks[]; .command | contains("fm-arm-pretool-check.sh")) and
-    any(.hooks.Stop[0].hooks[]; .command | contains("fm-turnend-guard.sh"))
+    (.hooks.SessionStart[0].hooks | length) == 1 and
+    (.hooks.PreToolUse[0].hooks | length) == 1 and
+    (.hooks.Stop[0].hooks | length) == 1 and
+    (.hooks.SessionStart[0].hooks[0] | .type == "command" and (.command | type == "string" and length > 0) and .timeout == 180) and
+    (.hooks.PreToolUse[0].hooks[0] | .type == "command" and (.command | type == "string" and length > 0)) and
+    (.hooks.Stop[0].hooks[0] | .type == "command" and (.command | type == "string" and length > 0))
   ' "$SETTINGS" >/dev/null \
     || fail "Droid settings do not carry the one SessionStart, Execute PreToolUse, and Stop primary registration"
   pass "Droid primary settings register the three verified hook transports"
@@ -84,5 +87,51 @@ test_commands_anchor_and_preserve_transport() {
   pass "Droid tracked hook commands anchor through DROID_PROJECT_DIR and preserve stdin, output, and status"
 }
 
+test_pretool_registration_is_inert_in_crewmate_worktrees() {
+  local primary="$TMP_ROOT/primary" child="$TMP_ROOT/child" command payload out err status
+  mkdir -p "$primary/bin" "$primary/state"
+  cp "$ROOT/bin/fm-arm-pretool-check.sh" \
+     "$ROOT/bin/fm-arm-command-policy.mjs" \
+     "$ROOT/bin/fm-hook-host-lib.sh" \
+     "$ROOT/bin/fm-primary-scope-lib.sh" \
+     "$primary/bin/"
+  printf '# fixture\n' > "$primary/AGENTS.md"
+  git -C "$primary" init -q
+  git -C "$primary" config user.name fixture
+  git -C "$primary" config user.email fixture@example.test
+  git -C "$primary" add AGENTS.md bin
+  git -C "$primary" commit -qm fixture
+  command=$(jq -r '.hooks.PreToolUse[0].hooks[0].command' "$SETTINGS")
+  payload='{"hook_event_name":"PreToolUse","tool_name":"Execute","tool_input":{"command":"bin/fm-watch-arm.sh &"}}'
+  out="$TMP_ROOT/primary.out"
+  err="$TMP_ROOT/primary.err"
+
+  set +e
+  printf '%s' "$payload" | DROID_PROJECT_DIR="$primary" FM_HOME="$primary" \
+    bash -c "$command" > "$out" 2> "$err"
+  status=$?
+  set -e
+  expect_code 2 "$status" "Droid primary PreToolUse registration must deny unsafe watcher arming"
+  jq -e '.decision == "deny"' "$out" >/dev/null \
+    || fail "Droid primary PreToolUse registration did not preserve its deny response"
+  jq -e '.hookSpecificOutput.permissionDecision == "deny"' "$err" >/dev/null \
+    || fail "Droid primary PreToolUse registration did not preserve its deny diagnostic"
+
+  git -C "$primary" worktree add -q -b fixture-child "$child"
+  mkdir -p "$child/state"
+  : > "$out"
+  : > "$err"
+  set +e
+  printf '%s' "$payload" | DROID_PROJECT_DIR="$child" FM_HOME="$primary" \
+    bash -c "$command" > "$out" 2> "$err"
+  status=$?
+  set -e
+  expect_code 0 "$status" "Droid PreToolUse registration must be inert in a crewmate worktree"
+  [ ! -s "$out" ] || fail "Droid crewmate-scope no-op wrote stdout: $(cat "$out")"
+  [ ! -s "$err" ] || fail "Droid crewmate-scope no-op wrote stderr: $(cat "$err")"
+  pass "Droid PreToolUse registration denies only in genuine primary homes"
+}
+
 test_registration_inventory
 test_commands_anchor_and_preserve_transport
+test_pretool_registration_is_inert_in_crewmate_worktrees

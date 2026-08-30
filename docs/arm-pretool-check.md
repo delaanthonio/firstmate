@@ -27,6 +27,7 @@ It tokenizes the bytes and classifies lexical execution positions only.
 - `--command <exact string>` for OpenCode, Pi, and pi-signed.
 - `--background` as a compatibility-only field that never changes the decision.
 - `--claude` to preserve Claude's stderr-only deny requirement.
+- `--primary-only` to make a tracked project registration inert in linked crewmate worktrees and non-Firstmate repositories.
 
 The wrapper discovers the code root from its own location.
 The active firstmate home is `${FM_HOME:-<code-root>}`.
@@ -164,7 +165,7 @@ Prose may improve without changing adapter behavior.
 | OpenCode | `output.args.command` | `.opencode/plugins/fm-primary-pretool-check.js` passes one `--command` argument and throws only for exit 2. |
 | Pi / pi-signed | `event.input.command` | `.pi/extensions/fm-primary-turnend-guard.ts` passes one `--command` argument and returns `{block: true}` only for exit 2. |
 | Cursor | `.tool_input.command` | `.cursor/hooks.json` matches `tool_name` `Shell` and forwards stdin with `--cursor`. Cursor reads the RETURNED object rather than the exit status, so `--cursor` prints `{"permission":"deny","user_message":"[code] reason"}` on stdout and exits 0; only that rendering is verified to block the command and surface the reason. |
-| Droid | `.tool_input.command` | `.factory/settings.json` matches the `Execute` tool and forwards stdin; Droid blocks on exit 2 plus stderr, including the checker's unchanged default output. |
+| Droid | `.tool_input.command` | `.factory/settings.json` matches the `Execute` tool and forwards stdin with `--primary-only`, so accumulated project settings stay inert in linked crewmate worktrees; Droid blocks on exit 2 plus stderr, including the checker's unchanged default output. |
 
 Cursor also loads `<project>/.claude/settings.json`, so the tracked Claude entry receives the same event. Without `--cursor` a Cursor-delivered payload is that duplicate and allows without re-classifying, decided from the payload's own `cursor_version` by `bin/fm-hook-host-lib.sh`; [`turnend-guard.md`](turnend-guard.md#harness-integrations) owns why that predicate reads the payload rather than the environment.
 
