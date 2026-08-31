@@ -150,19 +150,38 @@ fm_tmux_composer_state() {  # <target> -> empty|pending|pending-unproven|unknown
     verdict=$(fm_composer_classify_screen "$(fm_tmux_composer_caps)" "$pane" "$cy" "$identity")
     [ "$verdict" != need-identity ] || verdict=unknown
   fi
-  # Cursor Agent CLI parks its terminal cursor OUTSIDE its composer, below the
-  # footer, with #{cursor_flag} 0 - so on a Cursor pane tmux's cursor row is not
-  # a composer locator and the cursor-anchored read can only ever answer
-  # `unknown`. Reclassify that pane the way every cursorless backend already
-  # classifies it, letting the bottom-most shape win, which is the same rule
-  # herdr, zellij, cmux, and orca use for every harness including this one.
-  # Gated on Cursor's own structural process identity, never on the verdict
-  # alone, so the strict blank-row posture that owns `unknown` for every other
-  # harness is untouched.
-  if [ "$verdict" = unknown ] && fm_tmux_pane_is_cursor "$target"; then
+  # Cursor Agent CLI and Droid park their terminal cursors OUTSIDE their
+  # composers, below their footers, with #{cursor_flag} 0 - so tmux's cursor
+  # row is not a composer locator and the cursor-anchored read can only answer
+  # `unknown`. Reclassify a structurally proven pane the way every cursorless
+  # backend already classifies it, letting the bottom-most shape win.
+  # Identity, never the verdict alone, gates this path, so the strict blank-row
+  # posture stays in force for every other harness and dead shells.
+  if [ "$verdict" = unknown ] \
+     && { fm_tmux_pane_is_cursor "$target" || fm_tmux_pane_is_droid "$target"; }; then
     verdict=$(fm_composer_classify_screen "$(fm_tmux_composer_caps)" "$pane" '')
   fi
   printf '%s' "$verdict"
+}
+
+# fm_tmux_pane_is_droid: true when the pane's foreground process group contains
+# Droid's exact process name. A Droid TUI launched through a shell leaves that
+# shell in the same foreground group, so #{pane_current_command} can report the
+# shell while the kernel process list still carries the exact `droid` parent.
+# The exact basename avoids attributing an unrelated droid-containing command.
+fm_tmux_pane_is_droid() {  # <target>
+  local target=$1 tty pgid tpgid comm
+  tty=$(tmux display-message -p -t "$target" '#{pane_tty}' 2>/dev/null) || return 1
+  case "$tty" in /dev/*) ;; *) return 1 ;; esac
+  while read -r _ pgid tpgid comm; do
+    [ -n "$comm" ] || continue
+    [ "$pgid" = "$tpgid" ] || continue
+    [ "${comm##*/}" = droid ] && return 0
+  done <<EOF
+$(LC_ALL=C ps -t "${tty#/dev/}" -o pid=,pgid=,tpgid=,comm= 2>/dev/null)
+EOF
+  comm=$(tmux display-message -p -t "$target" '#{pane_current_command}' 2>/dev/null) || comm=
+  [ "${comm##*/}" = droid ]
 }
 
 # fm_tmux_pane_is_cursor: true when the pane's FOREGROUND process group contains

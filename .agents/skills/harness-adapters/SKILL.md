@@ -60,8 +60,8 @@ Use that value for interrupt, exit, resume, and skill-invocation facts.
 
 ## Primary turn-end guard
 
-The primary integrations for `claude`, `codex`, `opencode`, `pi`, `pi-signed`, `grok`, and `cursor` have empirically validated hook paths for the "no turn ends blind" guard.
-`claude` and `codex` block directly through Stop hooks that preserve exit status 2 and stderr from `bin/fm-turnend-guard.sh`.
+The primary integrations for `claude`, `codex`, `opencode`, `pi`, `pi-signed`, `grok`, `cursor`, and `droid` have empirically validated hook paths for the "no turn ends blind" guard.
+`claude`, `codex`, and `droid` block directly through Stop hooks that preserve exit status 2 and stderr from `bin/fm-turnend-guard.sh`.
 `opencode`, `pi`, and `pi-signed` expose passive lifecycle callbacks and force one bounded follow-up when the shared predicate blocks.
 Grok selects native blocking or its pre-native bounded resume fallback from the exact running Stop payload; [`docs/turnend-guard.md`](../../../docs/turnend-guard.md) owns that contract.
 Kimi is outside the primary turn-end guard scope, while `docs/turnend-guard.md` owns its separate guarded global hook for crew wake signals.
@@ -76,8 +76,8 @@ When changing any primary turn-end hook, validate the real harness behavior in a
 
 ## Primary pre-arm (PreToolUse) seatbelt
 
-The primary integrations for `claude`, `codex`, `opencode`, `pi`, `pi-signed`, `grok`, and `cursor` also have wired PreToolUse-equivalent hooks that deny a watcher-arm anti-pattern (shell `&`, truncating pipe, bundling, broad `pkill -f fm-watch`) before it runs.
-`claude` and `codex` block directly through PreToolUse hooks; `grok` blocks the same way but requires every `$VAR` reference in its hook `command` string to carry an inline `:-default` or it fails to launch the hook entirely.
+The primary integrations for `claude`, `codex`, `opencode`, `pi`, `pi-signed`, `grok`, `cursor`, and `droid` also have wired PreToolUse-equivalent hooks that deny a watcher-arm anti-pattern (shell `&`, truncating pipe, bundling, broad `pkill -f fm-watch`) before it runs.
+`claude`, `codex`, and `droid` block directly through PreToolUse hooks; `grok` blocks the same way but requires every `$VAR` reference in its hook `command` string to carry an inline `:-default` or it fails to launch the hook entirely.
 `opencode`, `pi`, and `pi-signed` block by throwing from `tool.execute.before` / returning `{block: true}` from `tool_call`.
 The exact hook files, commands, output-shaping quirks (Claude Code only honors the deny when stdout is empty), and validation transcripts are owned by `docs/arm-pretool-check.md`.
 When changing any watcher-arm PreToolUse hook, validate the real harness behavior in a scratch project before trusting it, then update that doc.
@@ -105,6 +105,7 @@ At session start, `bin/fm-session-start.sh` prints exactly one watcher supervisi
 Do not substitute another harness's wait shape when resuming supervision.
 Claude's Stop `asyncRewake` hook (`bin/fm-claude-stop-autoarm.sh`) owns tokenless re-arm around `bin/fm-watch-arm.sh`, and Grok uses tracked background-notify cycles around `bin/fm-watch-arm.sh`.
 Codex uses bounded foreground checkpoints through `bin/fm-watch-checkpoint.sh` because Codex cannot reason while a foreground tool call is running.
+Droid uses the same bounded foreground-checkpoint shape because it likewise cannot reason while a foreground tool call is running.
 OpenCode uses `.opencode/plugins/fm-primary-watch-arm.js`, which coordinates with the turn-end guard plugin and wakes the TUI with `client.session.promptAsync`.
 Pi and pi-signed use the tracked `.pi/extensions/fm-primary-turnend-guard.ts` plus the tracked `.pi/extensions/fm-primary-pi-watch.ts`, both project-local extensions the Pi engine auto-discovers once trusted.
 When changing any primary watcher adapter, update `docs/supervision-protocols/`, `docs/turnend-guard.md` if a shared idle or turn-end hook changed, and the relevant concise fact below.
@@ -440,7 +441,7 @@ Spawn a Cursor scout with an explicit model:
 bin/fm-spawn.sh <task-id> <project> --scout --harness cursor --model cursor-grok-4.5-high
 ```
 
-## droid (VERIFIED 2026-07-16, Droid 0.173.0)
+## droid (VERIFIED CREW 2026-07-16 on Droid 0.173.0; PRIMARY 2026-08-29 on Droid 0.208.1)
 
 | Fact | Value |
 |---|---|
@@ -466,7 +467,20 @@ The same probe verified every accepted effort value listed above.
 The per-task settings merge deliberately omits autonomy fields, so an operator's global autonomy override remains authoritative even though the launch template retains `--auto high`.
 The Stop hook is a watcher notification only.
 No full semantic lifecycle source was verified, so current worker state remains the isolated rendered fallback rather than an invented hook state machine.
-A Droid primary has no dedicated tracked supervision protocol and therefore uses the unknown-harness fallback.
+
+**Primary-session facts (verified 2026-08-29, Droid 0.208.1).**
+A normal interactive invocation reads project-level `.factory/settings.json`; no `--settings` flag is needed for standing primary configuration.
+Hook commands receive `DROID_PROJECT_DIR`, `FACTORY_PROJECT_DIR`, and `CLAUDE_PROJECT_DIR` equal to the project root, but none is a Droid identity marker for ordinary tool subprocess detection.
+The tracked settings register `SessionStart`, `PreToolUse` for Droid's `Execute` tool, and `Stop`, all anchored through `DROID_PROJECT_DIR`.
+`SessionStart` stdout reaches model context and its payload carries `source: startup`.
+A Stop command that writes stderr and exits 2 blocks the turn and forces continuation.
+The first Stop payload carries `stop_hook_active: false`; the forced continuation's Stop carries `stop_hook_active: true`, so the shared guard's default one-block loop guard applies without a Droid-specific budget.
+PreToolUse receives the command at `.tool_input.command`; exit 2 plus stderr denies execution before the command runs, and Droid still honors the denial when the shared checker's default Grok-shaped stdout object is also present.
+Droid does not reason while a foreground tool call is running, so [`docs/supervision-protocols/droid.md`](../../../docs/supervision-protocols/droid.md) owns its bounded foreground-checkpoint supervision shape.
+The busy footer is `Press ESC to stop` for both thinking and tool execution.
+The idle composer is a rounded bordered box with the shell prompt glyph `>`; while busy its de-emphasized placeholder reads `Enter to steer · Ctrl+Enter to queue`, and real typed text is bright.
+Droid parks tmux's terminal cursor below the composer on its footer/path rows with `cursor_flag=0`, so the tmux adapter reclassifies only a structurally proven Droid process through the shared cursorless screen owner.
+[`docs/verification/droid-primary.md`](../../../docs/verification/droid-primary.md) carries the exact commands and outputs.
 
 ## kimi (VERIFIED 2026-07-25, kimi 0.29.1)
 
