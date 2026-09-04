@@ -441,7 +441,7 @@ Spawn a Cursor scout with an explicit model:
 bin/fm-spawn.sh <task-id> <project> --scout --harness cursor --model cursor-grok-4.5-high
 ```
 
-## droid (VERIFIED CREW 2026-07-16 on Droid 0.173.0; PRIMARY 2026-08-29 on Droid 0.208.1)
+## droid (VERIFIED CREW 2026-07-16 on Droid 0.173.0; PRIMARY 2026-08-29 on Droid 0.208.1; AWAY TRANSPORT 2026-09-04 on Droid 0.212.0)
 
 | Fact | Value |
 |---|---|
@@ -468,7 +468,7 @@ The per-task settings merge deliberately omits autonomy fields, so an operator's
 The Stop hook is a watcher notification only.
 No full semantic lifecycle source was verified, so current worker state remains the isolated rendered fallback rather than an invented hook state machine.
 
-**Primary-session facts (verified 2026-08-29, Droid 0.208.1).**
+**Primary-session facts (verified 2026-08-29 on Droid 0.208.1; away transport refreshed 2026-09-04 on Droid 0.212.0).**
 A normal interactive invocation reads project-level `.factory/settings.json`; no `--settings` flag is needed for standing primary configuration.
 Hook commands receive `DROID_PROJECT_DIR`, `FACTORY_PROJECT_DIR`, and `CLAUDE_PROJECT_DIR` equal to the project root, but none is a Droid identity marker for ordinary tool subprocess detection.
 The tracked settings register `SessionStart`, `PreToolUse` for Droid's `Execute` tool, and `Stop`, all anchored through `DROID_PROJECT_DIR`.
@@ -480,6 +480,8 @@ Droid does not reason while a foreground tool call is running, so [`docs/supervi
 The busy footer is `Press ESC to stop` for both thinking and tool execution.
 The idle composer is a rounded bordered box with the shell prompt glyph `>`; while busy its de-emphasized placeholder reads `Enter to steer · Ctrl+Enter to queue`, and real typed text is bright.
 Droid parks tmux's terminal cursor below the composer on its footer/path rows with `cursor_flag=0`, so the tmux adapter reclassifies only a structurally proven Droid process through the shared cursorless screen owner.
+[`docs/herdr-backend.md`](../../../docs/herdr-backend.md#composer-and-injection-safety) owns the exact currently verified cursorless footer form.
+The `afk` skill owns the bounded background-delivery hierarchy derived from Droid's hook and Sessions evidence.
 [`docs/verification/droid-primary.md`](../../../docs/verification/droid-primary.md) carries the exact commands and outputs.
 
 ## kimi (VERIFIED 2026-07-25, kimi 0.29.1)

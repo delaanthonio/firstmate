@@ -241,6 +241,8 @@ Identity stays a lazy second read, consulted only when a separator pair could ch
 ANSI capture preserves de-emphasized placeholder style.
 `bin/fm-composer-lib.sh` is the fleet-wide owner that strips dim or faint runs and dark truecolor placeholders while retaining bright typed input.
 If the ANSI capture ever fails, the plain fallback declares itself unstyled and the classifier degrades a glyph row carrying trailing text to `unknown` instead of misreading ghost suggestions as typed input, which safely defers injection and eventually raises the wedge alarm.
+Droid's cursorless bordered composer admits only its exact following elapsed footer, including the current optional `context: <1%` or integer-percentage field.
+An unrelated or malformed footer row still returns `unknown`.
 
 A bare shell prompt is never an empty agent composer.
 Away-mode injection proceeds only on an affirmative `empty` result, never on unknown.
@@ -285,6 +287,7 @@ The away daemon supports tmux and Herdr supervisor panes only.
 It refuses Zellij, Orca, and cmux as supervisor backends rather than applying the wrong transport.
 For Herdr, target existence, native state, capture, composer state, and verified submit all route through the shared backend dispatcher and the explicit named-session CLI owner.
 The pane-independent max-defer alert is configured in [`wedge-alarm.md`](wedge-alarm.md).
+Droid uses the same shared Herdr composer and submit path; the `afk` skill owns its evaluated background-delivery hierarchy, and [`verification/droid-primary.md`](verification/droid-primary.md#away-mode-delivery-under-herdr) owns the live proof.
 
 Harnesses with native tracked background execution can run the daemon in their terminal.
 Pi has no such mechanism.
@@ -335,6 +338,7 @@ tests/fm-herdr-session-cleanup.test.sh
 tests/fm-herdr-session-cleanup-e2e.test.sh
 tests/fm-afk-inject-herdr-e2e.test.sh
 tests/fm-afk-pi-herdr-return-e2e.test.sh
+tests/fm-droid-afk-herdr-live-e2e.test.sh
 ```
 
 Real Herdr tests use the named lab helper and default-session tripwire.

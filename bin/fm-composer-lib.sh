@@ -56,9 +56,9 @@
 #                still starts and ends with the family's rule glyph is
 #                tolerated, not ambiguity.
 #                Droid parks its terminal cursor below the box and draws its
-#                elapsed-time status row immediately after it; that exact
-#                footer prefix is tolerated when selecting the box without a
-#                cursor.
+#                elapsed-time status row immediately after it, optionally with
+#                a context percentage; that exact footer is tolerated when
+#                selecting the box without a cursor.
 #   bare       - an agent prompt glyph row with no border at all (claude `❯`,
 #                codex `›`, muse `⟩`, cursor `→`). The agent glyph is itself the container
 #                proof; a bare SHELL glyph (`>` `$` `%` `#`) never is.
@@ -1030,10 +1030,8 @@ _fm_composer_leftbar_floor_row() {  # <trimmed-row>
 }
 
 _fm_composer_droid_status_row() {  # <trimmed-row>
-  case "$1" in
-    '[⏱ '[0-9]*[smh]'] '*) return 0 ;;
-  esac
-  return 1
+  local re='^\[⏱ [0-9]+[smh]( [0-9]+[smh])*(, context: (<1|[0-9]+)%)?\] '
+  [[ $1 =~ $re ]]
 }
 
 _fm_composer_select_cursorless() {

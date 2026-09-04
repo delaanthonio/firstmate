@@ -588,6 +588,9 @@ FM_AFK_PI_HERDR_E2E=1 HERDR_LAB_HELPER=bin/fm-herdr-lab.sh \
 Observed guarantees: pending composer input refused injection and raised one alert; idle Pi accepted one marked escalation; the return gate refused ordinary work while a live blocker remained; resolving the blocker allowed the return flow.
 The dedicated Herdr daemon workspace topology is covered by `tests/fm-afk-launch.test.sh` and preserves the captain tab's pane count.
 
+The Droid/Herdr away-mode path was refreshed on 2026-09-04 with Droid 0.212.0 and Herdr 0.8.0.
+[`droid-primary.md`](droid-primary.md#away-mode-delivery-under-herdr) owns the exact command, causal and disconfirming evidence, pending-text and max-defer results, same-session delivery signal, cleanup proof, shared-hook comparison, and backend applicability review.
+
 ## Zellij
 
 The compatibility floor is Zellij 0.44.0, and the latest verification used Zellij 0.44.3 with `jq` on macOS aarch64 on 2026-08-22.
