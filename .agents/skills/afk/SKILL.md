@@ -98,7 +98,7 @@ backend (tmux or herdr; see "Auto-discovered supervisor pane" below):
   Every other or future verdict defers, including an unreadable pane, ambiguous geometry, a blank unidentified row, and a bare shell prompt left after the agent exits.
   Each adapter contributes only capture and capability facts to the fleet-wide screen classifier in `bin/fm-composer-lib.sh`, which owns every shape and verdict.
   It preserves proven idle composers as empty but requires a genuine container around shell glyphs; see `docs/herdr-backend.md` "Composer and injection safety" for the operator contract.
-  Droid's bordered composer may be followed by its exact elapsed-time footer with an optional `context: <1%` or integer-percentage field, but an unrelated or malformed row still invalidates cursorless selection.
+  Droid's cursorless footer exception remains deliberately exact; `docs/herdr-backend.md` "Composer and injection safety" owns its current operator-visible form.
   `pane_input_pending` is the tested fail-closed predicate for callers that need to know whether the composer is unsafe: it treats every result except exact `empty` as pending.
 
 A busy primary pane, or any composer verdict other than `empty`, defers the injection; the buffered escalation survives in `state/.subsuper-escalations` and is retried on the next housekeeping tick.
@@ -118,7 +118,8 @@ So a guard false-positive becomes a visible stall, never an unbounded silent no-
 ## Droid background-delivery hierarchy
 
 Droid away delivery uses the shared verified composer and submit owners because the native Sessions continuation command was not observed to steer an already-running interactive TUI session.
-`SessionStart` owns registration and recovery context, `UserPromptSubmit` can add catch-up context to the captain's next prompt, and durable disk state plus compact-sourced `SessionStart` preserve undelivered events across compaction.
+Tracked `SessionStart` owns registration and recovery context, including the compact-sourced re-emit, while durable disk state preserves undelivered events across compaction.
+`UserPromptSubmit` was verified as a same-session receipt and as a hook whose output can add context, but Firstmate does not register it as a catch-up handler; `PreCompact` is likewise not a tracked delivery path.
 Droid documents blocking Stop continuation but no Claude `asyncRewake` equivalent, so its shared Stop guard may perform only the existing bounded one-block handoff and must never wait indefinitely or prevent captain input.
 Do not add a Droid-only delivery loop or treat `UserPromptSubmit` as an idle-session wake source.
 

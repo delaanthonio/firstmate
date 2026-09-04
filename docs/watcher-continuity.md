@@ -91,6 +91,6 @@ The goal is continuity without a Pi or OpenCode model-memory re-arm step.
 No zero-latency guarantee is claimed because lock verification, watcher startup, and bounded retry delays remain deliberate safety work.
 OpenCode support targets persistent TUI sessions rather than headless `opencode run`.
 Claude depends on the Stop `asyncRewake` rewake, Cursor depends on its awaited stop-hook park, Grok retains native background-completion notifications, and Codex and Droid retain bounded foreground checkpoints.
-Droid's SessionStart recovery and next-prompt catch-up complement that checkpoint but do not create tokenless background continuation.
+Droid's SessionStart recovery complements that checkpoint but does not create tokenless background continuation; the `afk` skill owns the evaluated delivery hierarchy.
 
 [`verification/supervision.md`](verification/supervision.md#watcher-continuity) records the five earlier harness results and exact opt-in commands, while [`verification/droid-primary.md`](verification/droid-primary.md#foreground-tool-behavior) records Droid's foreground-checkpoint evidence.

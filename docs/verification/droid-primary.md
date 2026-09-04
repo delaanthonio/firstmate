@@ -306,23 +306,23 @@ The fix therefore extends only the shared exact Droid footer predicate, while ma
 
 The bounded live scenario established this sequence before cleanup:
 
-1. SessionStart delivered shared recovery context to the real Droid primary.
-2. Ordinary `fm-send` submitted a prompt, native Herdr state became busy, and `UserPromptSubmit` recorded it against session `ef7b416e-6f1f-46cb-b175-3d882b486894`.
+1. A test-local `SessionStart` hook delivered its context to the real Droid primary, confirming hook output reaches the interactive session.
+2. Ordinary `fm-send` submitted a prompt, native Herdr state became busy, and a test-local `UserPromptSubmit` hook recorded it against session `ef7b416e-6f1f-46cb-b175-3d882b486894`.
 3. A pending captain draft remained byte-visible and unsubmitted while the decision stayed buffered and the max-defer path emitted its active alert.
 4. Clearing the draft caused the exact `FIRSTMATE_OP: v1 away-supervisor` prompt to reach `UserPromptSubmit` on that same interactive session and the escalation buffer to clear.
 5. A plain dead-shell pane remained `unknown` rather than borrowing Droid's composer exception.
 6. The child scenario exited before the outer process called the guarded teardown helper, and the named non-default lab was then absent.
 
 The bounded recent-pane capture did not reliably retain the operational prompt after submission, so same-session `UserPromptSubmit` is the durable delivery assertion and rendered viewport retention remains narrowly unproven.
-The first live run sampled `.subsuper-inject-wedged` immediately after buffer clearance and failed that timing assertion, while its retained post-process state showed a zero-byte buffer and an absent marker.
-The regression now gives marker retirement a five-second bound, but the captain-authorized one-run limit means that adjusted wait has portable coverage rather than a second live rerun.
+The regression's five-second marker-retirement wait has portable coverage but was not rerun live in this refresh.
 
 The same lab proved `droid exec -s <session-id>` can continue the durable Droid session headlessly but does not steer the already-running interactive TUI pane.
 It is therefore not an away-delivery transport.
 The shared verified composer path remains authoritative.
 
 The [Factory hook reference](https://docs.factory.ai/cli/configuration/hooks) documents blocking Stop continuation and the available SessionStart, UserPromptSubmit, PreToolUse, Stop, and PreCompact events, but no Claude `asyncRewake` field.
-The supported hierarchy is therefore SessionStart recovery, one bounded shared Stop handoff, next-prompt `UserPromptSubmit` catch-up, and disk durability plus compact-sourced SessionStart across compaction.
+The retained hierarchy is therefore tracked SessionStart recovery, one bounded shared Stop handoff, and disk durability plus compact-sourced SessionStart across compaction.
+The test-local `UserPromptSubmit` hook proved same-session receipt and hook-output context, but Firstmate does not register it as a durable-event catch-up handler; no tracked `PreCompact` path was added.
 An indefinitely blocking Stop hook would prevent captain input and is outside the contract.
 
 `tests/fm-droid-primary.test.sh` supplies the portable A/B hook proof that Droid and Claude route SessionStart, PreToolUse, and Stop through `fm-sessionstart-run.sh`, `fm-arm-pretool-check.sh`, and `fm-turnend-guard.sh` respectively.
