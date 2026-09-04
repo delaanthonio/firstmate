@@ -385,7 +385,7 @@ test_matrix_kimi_bordered_shell_glyph_box() {
 }
 
 test_matrix_droid_box_allows_verified_status_footer() {
-  local idle idle_context idle_legacy typed malformed unrelated out
+  local idle idle_context idle_legacy typed malformed malformed_less_than unrelated out
   idle=$'transcript\n╭──────────────────────────────────────────────────────────────────────────────╮\n│ >                                                                            │\n╰──────────────────────────────────────────────────────────────────────────────╯\n[⏱ 9s, context: <1%] 1 config issue — /diagnostics\n~/firstmate   main'
   idle_context=$'transcript\n╭──────────────────────────────────────────────────────────────────────────────╮\n│ >                                                                            │\n╰──────────────────────────────────────────────────────────────────────────────╯\n[⏱ 1m 9s, context: 12%] 1 config issue — /diagnostics\n~/firstmate   main'
   idle_legacy=$'transcript\n╭──────────────────────────────────────────────────────────────────────────────╮\n│ >                                                                            │\n╰──────────────────────────────────────────────────────────────────────────────╯\n[⏱ 9s] 1 config issue — /diagnostics\n~/firstmate   main'
@@ -401,6 +401,11 @@ test_matrix_droid_box_allows_verified_status_footer() {
   out=$(fm_composer_classify_screen "$CAPS_STYLED_NOID" "$malformed")
   [ "$out" = unknown ] \
     || fail "a malformed Droid status lookalike must not widen the exception, got '$out'"
+
+  malformed_less_than=$'transcript\n╭──────────────────────────────────────────────────────────────────────────────╮\n│ >                                                                            │\n╰──────────────────────────────────────────────────────────────────────────────╯\n[⏱ 9s, context: <12%] unrelated process output\n~/firstmate   main'
+  out=$(fm_composer_classify_screen "$CAPS_STYLED_NOID" "$malformed_less_than")
+  [ "$out" = unknown ] \
+    || fail "a malformed Droid less-than context percentage must not widen the exception, got '$out'"
 
   unrelated=$'transcript\n╭──────────────────────────────────────────────────────────────────────────────╮\n│ >                                                                            │\n╰──────────────────────────────────────────────────────────────────────────────╯\nunrelated process output\n~/firstmate   main'
   out=$(fm_composer_classify_screen "$CAPS_STYLED_NOID" "$unrelated")

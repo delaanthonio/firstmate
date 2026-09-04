@@ -1030,7 +1030,7 @@ _fm_composer_leftbar_floor_row() {  # <trimmed-row>
 }
 
 _fm_composer_droid_status_row() {  # <trimmed-row>
-  local re='^\[⏱ [0-9]+[smh]( [0-9]+[smh])*(, context: <?[0-9]+%)?\] '
+  local re='^\[⏱ [0-9]+[smh]( [0-9]+[smh])*(, context: (<1|[0-9]+)%)?\] '
   [[ $1 =~ $re ]]
 }
 
