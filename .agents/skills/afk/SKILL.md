@@ -119,7 +119,7 @@ So a guard false-positive becomes a visible stall, never an unbounded silent no-
 
 Droid away delivery uses the shared verified composer and submit owners because the native Sessions continuation command was not observed to steer an already-running interactive TUI session.
 Tracked `SessionStart` owns registration and recovery context, including the compact-sourced re-emit, while durable disk state preserves undelivered events across compaction.
-`UserPromptSubmit` was verified as a same-session receipt and as a hook whose output can add context, but Firstmate does not register it as a catch-up handler; `PreCompact` is likewise not a tracked delivery path.
+`UserPromptSubmit` was verified as a same-session receipt, but its hook-output context behavior awaits an independent live refresh; Firstmate does not register it as a catch-up handler, and `PreCompact` is likewise not a tracked delivery path.
 Droid documents blocking Stop continuation but no Claude `asyncRewake` equivalent, so its shared Stop guard may perform only the existing bounded one-block handoff and must never wait indefinitely or prevent captain input.
 Do not add a Droid-only delivery loop or treat `UserPromptSubmit` as an idle-session wake source.
 

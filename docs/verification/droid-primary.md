@@ -327,7 +327,7 @@ The corrected opt-in guard gives SessionStart and UserPromptSubmit distinct hook
 Firstmate does not register UserPromptSubmit as a durable-event catch-up handler; no tracked `PreCompact` path was added.
 An indefinitely blocking Stop hook would prevent captain input and is outside the contract.
 
-`tests/fm-droid-primary.test.sh` supplies the portable A/B hook proof that Droid and Claude route SessionStart, PreToolUse, and Stop through `fm-sessionstart-run.sh`, `fm-arm-pretool-check.sh`, and `fm-turnend-guard.sh` respectively.
+`tests/fm-droid-primary.test.sh` executes the registered Droid and Claude SessionStart, PreToolUse, and Stop commands against observable fixture owners, then compares their stdin, arguments, stdout, stderr, and exit-status transport through `fm-sessionstart-run.sh`, `fm-arm-pretool-check.sh`, and `fm-turnend-guard.sh` respectively.
 A real Claude primary under Herdr accepted a composer injection through the same shared classification and verified-submit path.
 No Droid-only composer, submit, or background-delivery owner was added.
 
