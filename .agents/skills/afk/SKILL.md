@@ -98,6 +98,7 @@ backend (tmux or herdr; see "Auto-discovered supervisor pane" below):
   Every other or future verdict defers, including an unreadable pane, ambiguous geometry, a blank unidentified row, and a bare shell prompt left after the agent exits.
   Each adapter contributes only capture and capability facts to the fleet-wide screen classifier in `bin/fm-composer-lib.sh`, which owns every shape and verdict.
   It preserves proven idle composers as empty but requires a genuine container around shell glyphs; see `docs/herdr-backend.md` "Composer and injection safety" for the operator contract.
+  Droid's bordered composer may be followed by its exact elapsed-time footer with an optional `context: <1%` or integer-percentage field, but an unrelated or malformed row still invalidates cursorless selection.
   `pane_input_pending` is the tested fail-closed predicate for callers that need to know whether the composer is unsafe: it treats every result except exact `empty` as pending.
 
 A busy primary pane, or any composer verdict other than `empty`, defers the injection; the buffered escalation survives in `state/.subsuper-escalations` and is retried on the next housekeeping tick.
@@ -113,6 +114,13 @@ an ERROR in the daemon log, a durable
 catch-up if present), a tmux status-line flash when applicable, and a configurable backend-independent active alert.
 `docs/wedge-alarm.md` owns the alert channel setup, and `docs/verification/supervision.md` "Wedge-alarm channels" owns active evidence.
 So a guard false-positive becomes a visible stall, never an unbounded silent no-op.
+
+## Droid background-delivery hierarchy
+
+Droid away delivery uses the shared verified composer and submit owners because the native Sessions continuation command was not observed to steer an already-running interactive TUI session.
+`SessionStart` owns registration and recovery context, `UserPromptSubmit` can add catch-up context to the captain's next prompt, and durable disk state plus compact-sourced `SessionStart` preserve undelivered events across compaction.
+Droid documents blocking Stop continuation but no Claude `asyncRewake` equivalent, so its shared Stop guard may perform only the existing bounded one-block handoff and must never wait indefinitely or prevent captain input.
+Do not add a Droid-only delivery loop or treat `UserPromptSubmit` as an idle-session wake source.
 
 ## Submit model
 

@@ -241,6 +241,8 @@ Identity stays a lazy second read, consulted only when a separator pair could ch
 ANSI capture preserves de-emphasized placeholder style.
 `bin/fm-composer-lib.sh` is the fleet-wide owner that strips dim or faint runs and dark truecolor placeholders while retaining bright typed input.
 If the ANSI capture ever fails, the plain fallback declares itself unstyled and the classifier degrades a glyph row carrying trailing text to `unknown` instead of misreading ghost suggestions as typed input, which safely defers injection and eventually raises the wedge alarm.
+Droid's cursorless bordered composer admits only its exact following elapsed footer, including the current optional `context: <1%` or integer-percentage field.
+Removing that one field from a failing capture changes no other classifier input, while an unrelated or malformed footer row still returns `unknown`.
 
 A bare shell prompt is never an empty agent composer.
 Away-mode injection proceeds only on an affirmative `empty` result, never on unknown.
@@ -285,6 +287,8 @@ The away daemon supports tmux and Herdr supervisor panes only.
 It refuses Zellij, Orca, and cmux as supervisor backends rather than applying the wrong transport.
 For Herdr, target existence, native state, capture, composer state, and verified submit all route through the shared backend dispatcher and the explicit named-session CLI owner.
 The pane-independent max-defer alert is configured in [`wedge-alarm.md`](wedge-alarm.md).
+Droid's background hierarchy stays within those shared owners: `SessionStart` supplies recovery context, a blocking Stop may perform only the bounded shared handoff, `UserPromptSubmit` can catch up durable events on a later captain prompt, and disk persistence plus compact-sourced `SessionStart` cover compaction.
+Droid exposes no documented Claude `asyncRewake` equivalent, and its native Sessions continuation did not steer an already-running interactive TUI in the isolated Herdr proof, so neither is an away-mode delivery path.
 
 Harnesses with native tracked background execution can run the daemon in their terminal.
 Pi has no such mechanism.
@@ -319,6 +323,7 @@ Tests use thin compatibility wrappers in `tests/herdr-test-safety.sh` and never 
 - OpenCode 1.18.4 can accept Enter while busy without clearing the composer.
   The tmux backend has a busy-queue fallback, but Herdr still reports this case as submit pending and needs a separate adapter fix.
 - Only tmux and Herdr can host the away-mode supervisor terminal.
+- Droid Stop hooks must stay bounded because an indefinitely blocked Stop would prevent captain input without providing an async rewake contract.
 
 ## Regression entry points
 

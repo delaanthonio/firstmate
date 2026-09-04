@@ -6,9 +6,31 @@ set -u
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 SETTINGS="$ROOT/.factory/settings.json"
+CLAUDE_SETTINGS="$ROOT/.claude/settings.json"
 TMP_ROOT=$(fm_test_tmproot fm-droid-primary)
 
 [ -f "$SETTINGS" ] || fail "tracked Droid primary settings are missing"
+[ -f "$CLAUDE_SETTINGS" ] || fail "tracked Claude primary settings are missing"
+
+test_claude_shaped_hook_contract() {
+  local event script droid_command
+  while IFS=$'\t' read -r event script; do
+    droid_command=$(jq -r --arg event "$event" '.hooks[$event][0].hooks[0].command' "$SETTINGS")
+    case "$droid_command" in
+      *"/$script"*) ;;
+      *) fail "Droid $event no longer routes through Claude's shared $script owner" ;;
+    esac
+    jq -e --arg event "$event" --arg script "$script" '
+      any(.hooks[$event][].hooks[]; .command | contains("/" + $script))
+    ' "$CLAUDE_SETTINGS" >/dev/null \
+      || fail "Claude $event no longer establishes the shared $script comparison"
+  done <<'EOF'
+SessionStart	fm-sessionstart-run.sh
+PreToolUse	fm-arm-pretool-check.sh
+Stop	fm-turnend-guard.sh
+EOF
+  pass "Droid SessionStart, PreToolUse, and blocking Stop retain Claude's shared hook owners"
+}
 
 test_registration_inventory() {
   jq -e '
@@ -132,6 +154,7 @@ test_pretool_registration_is_inert_in_crewmate_worktrees() {
   pass "Droid PreToolUse registration denies only in genuine primary homes"
 }
 
+test_claude_shaped_hook_contract
 test_registration_inventory
 test_commands_anchor_and_preserve_transport
 test_pretool_registration_is_inert_in_crewmate_worktrees

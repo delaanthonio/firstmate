@@ -588,6 +588,33 @@ FM_AFK_PI_HERDR_E2E=1 HERDR_LAB_HELPER=bin/fm-herdr-lab.sh \
 Observed guarantees: pending composer input refused injection and raised one alert; idle Pi accepted one marked escalation; the return gate refused ordinary work while a live blocker remained; resolving the blocker allowed the return flow.
 The dedicated Herdr daemon workspace topology is covered by `tests/fm-afk-launch.test.sh` and preserves the captain tab's pane count.
 
+The Droid/Herdr path was refreshed on 2026-09-04 with Droid 0.212.0 and Herdr 0.8.0:
+
+```sh
+FM_DROID_AFK_HERDR_E2E=1 \
+  HERDR_LAB_HELPER=/Users/dela/Developer/firstmate/bin/fm-herdr-lab.sh \
+  tests/fm-droid-afk-herdr-live-e2e.test.sh
+```
+
+The pre-fix capture was a genuinely idle bordered Droid composer followed by `[⏱ 5s, context: 1%]`, but the shared classifier returned `unknown` because its exact status-row predicate recognized only the legacy elapsed-only form.
+Removing only `, context: 1%` made the same capture return `empty`, which is the smallest causal counterfactual.
+An unrelated or `tokens:` lookalike row still returns `unknown`, which is the disconfirming check against a broad footer exception.
+The initiating `needs-decision` event entered the daemon buffer, the false `unknown` verdict masked delivery, and the captain-visible symptom was a retained escalation with no prompt.
+The max-defer path independently created its durable wedge marker and active-alert receipt while preserving the buffer, so it was not the earliest divergence.
+
+Ordinary `fm-send` reached the real Droid pane, drove native Herdr state to busy, and produced a `UserPromptSubmit` receipt in interactive session `ef7b416e-6f1f-46cb-b175-3d882b486894`.
+After pending draft text was preserved and the max-defer alert fired, clearing that draft delivered the buffered operational escalation to the same session and cleared the buffer.
+The bounded recent-pane capture did not retain the submitted escalation reliably, so the same-session `UserPromptSubmit` receipt is the durable visibility signal and viewport retention is the one narrow unproven assertion.
+The first immediate marker-retirement assertion raced the successful flush, but the retained post-process state had a zero-byte escalation buffer and no wedge marker; the opt-in test now waits up to five seconds for that retirement.
+
+The live test separates process lifetime from cleanup: it asserts delivery while the Droid and named Herdr session are alive, lets the child scenario exit, then calls only `fm-herdr-lab.sh teardown` and verifies the named session is absent.
+The native Droid Sessions continuation command was available and completed its headless turn, but its prompt never appeared in the already-running interactive pane, so it is not used for away delivery.
+A real Claude/Herdr primary accepted injection through the same shared composer and submit owners, while `tests/fm-droid-primary.test.sh` provides the portable A/B assertion that Droid and Claude register the shared SessionStart, PreToolUse, and Stop scripts.
+
+The shared classifier review covers Claude, Codex, OpenCode, Pi, Grok, Cursor, Kimi, Muse, and Droid across tmux, Herdr, Zellij, cmux, and Orca capability profiles in `tests/fm-composer-lib.test.sh`.
+The Droid-specific tmux process gate is covered by `tests/fm-tmux-agent-liveness.test.sh`, and the affected Herdr behavior has the real opt-in proof above.
+Zellij, cmux, and Orca are non-applicable as away-daemon hosts because `bin/fm-supervise-daemon.sh` rejects them explicitly, but their shared capture profiles remain in the portable matrix.
+
 ## Zellij
 
 The compatibility floor is Zellij 0.44.0, and the latest verification used Zellij 0.44.3 with `jq` on macOS aarch64 on 2026-08-22.

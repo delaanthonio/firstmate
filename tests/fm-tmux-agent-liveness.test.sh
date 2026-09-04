@@ -360,7 +360,7 @@ droid_screen() {  # <composer-text> <ghost 0|1>
     close=$(printf '\033[0m')
   fi
   rendered="${open}${text}${close}"
-  printf '\n Auto (High) · allow all commands                            GPT-5.6 Sol [BYOK]\n╭──────────────────────────────────────────────────────────────────────────────╮\n│ > %-74s │\n╰──────────────────────────────────────────────────────────────────────────────╯\n[⏱ 9s] 1 config issue — /diagnostics\n%s   main\n\n' \
+  printf '\n Auto (High) · allow all commands                            GPT-5.6 Sol [BYOK]\n╭──────────────────────────────────────────────────────────────────────────────╮\n│ > %-74s │\n╰──────────────────────────────────────────────────────────────────────────────╯\n[⏱ 9s, context: <1%%] 1 config issue — /diagnostics\n%s   main\n\n' \
     "$rendered" "$LAB/wt"
 }
 
