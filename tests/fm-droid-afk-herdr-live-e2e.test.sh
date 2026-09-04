@@ -10,6 +10,10 @@
 # transport, the native session continuation surface does not address the
 # already-running interactive pane, and a buffered escalation survives pending
 # text plus max-defer before delivering exactly through the shared idle guard.
+# It also drives the tracked Droid-only AskUser guard: the same independently
+# authorized turn continues after an AFK denial, the keyed approval remains
+# durable, return catch-up presents it, and AskUser becomes interactive only
+# after the real return lifecycle removes the AFK flag.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -28,7 +32,7 @@ LAB_HELPER=${HERDR_LAB_HELPER:-$ROOT/bin/fm-herdr-lab.sh}
 [ -x "$LAB_HELPER" ] || { echo "skip: Herdr lab helper not executable at $LAB_HELPER"; exit 0; }
 
 if [ "${FM_DROID_AFK_HERDR_PHASE:-orchestrate}" = orchestrate ]; then
-  SESSION=$("$LAB_HELPER" name fm-droid-afk-herdr-e2e)
+  SESSION=$("$LAB_HELPER" name afk-droid-approval-deferral-f1)
   TMP_ROOT=$(fm_test_tmproot fm-droid-afk-herdr-e2e)
   ORIGINAL_PATH=$PATH
   LAB_PROVISIONED=0
@@ -97,9 +101,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
-mkdir -p "$HOME_DIR"/{state,data,config,projects} "$PROJECT/.factory" "$FAKEBIN"
+mkdir -p "$HOME_DIR"/{state,data,config,projects} "$PROJECT/.factory" "$PROJECT/bin" "$FAKEBIN"
 git init -q "$PROJECT"
 printf '%s\n' '# Synthetic isolated Firstmate Droid primary' > "$PROJECT/AGENTS.md"
+cp "$ROOT/bin/fm-droid-afk-askuser-check.sh" "$ROOT/bin/fm-primary-scope-lib.sh" "$PROJECT/bin/"
 
 cat > "$PROJECT/.factory/sessionstart.sh" <<'SH'
 #!/usr/bin/env bash
@@ -118,16 +123,25 @@ if printf '%s' "$payload" | jq -e '.prompt | contains("DROID_ORDINARY_SEND_PROBE
 fi
 SH
 
+cat > "$PROJECT/.factory/askuser.sh" <<'SH'
+#!/usr/bin/env bash
+payload=$(cat)
+printf '%s\n' "$payload" >> .factory/askuser-payloads.jsonl
+printf '%s' "$payload" | "$DROID_PROJECT_DIR/bin/fm-droid-afk-askuser-check.sh"
+SH
+
 cat > "$PROJECT/.factory/settings.json" <<'JSON'
 {
   "hooks": {
     "SessionStart": [{"hooks": [{"type": "command", "command": "bash .factory/sessionstart.sh"}]}],
-    "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "bash .factory/userprompt.sh"}]}]
+    "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "bash .factory/userprompt.sh"}]}],
+    "PreToolUse": [{"matcher": "AskUser", "hooks": [{"type": "command", "command": "bash .factory/askuser.sh"}]}]
   }
 }
 JSON
 
-chmod +x "$PROJECT/.factory/sessionstart.sh" "$PROJECT/.factory/userprompt.sh"
+chmod +x "$PROJECT/.factory/sessionstart.sh" "$PROJECT/.factory/userprompt.sh" \
+  "$PROJECT/.factory/askuser.sh" "$PROJECT/bin/"*.sh
 
 # Route adapter-owned Herdr calls through the same guarded lab helper as every
 # explicit call below. The shim accepts only this test's exact trailing session
@@ -155,6 +169,19 @@ cat > "$TMP_ROOT/wedge-recorder" <<EOF
 printf '%s\t%s\n' "\$1" "\$2" >> '$NOTIFY_LOG'
 EOF
 chmod +x "$TMP_ROOT/wedge-recorder"
+
+cat > "$PROJECT/.factory/return-probe.sh" <<EOF
+#!/usr/bin/env bash
+export PATH='$FAKEBIN:$ORIGINAL_PATH'
+export HERDR_SESSION='$SESSION'
+export FM_ROOT_OVERRIDE='$ROOT'
+export FM_HOME='$HOME_DIR'
+export FM_STATE_OVERRIDE='$STATE'
+export FM_SUPERVISOR_BACKEND=herdr
+export FM_SUPERVISOR_TARGET='$SESSION:__PRIMARY_PANE__'
+exec '$ROOT/bin/fm-afk-return.sh' begin
+EOF
+chmod +x "$PROJECT/.factory/return-probe.sh"
 
 cat > "$TMP_ROOT/daemon-entry" <<EOF
 #!/usr/bin/env bash
@@ -186,9 +213,12 @@ PRIMARY_PANE=$(printf '%s' "$PRIMARY_OUT" | jq -r '.result.root_pane.pane_id // 
 PRIMARY_TARGET="$SESSION:$PRIMARY_PANE"
 sed -i.bak "s/__PRIMARY_PANE__/$PRIMARY_PANE/" "$TMP_ROOT/daemon-entry"
 rm -f "$TMP_ROOT/daemon-entry.bak"
+sed -i.bak "s/__PRIMARY_PANE__/$PRIMARY_PANE/" "$PROJECT/.factory/return-probe.sh"
+rm -f "$PROJECT/.factory/return-probe.sh.bak"
 
 DROID_PROMPT='Follow the exact startup verification instruction supplied by the SessionStart hook.'
-DROID_CMD=$(printf 'exec droid --auto high %q' "$DROID_PROMPT")
+DROID_CMD=$(printf 'exec env FM_ROOT_OVERRIDE=%q FM_HOME=%q FM_STATE_OVERRIDE=%q droid --auto high %q' \
+  "$PROJECT" "$HOME_DIR" "$STATE" "$DROID_PROMPT")
 "$LAB_HELPER" run "$SESSION" pane run "$PRIMARY_PANE" "$DROID_CMD" >/dev/null \
   || fail "could not launch Droid in the isolated Herdr pane"
 
@@ -288,6 +318,11 @@ for _ in $(seq 1 100); do [ -s "$STATE/.supervise-daemon.pid" ] && break; sleep 
 sleep 0.5
 composer=$(fm_backend_composer_state herdr "$PRIMARY_TARGET")
 [ "$composer" = pending ] || fail "real Droid draft classified $composer instead of pending"
+cat > "$STATE/live-worker.meta" <<EOF
+window=$PRIMARY_TARGET
+backend=herdr
+kind=ship
+EOF
 printf '%s\n' 'needs-decision [key=droid-herdr-live]: choose the isolated review path' > "$STATE/live-worker.status"
 
 for _ in $(seq 1 180); do [ -s "$STATE/.subsuper-inject-wedged" ] && break; sleep 0.1; done
@@ -340,6 +375,74 @@ if [ "$delivery_rendered" -eq 1 ]; then
 else
   pass "clearing the draft delivers the buffered decision with a durable interactive-session prompt receipt; the rendered viewport was racy"
 fi
+
+for _ in $(seq 1 600); do
+  status=$("$LAB_HELPER" run "$SESSION" agent get "$PRIMARY_PANE" 2>/dev/null \
+    | jq -r '.result.agent.agent_status // empty' 2>/dev/null || true)
+  [ "$status" = idle ] && break
+  sleep 0.1
+done
+[ "$status" = idle ] || fail "Droid did not become idle before the AFK approval probe"
+if [ -f "$PROJECT/.factory/askuser-payloads.jsonl" ]; then
+  ask_count_before=$(jq -s 'length' "$PROJECT/.factory/askuser-payloads.jsonl")
+else
+  ask_count_before=0
+fi
+
+AFK_APPROVAL_PROMPT='Read the open droid-herdr-live decision from the durable state. First use AskUser to ask whether to approve it, with APPROVE_ISOLATED_CHANGE and KEEP_ISOLATED_PARKED as the two options. If and only if the tool is denied, use Execute to run exactly: touch .factory/authorized-after-afk-denial. Then reply exactly DROID_AFK_ASKUSER_DEFERRED.'
+FM_SEND_SETTLE=0 "$ROOT/bin/fm-send.sh" "$PRIMARY_TARGET" "$AFK_APPROVAL_PROMPT" >/dev/null \
+  || fail "could not submit the AFK approval probe to Droid"
+for _ in $(seq 1 300); do
+  status=$("$LAB_HELPER" run "$SESSION" agent get "$PRIMARY_PANE" 2>/dev/null \
+    | jq -r '.result.agent.agent_status // empty' 2>/dev/null || true)
+  [ -e "$PROJECT/.factory/authorized-after-afk-denial" ] && [ "$status" = idle ] && break
+  sleep 0.1
+done
+[ -e "$PROJECT/.factory/authorized-after-afk-denial" ] \
+  || fail "Droid did not continue the independently authorized action after AFK AskUser denial"
+[ "$status" = idle ] || fail "Droid stayed interactive after the AFK AskUser denial"
+[ -e "$STATE/.afk" ] || fail "Droid AskUser attempt incorrectly counted as captain return"
+jq -s -e --argjson expected "$((ask_count_before + 1))" '
+  length == $expected and
+  .[-1].hook_event_name == "PreToolUse" and
+  .[-1].tool_name == "AskUser" and
+  (.[-1].tool_input.questionnaire | contains("APPROVE_ISOLATED_CHANGE"))
+' "$PROJECT/.factory/askuser-payloads.jsonl" >/dev/null \
+  || fail "the isolated Droid AskUser call did not reach the exact tracked matcher once"
+status_open=$(status_open_decisions "$STATE/live-worker.status")
+printf '%s' "$status_open" | grep -Fq $'droid-herdr-live\tneeds-decision\tchoose the isolated review path' \
+  || fail "AFK AskUser denial lost or resolved the keyed decision"
+pass "Droid denies interactive approval during AFK, grants no answer, and continues independently authorized work"
+
+RETURN_OUTPUT="$PROJECT/.factory/return-output"
+POST_RETURN_PROMPT='DROID_REAL_RETURN_PROBE: this is an unmarked returning-captain message. Before any ordinary work, use Execute to run exactly: bash .factory/return-probe.sh > .factory/return-output 2>&1 . Only after that command succeeds, use AskUser to ask whether to approve the isolated change, with POST_RETURN_APPROVE and POST_RETURN_KEEP_PARKED as the two options. Do not answer the question yourself and do nothing after opening it.'
+"$ROOT/bin/fm-send.sh" "$PRIMARY_TARGET" "$POST_RETURN_PROMPT" >/dev/null \
+  || fail "could not submit the real unmarked return probe"
+for _ in $(seq 1 200); do
+  ask_count=$(jq -s 'length' "$PROJECT/.factory/askuser-payloads.jsonl" 2>/dev/null || printf 0)
+  [ "$ask_count" -ge "$((ask_count_before + 2))" ] && [ -s "$RETURN_OUTPUT" ] && break
+  sleep 0.1
+done
+[ "$ask_count" -eq "$((ask_count_before + 2))" ] \
+  || fail "post-return AskUser did not reach the tracked matcher exactly once"
+[ -s "$RETURN_OUTPUT" ] || fail "Droid did not run return catch-up before opening AskUser"
+DAEMON_STARTED=0
+[ ! -e "$STATE/.afk" ] || fail "Droid opened post-return AskUser before the return owner cleared AFK"
+grep -Fq 'droid-herdr-live' "$RETURN_OUTPUT" \
+  || fail "Droid return catch-up did not present the outstanding keyed question: $(cat "$RETURN_OUTPUT")"
+status_open=$(status_open_decisions "$STATE/live-worker.status")
+printf '%s' "$status_open" | grep -Fq $'droid-herdr-live\tneeds-decision\tchoose the isolated review path' \
+  || fail "Droid return catch-up automatically approved or lost the question"
+pass "a real unmarked Droid return runs ordered catch-up and presents the outstanding question first"
+
+sleep 1
+capture=$("$LAB_HELPER" run "$SESSION" pane read "$PRIMARY_PANE" --source recent --lines 100 2>/dev/null || true)
+printf '%s' "$capture" | grep -Fq 'POST_RETURN_APPROVE' \
+  || fail "post-return Droid questionnaire did not become visible"
+[ ! -e "$PROJECT/.factory/post-return-answer" ] || fail "post-return question was automatically approved"
+"$LAB_HELPER" run "$SESSION" pane send-keys "$PRIMARY_PANE" escape >/dev/null \
+  || fail "could not cancel the isolated post-return questionnaire"
+pass "Droid AskUser becomes available on return without an automatic approval"
 
 DEAD_OUT=$("$LAB_HELPER" run "$SESSION" workspace create --cwd "$PROJECT" --label droid-dead-shell --no-focus) \
   || fail "could not create the dead-shell negative-control pane"

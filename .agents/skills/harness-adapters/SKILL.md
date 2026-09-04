@@ -468,14 +468,15 @@ The per-task settings merge deliberately omits autonomy fields, so an operator's
 The Stop hook is a watcher notification only.
 No full semantic lifecycle source was verified, so current worker state remains the isolated rendered fallback rather than an invented hook state machine.
 
-**Primary-session facts (verified 2026-08-29 on Droid 0.208.1; away transport refreshed 2026-09-04 on Droid 0.212.0).**
+**Primary-session facts (verified 2026-08-29 on Droid 0.208.1; away transport refreshed 2026-09-04 on Droid 0.212.0; AFK approval deferral verified 2026-09-04 on Droid 0.212.1).**
 A normal interactive invocation reads project-level `.factory/settings.json`; no `--settings` flag is needed for standing primary configuration.
 Hook commands receive `DROID_PROJECT_DIR`, `FACTORY_PROJECT_DIR`, and `CLAUDE_PROJECT_DIR` equal to the project root, but none is a Droid identity marker for ordinary tool subprocess detection.
-The tracked settings register `SessionStart`, `PreToolUse` for Droid's `Execute` tool, and `Stop`, all anchored through `DROID_PROJECT_DIR`.
+The tracked settings register `SessionStart`, `PreToolUse` for Droid's `Execute` and `AskUser` tools, and `Stop`, all anchored through `DROID_PROJECT_DIR`.
 `SessionStart` stdout reaches model context and its payload carries `source: startup`.
 A Stop command that writes stderr and exits 2 blocks the turn and forces continuation.
 The first Stop payload carries `stop_hook_active: false`; the forced continuation's Stop carries `stop_hook_active: true`, so the shared guard's default one-block loop guard applies without a Droid-specific budget.
 PreToolUse receives the command at `.tool_input.command`; exit 2 plus stderr denies execution before the command runs, and Droid still honors the denial when the shared checker's default Grok-shaped stdout object is also present.
+The `AskUser` registration invokes `bin/fm-droid-afk-askuser-check.sh`, which denies only while the primary home's durable AFK flag exists, records no answer, and becomes inert again after the ordered return lifecycle removes that flag.
 Droid does not reason while a foreground tool call is running, so [`docs/supervision-protocols/droid.md`](../../../docs/supervision-protocols/droid.md) owns its bounded foreground-checkpoint supervision shape.
 The busy footer is `Press ESC to stop` for both thinking and tool execution.
 The idle composer is a rounded bordered box with the shell prompt glyph `>`; while busy its de-emphasized placeholder reads `Enter to steer · Ctrl+Enter to queue`, and real typed text is bright.

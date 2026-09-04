@@ -331,6 +331,40 @@ An indefinitely blocking Stop hook would prevent captain input and is outside th
 A real Claude primary under Herdr accepted a composer injection through the same shared classification and verified-submit path.
 No Droid-only composer, submit, or background-delivery owner was added.
 
+### AFK approval deferral
+
+Date: 2026-09-04.
+Platform: macOS arm64, Droid 0.212.1, Herdr 0.8.0.
+
+The same guarded non-default Herdr lab was refreshed with the tracked Droid `AskUser` PreToolUse registration.
+While `state/.afk` existed, a real Droid `AskUser` call reached the exact matcher once, exited through the tracked deny guard without an answer, and the same turn completed an independently authorized file action.
+The durable keyed decision remained open and the AFK flag remained present.
+A subsequent real unmarked return ran `fm-afk-return.sh`, printed the keyed decision during ordered catch-up, removed the AFK flag, and then displayed the real Droid questionnaire without selecting either option.
+The test cancelled that isolated questionnaire and tore down the named lab through `fm-herdr-lab.sh`; the live default Herdr session was unchanged.
+
+The exact command was:
+
+```sh
+FM_DROID_AFK_HERDR_E2E=1 \
+  HERDR_LAB_HELPER=/Users/dela/Developer/firstmate/bin/fm-herdr-lab.sh \
+  tests/fm-droid-afk-herdr-live-e2e.test.sh
+```
+
+Its approval-specific results were:
+
+```text
+ok - Droid denies interactive approval during AFK, grants no answer, and continues independently authorized work
+ok - a real unmarked Droid return runs ordered catch-up and presents the outstanding question first
+ok - Droid AskUser becomes available on return without an automatic approval
+ok - Droid 0.212.1 / Herdr away-mode live verification complete
+ok - guarded teardown deletes the isolated Herdr session after the scenario process exits
+```
+
+The portable counterfactual removes only `state/.afk` and proves the guard becomes silent with exit 0; its linked-worktree negative control proves the primary-only scope remains inert for workers.
+Repeated AFK calls also leave the original status bytes and both durable decision keys unchanged.
+A direct live non-Droid `AskUser` comparison was not run, so this record does not claim interactive-question parity with another harness.
+The Factory hook reference was unavailable through the browser during this refresh; the exact `AskUser` tool token and deny transport were instead confirmed from the installed Droid binary and the isolated live hook payload.
+
 ## Refresh
 
 Run the opt-in guard after a Droid upgrade:

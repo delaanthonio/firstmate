@@ -81,18 +81,21 @@ test_claude_shaped_hook_contract() {
 test_registration_inventory() {
   jq -e '
     (.hooks.SessionStart | length) == 1 and
-    (.hooks.PreToolUse | length) == 1 and
+    (.hooks.PreToolUse | length) == 2 and
     (.hooks.Stop | length) == 1 and
     .hooks.PreToolUse[0].matcher == "Execute" and
+    .hooks.PreToolUse[1].matcher == "AskUser" and
     (.hooks.SessionStart[0].hooks | length) == 1 and
     (.hooks.PreToolUse[0].hooks | length) == 1 and
+    (.hooks.PreToolUse[1].hooks | length) == 1 and
     (.hooks.Stop[0].hooks | length) == 1 and
     (.hooks.SessionStart[0].hooks[0] | .type == "command" and (.command | type == "string" and length > 0) and .timeout == 180) and
     (.hooks.PreToolUse[0].hooks[0] | .type == "command" and (.command | type == "string" and length > 0)) and
+    (.hooks.PreToolUse[1].hooks[0] | .type == "command" and (.command | contains("fm-droid-afk-askuser-check.sh"))) and
     (.hooks.Stop[0].hooks[0] | .type == "command" and (.command | type == "string" and length > 0))
   ' "$SETTINGS" >/dev/null \
-    || fail "Droid settings do not carry the one SessionStart, Execute PreToolUse, and Stop primary registration"
-  pass "Droid primary settings register the three verified hook transports"
+    || fail "Droid settings do not carry SessionStart, Execute/AskUser PreToolUse, and Stop primary registrations"
+  pass "Droid primary settings register the four verified hook transports"
 }
 
 make_probe_root() {

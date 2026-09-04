@@ -51,7 +51,7 @@ batched digest rather than per-wake injections.
 3. **Do not separately arm `fm-watch.sh`.** The daemon manages the watcher as
    its child; the singleton lock no-ops a stray arm harmlessly.
 
-4. **Acknowledge** in `AGENTS.md` section 9 language: "Captain, away mode is active; I will batch routine updates and surface only decisions, failures, credentials, or review-ready work until you return."
+4. **Acknowledge** in `AGENTS.md` section 9 language: "Captain, away mode is active; I will batch routine updates, continue independently authorized work, park approval questions for your return, and surface only failures, credentials, or review-ready work until then."
 
 ## How to exit afk
 
@@ -121,6 +121,11 @@ Tracked `SessionStart` owns registration and recovery context, including the com
 `UserPromptSubmit` was verified as a same-session receipt, but its hook-output context behavior awaits an independent live refresh; Firstmate does not register it as a catch-up handler, and `PreCompact` is likewise not a tracked delivery path.
 Droid documents blocking Stop continuation but no Claude `asyncRewake` equivalent, so its shared Stop guard may perform only the existing bounded one-block handoff and must never wait indefinitely or prevent captain input.
 Do not add a Droid-only delivery loop or treat `UserPromptSubmit` as an idle-session wake source.
+
+While `state/.afk` exists, Droid's tracked `AskUser` PreToolUse guard denies the interactive question without answering it.
+Firstmate must leave the originating keyed status or captain-decision record unresolved, retain its evidence, and continue every independently authorized action instead of retrying `AskUser` or asking the question in plain text.
+Repeated operational notifications do not close or duplicate that durable decision, and their operational prefix does not count as captain return.
+After a real unmarked captain message runs the ordered `bin/fm-afk-return.sh` catch-up, the durable open-decision presentation supplies the outstanding questions and the absent AFK flag makes `AskUser` available again under unchanged authority.
 
 ## Submit model
 
