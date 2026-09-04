@@ -106,14 +106,16 @@ cat > "$PROJECT/.factory/sessionstart.sh" <<'SH'
 payload=$(cat)
 printf '%s\n' "$payload" >> .factory/sessionstart-payloads.jsonl
 printf '%s' "$payload" | jq -r '.session_id' > .factory/live-session-id
-printf '%s\n' DROID_LIVE_SESSIONSTART_CONTEXT
+printf '%s\n' 'For startup verification, reply exactly DROID_SESSIONSTART_HOOK_7C91.'
 SH
 
 cat > "$PROJECT/.factory/userprompt.sh" <<'SH'
 #!/usr/bin/env bash
 payload=$(cat)
 printf '%s\n' "$payload" >> .factory/userprompt-payloads.jsonl
-printf '%s\n' DROID_LIVE_USERPROMPT_CONTEXT
+if printf '%s' "$payload" | jq -e '.prompt | contains("DROID_ORDINARY_SEND_PROBE")' >/dev/null; then
+  printf '%s\n' 'After completing the requested action, reply exactly DROID_USERPROMPT_HOOK_6B42.'
+fi
 SH
 
 cat > "$PROJECT/.factory/settings.json" <<'JSON'
@@ -185,7 +187,7 @@ PRIMARY_TARGET="$SESSION:$PRIMARY_PANE"
 sed -i.bak "s/__PRIMARY_PANE__/$PRIMARY_PANE/" "$TMP_ROOT/daemon-entry"
 rm -f "$TMP_ROOT/daemon-entry.bak"
 
-DROID_PROMPT='Reply exactly DROID_HERDR_READY if DROID_LIVE_SESSIONSTART_CONTEXT reached you.'
+DROID_PROMPT='Follow the exact startup verification instruction supplied by the SessionStart hook.'
 DROID_CMD=$(printf 'exec droid --auto high %q' "$DROID_PROMPT")
 "$LAB_HELPER" run "$SESSION" pane run "$PRIMARY_PANE" "$DROID_CMD" >/dev/null \
   || fail "could not launch Droid in the isolated Herdr pane"
@@ -202,13 +204,13 @@ for _ in $(seq 1 240); do
   fi
   status=$("$LAB_HELPER" run "$SESSION" agent get "$PRIMARY_PANE" 2>/dev/null \
     | jq -r '.result.agent.agent_status // empty' 2>/dev/null || true)
-  if [ "$status" = idle ] && printf '%s' "$capture" | grep -Fq '⛬  DROID_HERDR_READY'; then
+  if [ "$status" = idle ] && printf '%s' "$capture" | grep -Fq '⛬  DROID_SESSIONSTART_HOOK_7C91'; then
     break
   fi
   sleep 0.25
 done
 [ "$status" = idle ] || fail "real Droid did not become idle in Herdr (last status: ${status:-unreadable})"
-printf '%s' "$capture" | grep -Fq '⛬  DROID_HERDR_READY' \
+printf '%s' "$capture" | grep -Fq '⛬  DROID_SESSIONSTART_HOOK_7C91' \
   || fail "Droid did not receive SessionStart context in the Herdr lab"
 jq -s -e 'any(.[]; .hook_event_name == "SessionStart" and .source == "startup")' \
   "$PROJECT/.factory/sessionstart-payloads.jsonl" >/dev/null \
@@ -237,8 +239,8 @@ pass "Droid/Herdr current rendered composer is affirmatively empty through the s
 SESSION_ID=$(cat "$PROJECT/.factory/live-session-id" 2>/dev/null || true)
 [ -n "$SESSION_ID" ] || fail "Droid hooks did not expose the isolated session id"
 
-FM_SEND_SETTLE=0 "$ROOT/bin/fm-send.sh" "$PRIMARY_TARGET" \
-  'If DROID_LIVE_USERPROMPT_CONTEXT reached you, use the Execute tool to run exactly: sleep 8. After it finishes reply exactly DROID_HERDR_SEND_OK.' >/dev/null \
+SEND_PROMPT='DROID_ORDINARY_SEND_PROBE: use the Execute tool to run exactly: sleep 8. After it finishes, follow the exact response instruction supplied by the UserPromptSubmit hook.'
+FM_SEND_SETTLE=0 "$ROOT/bin/fm-send.sh" "$PRIMARY_TARGET" "$SEND_PROMPT" >/dev/null \
   || fail "ordinary fm-send could not submit to the real Droid/Herdr pane"
 busy_seen=0
 for _ in $(seq 1 80); do
@@ -250,16 +252,13 @@ for _ in $(seq 1 240); do
   capture=$("$LAB_HELPER" run "$SESSION" pane read "$PRIMARY_PANE" --source recent --lines 200 2>/dev/null || true)
   status=$("$LAB_HELPER" run "$SESSION" agent get "$PRIMARY_PANE" 2>/dev/null \
     | jq -r '.result.agent.agent_status // empty' 2>/dev/null || true)
-  if [ "$status" = idle ] && printf '%s' "$capture" | grep -Fq '⛬  DROID_HERDR_SEND_OK'; then break; fi
+  if [ "$status" = idle ] && printf '%s' "$capture" | grep -Fq '⛬  DROID_USERPROMPT_HOOK_6B42'; then break; fi
   sleep 0.25
 done
-printf '%s' "$capture" | grep -Fq '⛬  DROID_HERDR_SEND_OK' \
+printf '%s' "$capture" | grep -Fq '⛬  DROID_USERPROMPT_HOOK_6B42' \
   || fail "ordinary fm-send was confirmed but its Droid turn did not complete visibly"
-jq -s -e 'any(.[]; .hook_event_name == "UserPromptSubmit" and (.prompt | contains("DROID_LIVE_USERPROMPT_CONTEXT")))' \
-  "$PROJECT/.factory/userprompt-payloads.jsonl" >/dev/null \
-  || fail "Droid/Herdr UserPromptSubmit did not observe the submitted follow-up"
-jq -s -e --arg session "$SESSION_ID" '
-  any(.[]; .session_id == $session and .hook_event_name == "UserPromptSubmit" and (.prompt | contains("DROID_HERDR_SEND_OK")))
+jq -s -e --arg session "$SESSION_ID" --arg prompt "$SEND_PROMPT" '
+  any(.[]; .session_id == $session and .hook_event_name == "UserPromptSubmit" and .prompt == $prompt)
 ' "$PROJECT/.factory/userprompt-payloads.jsonl" >/dev/null \
   || fail "ordinary fm-send did not leave a durable prompt receipt for the interactive Droid session"
 pass "ordinary fm-send reaches Droid through Herdr, UserPromptSubmit adds catch-up context, and the busy guard observes the turn"

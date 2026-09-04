@@ -306,7 +306,7 @@ The fix therefore extends only the shared exact Droid footer predicate, while ma
 
 The bounded live scenario established this sequence before cleanup:
 
-1. A test-local `SessionStart` hook delivered its context to the real Droid primary, confirming hook output reaches the interactive session.
+1. A test-local `SessionStart` hook ran and recorded its startup payload; the original response probe was circular and did not independently confirm that hook output reached model context.
 2. Ordinary `fm-send` submitted a prompt, native Herdr state became busy, and a test-local `UserPromptSubmit` hook recorded it against session `ef7b416e-6f1f-46cb-b175-3d882b486894`.
 3. A pending captain draft remained byte-visible and unsubmitted while the decision stayed buffered and the max-defer path emitted its active alert.
 4. Clearing the draft caused the exact `FIRSTMATE_OP: v1 away-supervisor` prompt to reach `UserPromptSubmit` on that same interactive session and the escalation buffer to clear.
@@ -322,7 +322,9 @@ The shared verified composer path remains authoritative.
 
 The [Factory hook reference](https://docs.factory.ai/harness/hooks) documents blocking Stop continuation and the available SessionStart, UserPromptSubmit, PreToolUse, Stop, and PreCompact events, but no Claude `asyncRewake` field.
 The retained hierarchy is therefore tracked SessionStart recovery, one bounded shared Stop handoff, and disk durability plus compact-sourced SessionStart across compaction.
-The test-local `UserPromptSubmit` hook proved same-session receipt and hook-output context, but Firstmate does not register it as a durable-event catch-up handler; no tracked `PreCompact` path was added.
+The test-local `UserPromptSubmit` hook proved same-session receipt, but its original response probe did not independently prove hook-output context.
+The corrected opt-in guard gives SessionStart and UserPromptSubmit distinct hook-only response values, and those assertions remain pending the next captain-authorized live refresh.
+Firstmate does not register UserPromptSubmit as a durable-event catch-up handler; no tracked `PreCompact` path was added.
 An indefinitely blocking Stop hook would prevent captain input and is outside the contract.
 
 `tests/fm-droid-primary.test.sh` supplies the portable A/B hook proof that Droid and Claude route SessionStart, PreToolUse, and Stop through `fm-sessionstart-run.sh`, `fm-arm-pretool-check.sh`, and `fm-turnend-guard.sh` respectively.
