@@ -320,7 +320,7 @@ The same lab proved `droid exec -s <session-id>` can continue the durable Droid 
 It is therefore not an away-delivery transport.
 The shared verified composer path remains authoritative.
 
-The [Factory hook reference](https://docs.factory.ai/cli/configuration/hooks) documents blocking Stop continuation and the available SessionStart, UserPromptSubmit, PreToolUse, Stop, and PreCompact events, but no Claude `asyncRewake` field.
+The [Factory hook reference](https://docs.factory.ai/harness/hooks) documents blocking Stop continuation and the available SessionStart, UserPromptSubmit, PreToolUse, Stop, and PreCompact events, but no Claude `asyncRewake` field.
 The retained hierarchy is therefore tracked SessionStart recovery, one bounded shared Stop handoff, and disk durability plus compact-sourced SessionStart across compaction.
 The test-local `UserPromptSubmit` hook proved same-session receipt and hook-output context, but Firstmate does not register it as a durable-event catch-up handler; no tracked `PreCompact` path was added.
 An indefinitely blocking Stop hook would prevent captain input and is outside the contract.
