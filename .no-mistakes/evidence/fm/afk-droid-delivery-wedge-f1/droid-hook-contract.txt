@@ -1,0 +1,4 @@
+ok - Droid SessionStart, PreToolUse, and blocking Stop retain Claude's shared hook owners
+ok - Droid primary settings register the three verified hook transports
+ok - Droid tracked hook commands anchor through DROID_PROJECT_DIR and preserve stdin, output, and status
+ok - Droid PreToolUse registration denies only in genuine primary homes

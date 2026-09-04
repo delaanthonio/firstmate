@@ -1,0 +1,4 @@
+base valid-footer verdict: unknown
+target valid-footer verdict: empty
+target malformed-less-than verdict: unknown
+target unrelated-footer verdict: unknown
