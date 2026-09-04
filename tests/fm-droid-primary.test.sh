@@ -27,20 +27,20 @@ test_claude_shaped_hook_contract() {
       SessionStart)
         script=fm-sessionstart-run.sh
         payload='{"hook_event_name":"SessionStart","source":"startup"}'
-        droid_args= claude_args= expected_status=0
-        expected_out=SHARED_SESSIONSTART_OUTPUT expected_err=
+        droid_args='' claude_args='' expected_status=0
+        expected_out=SHARED_SESSIONSTART_OUTPUT expected_err=''
         ;;
       PreToolUse)
         script=fm-arm-pretool-check.sh
         payload='{"hook_event_name":"PreToolUse","tool_name":"Execute"}'
         droid_args=--primary-only claude_args=--claude expected_status=21
-        expected_out= expected_err=SHARED_PRETOOL_BLOCK
+        expected_out='' expected_err=SHARED_PRETOOL_BLOCK
         ;;
       Stop)
         script=fm-turnend-guard.sh
         payload='{"hook_event_name":"Stop","stop_hook_active":false}'
-        droid_args= claude_args=--claude expected_status=22
-        expected_out= expected_err=SHARED_STOP_BLOCK
+        droid_args='' claude_args=--claude expected_status=22
+        expected_out='' expected_err=SHARED_STOP_BLOCK
         ;;
     esac
 
