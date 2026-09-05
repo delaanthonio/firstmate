@@ -254,9 +254,8 @@ These properties must hold:
   These are loss-prevention properties rather than a general exactly-once guarantee.
 - Composer safety reduces expected human typing during AFK delivery but is not atomic with human input.
   The current empty-composer check and later submission do not serialize with real keyboard input, so the composer can change between them.
-- Crash and restart recovery is exercised end to end for the tmux launcher in an isolated private socket.
-  Direct and native lifecycle coverage is behaviorally mocked.
-  Herdr and Droid daemon recovery was characterized live before this correction, but the corrected recovery has not been rerun live.
+- Crash and restart coverage and its gaps remain explicit.
+  `docs/verification/runtime-backends.md` "Away-mode transport" records the end-to-end tmux coverage, mocked lifecycle boundaries, and corrected Herdr and Droid live-retest gap.
 - Wedge detection is bounded-latency, not lossy.
 - Declared external waits are rechecked on a separate, bounded cadence rather than being mislabeled as wedges.
 - The catch-all scan backs up the keyword classifier.

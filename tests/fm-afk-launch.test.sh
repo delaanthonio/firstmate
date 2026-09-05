@@ -120,8 +120,8 @@ unit_relative_paths_are_absolute_before_daemon_launch() {
 }
 
 # ---------------------------------------------------------------------------
-# UNIT 2: a FRESH entry clears; a REFRESH (daemon already alive) preserves the
-# current session's buffered escalations.
+# UNIT 2: a FRESH lifecycle entry clears; a REFRESH (daemon already alive)
+# preserves the current lifecycle's buffered escalations.
 # ---------------------------------------------------------------------------
 unit_fresh_vs_refresh() {
   local st sleep_pid lock
