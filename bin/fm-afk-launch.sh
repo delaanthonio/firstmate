@@ -35,6 +35,9 @@
 #                              id, then clear state/.afk last.
 #   fm-afk-launch.sh reconcile Close a recorded-but-dead daemon terminal by exact
 #                              id and drop the record (recovery after a crash).
+# A pre-existing state/.afk flag identifies same-lifecycle recovery even when
+# the daemon PID is gone; staged delivery is cleared only when that flag was
+# absent before a genuinely fresh entry.
 #
 # Supported backends: herdr, tmux. Others (zellij, orca, cmux) have no verified
 # non-visible-launch primitive here yet and refuse loudly.
@@ -459,7 +462,7 @@ fm_afk_launch_create_tmux() {  # <captain-target> <captain-backend>
 }
 
 fm_afk_launch_start() {
-  local captain_target captain_backend backup artifact had_afk=0 result
+  local captain_target captain_backend backup artifact had_afk=0 result=0
   if [ -e "$FM_AFK_LAUNCH_STATE/.afk-return-catchup" ]; then
     fm_afk_launch_log "return catch-up is still pending; run bin/fm-afk-return.sh check before re-entering away mode"
     return 1
@@ -494,7 +497,7 @@ fm_afk_launch_start() {
   done
   if ! fm_afk_launch_reconcile; then
     result=1
-  else
+  elif [ "$had_afk" -eq 0 ]; then
     if fm_afk_clear_stale_artifacts "$FM_AFK_LAUNCH_STATE"; then
       result=0
     else
@@ -551,13 +554,14 @@ fm_afk_launch_start_native() {
     fi
   done
   fm_afk_launch_reconcile || result=1
-  if [ "$result" -eq 0 ]; then
+  if [ "$result" -eq 0 ] && [ "$had_afk" -eq 0 ]; then
     if ! fm_afk_clear_stale_artifacts "$FM_AFK_LAUNCH_STATE"; then
       fm_afk_launch_log "failed to clear stale away-mode artifacts"
       result=1
-    elif ! fm_afk_launch_flag_write; then
-      result=1
     fi
+  fi
+  if [ "$result" -eq 0 ] && ! fm_afk_launch_flag_write; then
+    result=1
   fi
   if [ "$result" -eq 0 ]; then
     fm_afk_launch_record_write none - native || result=1

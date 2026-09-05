@@ -19,8 +19,7 @@ batched digest rather than per-wake injections.
 ## What it does
 
 1. **Enter the lifecycle through `bin/fm-afk-launch.sh`.**
-   This owns the durable state write, session-scoped stale-artifact clearing,
-   terminal record, and rollback.
+   This owns the durable state write, lifecycle-scoped stale-artifact clearing, terminal record, and rollback.
    The flag survives a firstmate restart, so recovery re-enters afk when it is present.
 
 2. **Ensure the sub-supervisor daemon is running as a tracked background process.**
@@ -238,8 +237,9 @@ the operational prefix lets firstmate distinguish it from a real captain message
 
 ## Stale-artifact lifecycle
 
-Treat `state/.subsuper-escalations`, its `.since` sidecar, and `state/.subsuper-inject-wedged` as session-scoped delivery artifacts, not as the durable work record.
-Always enter through `bin/fm-afk-launch.sh`, which clears prior-session artifacts only for a fresh entry and preserves the current session's buffer on refresh.
+Treat `state/.subsuper-escalations`, its `.since` sidecar, and `state/.subsuper-inject-wedged` as away-lifecycle delivery artifacts, not as the durable source record.
+Always enter through `bin/fm-afk-launch.sh`, which treats a pre-existing `state/.afk` flag as same-lifecycle recovery even when the prior daemon is dead.
+The launcher preserves staged delivery artifacts during that recovery and clears them only when `state/.afk` was absent before a genuinely fresh entry.
 Always exit through `bin/fm-afk-launch.sh stop`, which keeps `state/.afk` present through the daemon's shutdown flush and clears it last.
 `docs/herdr-backend.md` "Away-mode supervisor support" owns the current mechanism, and `docs/verification/runtime-backends.md` "Away-mode transport" owns active evidence.
 
@@ -247,8 +247,9 @@ Always exit through `bin/fm-afk-launch.sh stop`, which keeps `state/.afk` presen
 
 These properties must hold:
 
-- Nothing is lost after queue publication.
-  The daemon leaves every presented wake durable until routing completes and post-handling acknowledgement succeeds, so interruption replays the same work to the daemon or its successor.
+- Queue publication and staged delivery both survive same-lifecycle recovery.
+  The daemon leaves a presented wake durable until routing completes and generation-bound acknowledgement succeeds, while the launcher preserves any routed delivery buffer when `state/.afk` survives a daemon or primary-session restart.
+  An interruption before acknowledgement can replay the source row, so this is a loss-prevention property rather than a general exactly-once guarantee.
 - Wedge detection is bounded-latency, not lossy.
 - Declared external waits are rechecked on a separate, bounded cadence rather than being mislabeled as wedges.
 - The catch-all scan backs up the keyword classifier.
