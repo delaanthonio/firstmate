@@ -367,6 +367,73 @@ unit_failed_recovery_rolls_back_state() {
   rm -rf "$st"
 }
 
+unit_failed_recovery_preserves_readiness_mutations() {
+  local staged cleared
+  staged=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-failed-recovery-staged.XXXXXX")
+  cleared=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-failed-recovery-cleared.XXXXXX")
+  mkdir -p "$staged/state" "$cleared/state"
+  printf 'original-away-epoch\n' > "$staged/state/.afk"
+  printf 'old-delivery\n' > "$staged/state/.subsuper-escalations"
+  printf 'old-since\n' > "$staged/state/.subsuper-escalations.since"
+  printf 'old-wedge\n' > "$staged/state/.subsuper-inject-wedged"
+  FM_HOME="$staged" FM_STATE_OVERRIDE="$staged/state" FM_SUPERVISOR_TARGET=unused \
+    FM_SUPERVISOR_BACKEND=tmux bash -c '
+      . "$1"
+      fm_afk_launch_wait_ready() {
+        printf "newly-staged\n" > "$FM_AFK_LAUNCH_STATE/.subsuper-escalations"
+        printf "new-since\n" > "$FM_AFK_LAUNCH_STATE/.subsuper-escalations.since"
+        printf "new-wedge\n" > "$FM_AFK_LAUNCH_STATE/.subsuper-inject-wedged"
+        return 1
+      }
+      fm_afk_launch_close_terminal() { return 0; }
+      fm_afk_launch_terminal_absent() { return 0; }
+      fm_afk_launch_create_tmux() {
+        fm_afk_launch_record_write tmux successor ""
+        fm_afk_launch_commit_terminal tmux successor "" 1
+      }
+      ! fm_afk_launch_start
+    ' _ "$LAUNCH"
+  if [ "$(cat "$staged/state/.afk" 2>/dev/null || true)" = original-away-epoch ] \
+    && [ "$(cat "$staged/state/.subsuper-escalations" 2>/dev/null || true)" = newly-staged ] \
+    && [ "$(cat "$staged/state/.subsuper-escalations.since" 2>/dev/null || true)" = new-since ] \
+    && [ "$(cat "$staged/state/.subsuper-inject-wedged" 2>/dev/null || true)" = new-wedge ]; then
+    pass "failed recovery readiness: newly staged delivery remains current"
+  else
+    fail "failed recovery readiness: newly staged delivery was replaced by the pre-launch snapshot"
+  fi
+
+  printf 'original-away-epoch\n' > "$cleared/state/.afk"
+  printf 'submitted-delivery\n' > "$cleared/state/.subsuper-escalations"
+  printf 'submitted-since\n' > "$cleared/state/.subsuper-escalations.since"
+  printf 'submitted-wedge\n' > "$cleared/state/.subsuper-inject-wedged"
+  FM_HOME="$cleared" FM_STATE_OVERRIDE="$cleared/state" FM_SUPERVISOR_TARGET=unused \
+    FM_SUPERVISOR_BACKEND=tmux bash -c '
+      . "$1"
+      fm_afk_launch_wait_ready() {
+        rm -f "$FM_AFK_LAUNCH_STATE/.subsuper-escalations" \
+          "$FM_AFK_LAUNCH_STATE/.subsuper-escalations.since" \
+          "$FM_AFK_LAUNCH_STATE/.subsuper-inject-wedged"
+        return 1
+      }
+      fm_afk_launch_close_terminal() { return 0; }
+      fm_afk_launch_terminal_absent() { return 0; }
+      fm_afk_launch_create_tmux() {
+        fm_afk_launch_record_write tmux successor ""
+        fm_afk_launch_commit_terminal tmux successor "" 1
+      }
+      ! fm_afk_launch_start
+    ' _ "$LAUNCH"
+  if [ "$(cat "$cleared/state/.afk" 2>/dev/null || true)" = original-away-epoch ] \
+    && [ ! -e "$cleared/state/.subsuper-escalations" ] \
+    && [ ! -e "$cleared/state/.subsuper-escalations.since" ] \
+    && [ ! -e "$cleared/state/.subsuper-inject-wedged" ]; then
+    pass "failed recovery readiness: confirmed submission remains cleared"
+  else
+    fail "failed recovery readiness: confirmed submission was resurrected from the pre-launch snapshot"
+  fi
+  rm -rf "$staged" "$cleared"
+}
+
 unit_concurrent_start_serialized() {
   command -v tmux >/dev/null 2>&1 || { echo "skip: tmux not found (concurrent start)"; return 0; }
   local st cap_session cap_pane first second rec count
@@ -1086,6 +1153,7 @@ unit_stop_ordering
 unit_stop_rejects_reused_pid
 unit_failed_start_rolls_back_state
 unit_failed_recovery_rolls_back_state
+unit_failed_recovery_preserves_readiness_mutations
 unit_concurrent_start_serialized
 unit_lock_initialization_grace
 unit_signal_exits_with_lock_cleanup
