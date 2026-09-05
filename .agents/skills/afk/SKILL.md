@@ -249,7 +249,14 @@ These properties must hold:
 
 - Queue publication and staged delivery both survive same-lifecycle recovery.
   The daemon leaves a presented wake durable until routing completes and generation-bound acknowledgement succeeds, while the launcher preserves any routed delivery buffer when `state/.afk` survives a daemon or primary-session restart.
-  An interruption before acknowledgement can replay the source row, so this is a loss-prevention property rather than a general exactly-once guarantee.
+  Before acknowledgement, an interruption can replay the source row from its durable source or queue.
+  After acknowledgement, source rediscovery cannot recover that row, so same-lifecycle recovery depends on preserving the staged `state/.subsuper-escalations` buffer.
+  These are loss-prevention properties rather than a general exactly-once guarantee.
+- Composer safety reduces expected human typing during AFK delivery but is not atomic with human input.
+  The current empty-composer check and later submission do not serialize with real keyboard input, so the composer can change between them.
+- Crash and restart recovery is exercised end to end for the tmux launcher in an isolated private socket.
+  Direct and native lifecycle coverage is behaviorally mocked.
+  Herdr and Droid daemon recovery was characterized live before this correction, but the corrected recovery has not been rerun live.
 - Wedge detection is bounded-latency, not lossy.
 - Declared external waits are rechecked on a separate, bounded cadence rather than being mislabeled as wedges.
 - The catch-all scan backs up the keyword classifier.
