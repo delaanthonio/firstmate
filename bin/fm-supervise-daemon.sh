@@ -33,12 +33,14 @@
 # /afk.
 #
 # Reliability model (see the /afk skill):
-#   - Nothing is lost in away mode: while state/.afk exists, the watcher reverts
-#     to daemon-owned one-shot behavior and enqueues every wake to
-#     state/.wake-queue BEFORE advancing its suppression markers, so a
-#     crash/restart/missed injection is recovered on the next fm-wake-drain.sh.
-#     After a watcher cycle, the daemon handles every durable row through that
-#     drain and acknowledges it only after routing completes.
+#   - Queue publication and staged delivery survive same-lifecycle recovery.
+#     While state/.afk exists, the watcher reverts to daemon-owned one-shot
+#     behavior and enqueues every wake before advancing suppression markers.
+#     The daemon acknowledges a presented row only after routing completes, and
+#     the launcher preserves its staged delivery buffer when the durable .afk
+#     flag survives a daemon or primary-session restart. Interruption before
+#     acknowledgement can replay a source row; this is not an exactly-once
+#     guarantee.
 #   - Fail-safe-to-escalate: any wake the classifier cannot confidently mark
 #     routine is escalated.
 #   - Bounded wedge latency: a stale pane without a declared external wait is

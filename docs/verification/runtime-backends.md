@@ -587,6 +587,9 @@ FM_AFK_PI_HERDR_E2E=1 HERDR_LAB_HELPER=bin/fm-herdr-lab.sh \
 
 Observed guarantees: pending composer input refused injection and raised one alert; idle Pi accepted one marked escalation; the return gate refused ordinary work while a live blocker remained; resolving the blocker allowed the return flow.
 The dedicated Herdr daemon workspace topology is covered by `tests/fm-afk-launch.test.sh` and preserves the captain tab's pane count.
+That regression exercises launcher crash and restart end to end for tmux in an isolated private socket, including preservation of already-staged delivery across same-lifecycle daemon replacement.
+Its direct and native lifecycle cases are behaviorally mocked rather than live backend runs.
+Herdr and Droid daemon recovery was characterized live before the correction, but corrected same-lifecycle crash recovery has not been rerun live on either backend.
 
 The Droid/Herdr away-mode path was refreshed on 2026-09-04 with Droid 0.212.0 and Herdr 0.8.0.
 [`droid-primary.md`](droid-primary.md#away-mode-delivery-under-herdr) owns the exact command, causal and disconfirming evidence, pending-text and max-defer results, same-session delivery signal, cleanup proof, shared-hook comparison, and backend applicability review.

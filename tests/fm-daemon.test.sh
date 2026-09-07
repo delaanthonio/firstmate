@@ -658,6 +658,64 @@ test_handle_wake_routes_self_and_escalate() {
   pass "handle_wake routes routine->self and captain->escalate"
 }
 
+test_durable_wake_stages_before_acknowledgement() {
+  local dir state drainbin ack_log
+  dir=$(make_supercase durable-stage-before-ack)
+  state="$dir/state"
+  drainbin="$dir/drainbin"
+  ack_log="$dir/ack.log"
+  mkdir -p "$drainbin"
+  printf 'done: staged-before-ack\n' > "$state/ordered.status"
+  printf '11\t4\tsignal\tordered\tsignal: %s\n' "$state/ordered.status" > "$state/.wake-queue"
+  cat > "$drainbin/fm-wake-drain.sh" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = --ack-through ]; then
+  [ -s "$FM_STATE_OVERRIDE/.subsuper-escalations" ] || exit 9
+  printf '%s\n' "$*" > "$FM_ACK_LOG"
+  rm -f "$FM_STATE_OVERRIDE/.wake-queue"
+  exit 0
+fi
+printf '11\t4\tsignal\tordered\tsignal: %s\n' "$FM_WAKE_STATUS"
+printf 'WAKE_ACK_REQUIRED: fm-wake-drain.sh --ack-through 4 --recovery-generation generation-11\n' >&2
+SH
+  chmod +x "$drainbin/fm-wake-drain.sh"
+  FM_DAEMON_DIR="$drainbin" FM_WAKE_STATUS="$state/ordered.status" \
+    FM_ACK_LOG="$ack_log" FM_STATE_OVERRIDE="$state" \
+    handle_durable_wakes "heartbeat" "$state" \
+    || fail "durable wake handling failed"
+  grep -F 'done: staged-before-ack' "$state/.subsuper-escalations" >/dev/null 2>&1 \
+    || fail "durable wake was not staged for delivery"
+  grep -F -- '--ack-through 4 --recovery-generation generation-11' "$ack_log" >/dev/null 2>&1 \
+    || fail "durable wake acknowledgement did not use the presented generation"
+  [ ! -e "$state/.wake-queue" ] \
+    || fail "durable wake remained after post-staging acknowledgement"
+  pass "durable wake routing stages delivery before generation-bound acknowledgement"
+}
+
+test_durable_wake_without_ack_remains_recoverable() {
+  local dir state drainbin
+  dir=$(make_supercase durable-unacknowledged)
+  state="$dir/state"
+  drainbin="$dir/drainbin"
+  mkdir -p "$drainbin"
+  printf 'done: unacknowledged-cycle\n' > "$state/unack.status"
+  printf '12\t5\tsignal\tunack\tsignal: %s\n' "$state/unack.status" > "$state/.wake-queue"
+  cat > "$drainbin/fm-wake-drain.sh" <<'SH'
+#!/usr/bin/env bash
+printf '12\t5\tsignal\tunack\tsignal: %s\n' "$FM_WAKE_STATUS"
+SH
+  chmod +x "$drainbin/fm-wake-drain.sh"
+  if FM_DAEMON_DIR="$drainbin" FM_WAKE_STATUS="$state/unack.status" \
+    FM_STATE_OVERRIDE="$state" handle_durable_wakes "heartbeat" "$state"; then
+    fail "durable wake handling accepted a cycle with no acknowledgement token"
+  fi
+  grep -F 'done: unacknowledged-cycle' "$state/.subsuper-escalations" >/dev/null 2>&1 \
+    || fail "unacknowledged wake was not staged before the failed acknowledgement"
+  grep -F $'12\t5\tsignal\tunack' "$state/.wake-queue" >/dev/null 2>&1 \
+    || fail "wake without an acknowledgement token was removed"
+  pass "missing acknowledgement retains the durable wake after staging"
+}
+
 test_inject_skip_forces_self() {
   local dir state
   dir=$(make_supercase skip)
@@ -1864,6 +1922,8 @@ test_escalate_batches_into_one_digest
 test_escalate_batch_age_uses_first_append
 test_heartbeat_scan_dedup
 test_handle_wake_routes_self_and_escalate
+test_durable_wake_stages_before_acknowledgement
+test_durable_wake_without_ack_remains_recoverable
 test_inject_skip_forces_self
 test_is_wake_reason_distinguishes_status_stdout
 test_terminal_stale_escalate_leaves_no_marker
