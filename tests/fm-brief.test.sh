@@ -241,14 +241,18 @@ test_ship_contracts_are_mode_specific() {
     assert_grep "# PR description contract" "$brief" "$id: brief missing PR description contract"
     assert_grep 'Include explicitly titled sections named "Summary", "What changed", "Why", and "How it was tested".' "$brief" \
       "$id: PR description contract does not require all four headings"
-    assert_grep "embed them in the PR description" "$brief" \
-      "$id: PR-producing brief missing screenshot embedding requirement"
     assert_grep "both in every done status line and in the PR description's explicitly titled \"How it was tested\" section." "$brief" \
       "$id: non-UI evidence is not required in both status and PR description"
     if [ "$mode" = direct-PR ]; then
+      assert_grep "capture before and after screenshots and embed them in the PR description before reporting done" "$brief" \
+        "$id: direct-PR brief missing pre-completion screenshot embedding requirement"
       assert_grep "done: PR {url} - {summary}" "$brief" \
         "$id: direct-PR done status has no summary slot"
     else
+      assert_grep 'capture before and after screenshots before appending the implementation-ready `done: {summary}` status' "$brief" \
+        "$id: no-mistakes brief does not require screenshot capture before implementation-ready status"
+      assert_grep 'embed both screenshots in the PR description before appending the final PR-ready `done: PR {url} checks green - {summary}` status' "$brief" \
+        "$id: no-mistakes brief does not defer PR embedding until final PR-ready status"
       assert_grep "done: PR {url} checks green - {summary}" "$brief" \
         "$id: no-mistakes final done status has no summary slot"
     fi

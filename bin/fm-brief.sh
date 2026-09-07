@@ -428,8 +428,21 @@ esac
 DOD=${DOD%$'\n'}
 
 if [ "$MODE" = local-only ]; then
-PR_DESCRIPTION_CONTRACT=""
-IFS= read -r -d '' UI_SCREENSHOT_CONTRACT <<EOF || true
+  PR_DESCRIPTION_CONTRACT=""
+else
+  IFS= read -r -d '' PR_DESCRIPTION_CONTRACT <<'EOF' || true
+# PR description contract
+When this task opens or updates a PR, whether directly in direct-PR mode or through the no-mistakes pipeline, you own the quality of its description.
+Include explicitly titled sections named "Summary", "What changed", "Why", and "How it was tested".
+Make the Summary plain-language and understandable to a non-engineer.
+Write for a reader who has not seen the diff, with no filler or restated commit lists.
+EOF
+  PR_DESCRIPTION_CONTRACT=${PR_DESCRIPTION_CONTRACT%$'\n'}
+fi
+
+case "$MODE" in
+  local-only)
+    IFS= read -r -d '' UI_SCREENSHOT_CONTRACT <<EOF || true
 # UI screenshot contract
 If the change alters a user-visible web page, mobile screen, desktop window, or email template, capture before and after screenshots.
 Save both files under \`$DATA/$ID/shots/\`, never commit them to the repo, and append \`done: ready in branch fm/$ID; screenshots: $DATA/$ID/shots/\` so firstmate can relay them for review.
@@ -438,17 +451,9 @@ Use the shared automation browser, \`chrome-devtools-axi\`.
 For agenda-mobile UI, prefer Expo web in the automation browser over the iOS simulator.
 For a non-UI change, skip screenshots and append \`done: ready in branch fm/$ID; no user-visible change - screenshots not applicable\`.
 EOF
-UI_SCREENSHOT_CONTRACT=${UI_SCREENSHOT_CONTRACT%$'\n'}
-else
-IFS= read -r -d '' PR_DESCRIPTION_CONTRACT <<'EOF' || true
-# PR description contract
-When this task opens or updates a PR, whether directly in direct-PR mode or through the no-mistakes pipeline, you own the quality of its description.
-Include explicitly titled sections named "Summary", "What changed", "Why", and "How it was tested".
-Make the Summary plain-language and understandable to a non-engineer.
-Write for a reader who has not seen the diff, with no filler or restated commit lists.
-EOF
-PR_DESCRIPTION_CONTRACT=${PR_DESCRIPTION_CONTRACT%$'\n'}
-IFS= read -r -d '' UI_SCREENSHOT_CONTRACT <<'EOF' || true
+    ;;
+  direct-PR)
+    IFS= read -r -d '' UI_SCREENSHOT_CONTRACT <<'EOF' || true
 # UI screenshot contract
 If the change alters a user-visible web page, mobile screen, desktop window, or email template, capture before and after screenshots and embed them in the PR description before reporting done.
 Use the shared automation browser, `chrome-devtools-axi`.
@@ -457,8 +462,21 @@ Verify the saved description renders the `user-attachments` image URLs, and neve
 For agenda-mobile UI, prefer Expo web in the automation browser over the iOS simulator.
 For a non-UI change, skip screenshots and include the exact sentence `no user-visible change - screenshots not applicable` both in every done status line and in the PR description's explicitly titled "How it was tested" section.
 EOF
+    ;;
+  *)
+    IFS= read -r -d '' UI_SCREENSHOT_CONTRACT <<'EOF' || true
+# UI screenshot contract
+If the change alters a user-visible web page, mobile screen, desktop window, or email template, capture before and after screenshots before appending the implementation-ready `done: {summary}` status that starts the no-mistakes pipeline.
+After the pipeline creates the PR, embed both screenshots in the PR description before appending the final PR-ready `done: PR {url} checks green - {summary}` status.
+Use the shared automation browser, `chrome-devtools-axi`.
+Attach each image by converting base64 to a File and dispatching a native drop event on the GitHub description textarea; file inputs and synthetic drags do not work.
+Verify the saved description renders the `user-attachments` image URLs, and never commit screenshot files to the repo.
+For agenda-mobile UI, prefer Expo web in the automation browser over the iOS simulator.
+For a non-UI change, skip screenshots and include the exact sentence `no user-visible change - screenshots not applicable` both in every done status line and in the PR description's explicitly titled "How it was tested" section.
+EOF
+    ;;
+esac
 UI_SCREENSHOT_CONTRACT=${UI_SCREENSHOT_CONTRACT%$'\n'}
-fi
 
 cat > "$BRIEF" <<EOF
 You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
