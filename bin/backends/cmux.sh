@@ -303,26 +303,36 @@ fm_backend_cmux_container_ensure() {
 }
 
 # fm_backend_cmux_home_label: readable home prefix plus a short hash of the
-# resolved FM_ROOT path. cmux has one app-global workspace namespace, so the
-# path hash distinguishes every firstmate installation, including multiple
-# primary homes. Moving an installation changes this tag and old cmux titles
-# stop matching; task meta already records absolute worktree paths, so repo
-# relocation is already outside the supported recovery contract. Derivation
-# itself lives in bin/fm-backend-hometag-lib.sh, shared with zellij's
-# identical shared-namespace collision fix (docs/zellij-backend.md
-# "Home-scoped tab titles").
+# resolved FM_HOME path. cmux has one app-global workspace namespace, so the
+# path hash distinguishes every firstmate home, including multiple homes that
+# share one checkout. Moving a home changes this tag and old cmux titles stop
+# matching; task meta already records absolute worktree paths, so relocation is
+# already outside the supported recovery contract. Derivation itself lives in
+# bin/fm-backend-hometag-lib.sh, shared with zellij's identical
+# shared-namespace collision fix (docs/zellij-backend.md "Home-scoped tab
+# titles").
 fm_backend_cmux_home_label() {
   fm_backend_hometag
 }
 
 fm_backend_cmux_scoped_title() {  # <fm-task-label>
   local label=$1 rest home
-  home=$(fm_backend_cmux_home_label)
+  home=$(fm_backend_cmux_home_label) || return 1
   case "$label" in
     fm-*) rest=${label#fm-} ;;
     *) rest=$label ;;
   esac
   printf 'fm-%s-%s' "$home" "$rest"
+}
+
+fm_backend_cmux_legacy_scoped_title() {  # <fm-task-label>
+  local label=$1 rest root_tag
+  root_tag=$(fm_backend_legacy_roottag) || return 1
+  case "$label" in
+    fm-*) rest=${label#fm-} ;;
+    *) rest=$label ;;
+  esac
+  printf 'fm-%s-%s' "$root_tag" "$rest"
 }
 
 # fm_backend_cmux_workspace_id_for_label: the live workspace id whose title
@@ -335,10 +345,72 @@ fm_backend_cmux_workspace_id_for_label() {  # <label>
     | jq -r --arg want "$label" '.workspaces[]? | select(.title == $want) | .id' 2>/dev/null | head -1
 }
 
+fm_backend_cmux_workspace_ids_for_label() {  # <label>
+  local label=$1 wins window_ids wid wss ids matches=
+  wins=$(fm_backend_cmux_cli list-windows --json --id-format uuids 2>/dev/null) || return 1
+  window_ids=$(printf '%s' "$wins" | jq -er '.[]? | .id' 2>/dev/null) || return 1
+  while IFS= read -r wid; do
+    [ -n "$wid" ] || continue
+    wss=$(fm_backend_cmux_cli workspace list --json --id-format uuids --window "$wid" 2>/dev/null) || return 1
+    printf '%s' "$wss" | jq -e '(.workspaces // []) | type == "array"' >/dev/null 2>&1 || return 1
+    ids=$(printf '%s' "$wss" | jq -r --arg want "$label" \
+      '(.workspaces // []) | .[]? | select(.title == $want) | .id' 2>/dev/null) || return 1
+    [ -z "$ids" ] || matches="$matches${matches:+
+}$ids"
+  done <<< "$window_ids"
+  printf '%s\n' "$matches"
+}
+
+fm_backend_cmux_workspace_ids_global() {
+  local wins window_ids wid wss ids=
+  wins=$(fm_backend_cmux_cli list-windows --json --id-format uuids 2>/dev/null) || return 1
+  window_ids=$(printf '%s' "$wins" | jq -er '.[]? | .id' 2>/dev/null) || return 1
+  while IFS= read -r wid; do
+    [ -n "$wid" ] || continue
+    wss=$(fm_backend_cmux_cli workspace list --json --id-format uuids --window "$wid" 2>/dev/null) || return 1
+    printf '%s' "$wss" | jq -e '(.workspaces // []) | type == "array"' >/dev/null 2>&1 || return 1
+    ids="$ids${ids:+
+}$(printf '%s' "$wss" | jq -r '(.workspaces // []) | .[]? | .id' 2>/dev/null)" || return 1
+  done <<< "$window_ids"
+  printf '%s\n' "$ids"
+}
+
+fm_backend_cmux_unique_workspace_id_for_label() {  # <label>
+  local label=$1 matches
+  matches=$(fm_backend_cmux_workspace_ids_for_label "$label") || return 1
+  [ "$(printf '%s\n' "$matches" | sed '/^$/d' | wc -l | tr -d ' ')" = 1 ] || return 1
+  printf '%s\n' "$matches"
+}
+
 fm_backend_cmux_surface_id_for_workspace() {  # <workspace_id>
   local wsid=$1
   fm_backend_cmux_cli list-panes --workspace "$wsid" --json --id-format uuids 2>/dev/null \
     | jq -r '.panes[0] // {} | .selected_surface_id // (.surface_ids[0] // empty)' 2>/dev/null
+}
+
+fm_backend_cmux_create_record_path() {  # <label>
+  local label=$1 state
+  case "$label" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac
+  state="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
+  printf '%s/.cmux-create-%s.pending' "$state" "$label"
+}
+
+fm_backend_cmux_write_create_record() {  # <path> <title>
+  local path=$1 title=$2 dir tmp
+  dir=$(dirname "$path")
+  mkdir -p "$dir" || return 1
+  tmp=$(umask 077; mktemp "$dir/.cmux-create-pending.XXXXXX") || return 1
+  if ! printf '%s\n' "$title" > "$tmp" || ! mv -f -- "$tmp" "$path"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
+}
+
+fm_backend_cmux_create_record_matches() {  # <path> <title>
+  local path=$1 title=$2 recorded
+  [ -f "$path" ] && [ ! -L "$path" ] || return 1
+  IFS= read -r recorded < "$path" || return 1
+  [ "$recorded" = "$title" ]
 }
 
 # fm_backend_cmux_create_task: create the task's workspace (one surface),
@@ -351,21 +423,35 @@ fm_backend_cmux_surface_id_for_workspace() {  # <workspace_id>
 # focus-restore dance is needed, unlike zellij. Echoes "<workspace_id>
 # <surface_id>" on success.
 fm_backend_cmux_create_task() {  # <label> <cwd>
-  local label=$1 cwd=$2 title dup out wsid sfid
-  title=$(fm_backend_cmux_scoped_title "$label")
-  dup=$(fm_backend_cmux_workspace_id_for_label "$title")
-  if [ -n "$dup" ]; then
+  local label=$1 cwd=$2 title matches match_count out wsid sfid record
+  title=$(fm_backend_cmux_scoped_title "$label") || return 1
+  record=$(fm_backend_cmux_create_record_path "$label") || return 1
+  matches=$(fm_backend_cmux_workspace_ids_for_label "$title") || return 1
+  if [ -n "$matches" ]; then
+    match_count=$(printf '%s\n' "$matches" | sed '/^$/d' | wc -l | tr -d ' ')
+    if [ "$match_count" = 1 ] && fm_backend_cmux_create_record_matches "$record" "$title"; then
+      wsid=$matches
+      sfid=$(fm_backend_cmux_surface_id_for_workspace "$wsid")
+      if [ -n "$sfid" ]; then
+        rm -f -- "$record"
+        printf '%s %s' "$wsid" "$sfid"
+        return 0
+      fi
+    fi
     echo "error: cmux workspace '$title' already exists" >&2
     return 1
   fi
+  fm_backend_cmux_write_create_record "$record" "$title" || return 1
   out=$(fm_backend_cmux_cli new-workspace --name "$title" --cwd "$cwd" --focus false --id-format uuids 2>&1) || {
     echo "error: cmux new-workspace failed for '$title': $out" >&2
     return 1
   }
   wsid=$(fm_backend_cmux_workspace_id_for_label "$title")
-  [ -n "$wsid" ] || { echo "error: could not resolve a cmux workspace id for '$title' after creation" >&2; return 1; }
+  [ -n "$wsid" ] \
+    || { echo "error: could not resolve the cmux workspace id for '$title' after creation" >&2; return 1; }
   sfid=$(fm_backend_cmux_surface_id_for_workspace "$wsid")
   [ -n "$sfid" ] || { echo "error: could not resolve the default surface for cmux workspace '$title' ($wsid)" >&2; return 1; }
+  rm -f -- "$record"
   printf '%s %s' "$wsid" "$sfid"
 }
 
@@ -408,19 +494,33 @@ fm_backend_cmux_surface_exists() {  # <workspace_id> <surface_id>
 # header for the fresh-surface pitfall this avoids). When the caller knows
 # the owning firstmate task label, refresh stale workspace/surface ids by label.
 fm_backend_cmux_target_ready() {  # <target> [expected-label]
-  local expected_label=${2:-} expected_title title wsid sfid
+  local expected_label=${2:-} expected_title legacy_title title wsid sfid matches match_count
   fm_backend_cmux_parse_target "$1" || return 1
   if [ -n "$expected_label" ]; then
-    expected_title=$(fm_backend_cmux_scoped_title "$expected_label")
+    expected_title=$(fm_backend_cmux_scoped_title "$expected_label") || return 1
+    legacy_title=$(fm_backend_cmux_legacy_scoped_title "$expected_label") || return 1
     title=$(fm_backend_cmux_cli workspace list --json --id-format uuids 2>/dev/null | jq -r --arg id "$FM_BACKEND_CMUX_WORKSPACE" '.workspaces[]? | select(.id == $id) | .title' 2>/dev/null)
     if [ "$title" = "$expected_title" ]; then
+      fm_backend_cmux_surface_exists "$FM_BACKEND_CMUX_WORKSPACE" "$FM_BACKEND_CMUX_SURFACE" && return 0
+      wsid=$FM_BACKEND_CMUX_WORKSPACE
+    elif [ "$legacy_title" != "$expected_title" ] && [ "$title" = "$legacy_title" ]; then
       fm_backend_cmux_surface_exists "$FM_BACKEND_CMUX_WORKSPACE" "$FM_BACKEND_CMUX_SURFACE" && return 0
       wsid=$FM_BACKEND_CMUX_WORKSPACE
     elif [ -n "$title" ]; then
       return 1
     else
-      wsid=$(fm_backend_cmux_workspace_id_for_label "$expected_title")
-      [ -n "$wsid" ] || return 1
+      matches=$(fm_backend_cmux_workspace_ids_for_label "$expected_title") || return 1
+      match_count=$(printf '%s\n' "$matches" | sed '/^$/d' | wc -l | tr -d ' ')
+      case "$match_count" in
+        0)
+          [ "$legacy_title" != "$expected_title" ] || return 1
+          matches=$(fm_backend_cmux_workspace_ids_for_label "$legacy_title") || return 1
+          printf '%s\n' "$matches" | grep -Fxq "$FM_BACKEND_CMUX_WORKSPACE" || return 1
+          wsid=$FM_BACKEND_CMUX_WORKSPACE
+          ;;
+        1) wsid=$matches ;;
+        *) return 1 ;;
+      esac
     fi
     sfid=$(fm_backend_cmux_surface_id_for_workspace "$wsid")
     [ -n "$sfid" ] || return 1
@@ -488,6 +588,9 @@ fm_backend_cmux_normalize_key() {  # <key>
     Enter|enter) printf 'enter' ;;
     Escape|escape|Esc|esc) printf 'escape' ;;
     C-c|c-c|ctrl+c|Ctrl+c|Ctrl+C|ctrl-c) printf 'ctrl-c' ;;
+    # C-u clears a composer line. fm-send.sh's muse interrupt path needs it to
+    # drop the prompt muse restores into the composer after Escape.
+    C-u|c-u|ctrl+u|Ctrl+u|Ctrl+U|ctrl-u) printf 'ctrl-u' ;;
     *) printf '%s' "$1" ;;
   esac
 }
@@ -501,14 +604,12 @@ fm_backend_cmux_send_key() {  # <target> <key> [expected-label]
   fm_backend_cmux_cli send-key --workspace "$FM_BACKEND_CMUX_WORKSPACE" --surface "$FM_BACKEND_CMUX_SURFACE" "$key" >/dev/null 2>&1
 }
 
-# fm_backend_cmux_send_text_line: send one line of TEXT then submit. cmux has
-# no single-call atomic "run and submit" primitive (like herdr's `pane run`),
-# so this composes send (literal) + send-key enter, exactly like zellij's
-# equivalent - used for the fixed spawn-time commands (treehouse get, the
-# GOTMPDIR export).
+# fm_backend_cmux_send_text_line: send one line of TEXT then submit.
 fm_backend_cmux_send_text_line() {  # <target> <text> [expected-label]
   fm_backend_cmux_send_literal "$1" "$2" "${3:-}" || return 1
-  fm_backend_cmux_send_key "$1" Enter "${3:-}"
+  fm_backend_cmux_send_key "$1" Enter "${3:-}" && return 0
+  fm_backend_cmux_send_key "$1" C-c "${3:-}" >/dev/null 2>&1 && return 1
+  return 2
 }
 
 # fm_backend_cmux_capture: bounded plain-text surface capture. No herdr-style
@@ -528,74 +629,48 @@ fm_backend_cmux_capture() {  # <target> <lines> [expected-label]
   printf '%s' "$out" | tail -n "$lines"
 }
 
-# fm_backend_cmux_composer_state: classify the composer's own row as
-# empty|pending|unknown. Adapted from the bordered-row branch of herdr's
-# structural classifier (fm_backend_herdr_composer_state) per the build task's
-# explicit direction - this is the highest-risk piece of a new backend's
-# send-and-verify logic, and cmux's `read-screen` gives plain-text capture
-# with no cursor-row primitive and no ANSI style channel like herdr's newer
-# `pane read --format ansi` path. The cmux classifier intentionally remains
-# border-row based: locate the
-# composer row as the only captured line whose TRIMMED content both STARTS and
-# ENDS with the same border glyph (│, ┃, or a plain ASCII |), scanning forward
-# and keeping the LAST match so an earlier border-shaped line (scrollback, a
-# popup) never outranks the real bottom-anchored composer row.
-FM_BACKEND_CMUX_COMPOSER_LINES=${FM_BACKEND_CMUX_COMPOSER_LINES:-20}
-FM_BACKEND_CMUX_IDLE_RE=${FM_BACKEND_CMUX_IDLE_RE:-'^Type a message\.\.\.$'}
+# fm_backend_cmux_composer_capture: the cmux composer screen - a bounded
+# plain-text tail of the surface. cmux's `read-screen` is plain text by
+# construction (its --help: "Read terminal text from a surface as plain
+# text"), which is why the capability descriptor below declares styled=0: the
+# shared classifier then degrades a glyph row carrying trailing text to
+# `unknown` instead of misreading an idle suggestion as unsent input.
+fm_backend_cmux_composer_capture() {  # <target> [expected-label]
+  fm_backend_cmux_capture "$1" "$FM_COMPOSER_CAPTURE_LINES" "${2:-}"
+}
 
-fm_backend_cmux_composer_state() {  # <target> [expected-label] -> empty|pending|unknown
-  local target=$1 expected_label=${2:-} cap line trimmed stripped="" found=0
-  cap=$(fm_backend_cmux_capture "$target" "$FM_BACKEND_CMUX_COMPOSER_LINES" "$expected_label") || { printf 'unknown'; return 0; }
-  while IFS= read -r line; do
-    trimmed="${line#"${line%%[![:space:]]*}"}"
-    trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
-    [ -n "$trimmed" ] || continue
-    case "$trimmed" in
-      '│'*'│'|'┃'*'┃'|'|'*'|') : ;;
-      *) continue ;;
-    esac
-    stripped=$trimmed
-    found=1
-  done < <(printf '%s\n' "$cap")
-  [ "$found" -eq 1 ] || { printf 'unknown'; return 0; }
-  stripped=${stripped//│/}
-  stripped=${stripped//┃/}
-  stripped=${stripped//|/}
-  stripped="${stripped#"${stripped%%[![:space:]]*}"}"
-  stripped="${stripped%"${stripped##*[![:space:]]}"}"
-  # A row was found only by the bordered shape above, so content came from a
-  # genuine composer box - delegate to the shared owner with bordered=1. A bare
-  # dead-shell prompt has no bordered row and already returned 'unknown' above.
-  fm_composer_classify_content 1 "$stripped" "$FM_BACKEND_CMUX_IDLE_RE"
+# fm_backend_cmux_composer_caps: static capability facts, not logic (see the
+# capability model in bin/fm-composer-lib.sh).
+fm_backend_cmux_composer_caps() {
+  printf 'styled=0\ncursor=0\nidentity=0\nrows=%s\n' "$FM_COMPOSER_CAPTURE_LINES"
+}
+
+# fm_backend_cmux_composer_state: thin adapter - capture plus capabilities in,
+# shared verdict out. Every shape (including the borderless claude row this
+# adapter once carried its own NBSP workaround for) lives in
+# bin/fm-composer-lib.sh, so a new harness shape is taught there once and
+# never here. cmux has no identity probe, so the classifier's identity
+# sentinel resolves to unknown.
+fm_backend_cmux_composer_state() {  # <target> [expected-label] -> empty|pending|pending-unproven|unknown
+  local cap verdict
+  cap=$(fm_backend_cmux_composer_capture "$1" "${2:-}") || { printf 'unknown'; return 0; }
+  verdict=$(fm_composer_classify_screen "$(fm_backend_cmux_composer_caps)" "$cap")
+  [ "$verdict" != need-identity ] || verdict=unknown
+  printf '%s' "$verdict"
 }
 
 # fm_backend_cmux_send_text_submit: type <text> into <target> once (raw,
-# unsubmitted, via send_literal), then submit with a named Enter key, retried
-# (Enter only, never retyped) until the composer's own row reads empty.
-# Mirrors fm_backend_herdr_send_text_submit's ORIGINAL (composer-row)
-# verification strategy: a slash-command popup's first Enter can close the
-# popup and fill an argument-hint placeholder into the composer rather than
-# submitting, which a raw-diff check would misread as "submitted" -
-# classifying the composer row specifically avoids that false positive, so
-# the retry loop correctly sends a second Enter when needed. Herdr's adapter
-# has since moved its own confirmation to a native agent-state read instead
-# (docs/herdr-backend.md "Native agent-state submit confirmation"); cmux has
-# no analogous native primitive, so this composer-row approach remains
-# cmux's own confirmation strategy. Echoes empty|pending|unknown|send-failed, the
-# SAME vocabulary every existing backend already speaks.
+# unsubmitted, via send_literal), then drive the shared verify-and-retry-Enter
+# loop (bin/fm-composer-lib.sh: fm_composer_submit_retry_core) against the
+# shared composer verdict. Echoes empty|pending|unknown|send-failed, a subset
+# of the proof-carrying submit vocabulary.
 fm_backend_cmux_send_text_submit() {  # <target> <text> <retries> <enter-sleep> <settle> [expected-label]
-  local target=$1 text=$2 retries=$3 sleep_s=$4 settle=$5 expected_label=${6:-} i=0 state
+  local target=$1 text=$2 retries=$3 sleep_s=$4 settle=$5 expected_label=${6:-}
   fm_backend_cmux_parse_target "$target" || { printf 'unknown'; return 0; }
   fm_backend_cmux_send_literal "$target" "$text" "$expected_label" || { printf 'send-failed'; return 0; }
   sleep "$settle"
-  while :; do
-    fm_backend_cmux_send_key "$target" Enter "$expected_label" || true
-    sleep "$sleep_s"
-    state=$(fm_backend_cmux_composer_state "$target" "$expected_label")
-    [ "$state" = pending ] || { printf '%s' "$state"; return 0; }
-    i=$((i + 1))
-    [ "$i" -lt "$retries" ] || { printf 'pending'; return 0; }
-  done
+  fm_composer_submit_retry_core fm_backend_cmux_send_key fm_backend_cmux_composer_state \
+    "$target" "$retries" "$sleep_s" "$expected_label"
 }
 
 # fm_backend_cmux_window_of_workspace: echo "<window_id> <workspace_count>" for
@@ -653,6 +728,25 @@ fm_backend_cmux_kill() {  # <target> [unused] [expected-label]
   fm_backend_cmux_cli close-workspace --workspace "$wsid" >/dev/null 2>&1 || true
 }
 
+fm_backend_cmux_endpoint_confirmed_gone() {  # <target> <expected-label>
+  local target=$1 expected_label=$2 scoped legacy matches inventory
+  fm_backend_cmux_parse_target "$target" || return 1
+  inventory=$(fm_backend_cmux_workspace_ids_global) || return 1
+  printf '%s\n' "$inventory" | grep -qxF "$FM_BACKEND_CMUX_WORKSPACE" && return 1
+  scoped=$(fm_backend_cmux_scoped_title "$expected_label") || return 1
+  legacy=$(fm_backend_cmux_legacy_scoped_title "$expected_label") || return 1
+  matches=$(fm_backend_cmux_workspace_ids_for_label "$scoped") || return 1
+  [ -z "$matches" ] || return 1
+  [ "$legacy" = "$scoped" ] && return 0
+  matches=$(fm_backend_cmux_workspace_ids_for_label "$legacy") || return 1
+  [ -z "$matches" ]
+}
+
+fm_backend_cmux_endpoint_ownership_preflight() {  # <target> <expected-label>
+  fm_backend_cmux_target_ready "$1" "$2" && return 0
+  fm_backend_cmux_endpoint_confirmed_gone "$1" "$2"
+}
+
 # fm_backend_cmux_list_live: recovery/orphan discovery. Lists every workspace
 # whose title is scoped to this firstmate home, by TITLE - never by trusting a
 # stored uuid, since workspace ids do NOT survive an app relaunch (finding #5).
@@ -660,7 +754,7 @@ fm_backend_cmux_kill() {  # <target> [unused] [expected-label]
 # Read-only: an unreachable cmux simply lists nothing.
 fm_backend_cmux_list_live() {
   local wss wsid title sfid home prefix plain
-  home=$(fm_backend_cmux_home_label)
+  home=$(fm_backend_cmux_home_label) || return 1
   prefix="fm-$home-"
   wss=$(fm_backend_cmux_cli workspace list --json --id-format uuids 2>/dev/null) || return 0
   while IFS=$'\t' read -r wsid title; do

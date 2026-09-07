@@ -33,8 +33,8 @@
 # "fm-<hometag>-<id>"); every list/find/recover/kill path is scoped to this
 # home's own tag. A tab created before this change carries the old untagged
 # "fm-<id>" title; target_ready, kill, and ad hoc selector fallback still
-# match it, but ONLY when that bare title is unambiguous (exactly one live tab
-# in the session carries it) - see fm_backend_zellij_tab_matches_label and
+# match it, but ONLY when that title is unambiguous and durable task metadata
+# binds its ids to the current session incarnation - see fm_backend_zellij_tab_matches_label and
 # docs/zellij-backend.md "Home-scoped tab titles" for the full migration
 # posture. Moving/relocating a firstmate installation changes its tag
 # (acceptable - recorded worktree paths do not survive a move either).
@@ -85,7 +85,7 @@
 #     auto-creating), verify the specific pane still appears in list-panes JSON,
 #     and, for metadata-routed task selector operations, verify the pane's tab
 #     still matches the expected caller-facing task label through the home-scoped or
-#     unambiguous legacy title before use. Kill verifies the session and, when
+#     unambiguous, ownership-proven legacy title before use. Kill verifies the session and, when
 #     teardown supplies an expected tab label, verifies a tab id still matches
 #     that label before closing it. Output-SHAPE validation (a bare integer tab
 #     id, JSON that parses) rejects the "session not found" text fallback. A
@@ -119,6 +119,11 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 # shellcheck source=bin/fm-backend-hometag-lib.sh
 . "$FM_BACKEND_ZELLIJ_ROOT/bin/fm-backend-hometag-lib.sh"
 
+# Shared composer classification (the fleet-wide shape catalogue and verdict
+# owner; this adapter contributes only capture and capability facts).
+# shellcheck source=bin/fm-composer-lib.sh
+. "$FM_BACKEND_ZELLIJ_ROOT/bin/fm-composer-lib.sh"
+
 # Verified minimum: report.md recommends "likely Zellij 0.44 or newer" for
 # returned pane/tab IDs and dump-screen --pane-id; empirically verified
 # against the installed 0.44.0 (docs/zellij-backend.md).
@@ -136,12 +141,12 @@ fm_backend_zellij_session() {
 }
 
 # fm_backend_zellij_home_label: readable home prefix plus a short hash of the
-# resolved FM_ROOT path (bin/fm-backend-hometag-lib.sh). Zellij has one
+# resolved FM_HOME path (bin/fm-backend-hometag-lib.sh). Zellij has one
 # session-global tab namespace shared by every firstmate home, so the path
-# hash distinguishes every installation, including multiple primary homes.
-# Moving an installation changes this tag and old zellij tab titles stop
-# matching; task meta already records absolute worktree paths, so repo
-# relocation is already outside the supported recovery contract.
+# hash distinguishes every home, including multiple homes that share one
+# checkout. Moving a home changes this tag and old zellij tab titles stop
+# matching; task meta already records absolute worktree paths, so relocation is
+# already outside the supported recovery contract.
 fm_backend_zellij_home_label() {
   fm_backend_hometag
 }
@@ -153,12 +158,275 @@ fm_backend_zellij_home_label() {
 # scopes its own-home matches through this.
 fm_backend_zellij_scoped_title() {  # <fm-task-label>
   local label=$1 rest home
-  home=$(fm_backend_zellij_home_label)
+  home=$(fm_backend_zellij_home_label) || return 1
   case "$label" in
     fm-*) rest=${label#fm-} ;;
     *) rest=$label ;;
   esac
   printf 'fm-%s-%s' "$home" "$rest"
+}
+
+fm_backend_zellij_legacy_scoped_title() {  # <fm-task-label>
+  local label=$1 rest home
+  home=$(fm_backend_legacy_roottag) || return 1
+  case "$label" in
+    fm-*) rest=${label#fm-} ;;
+    *) rest=$label ;;
+  esac
+  printf 'fm-%s-%s' "$home" "$rest"
+}
+
+fm_backend_zellij_meta_exact_value() {  # <meta> <key>
+  local meta=$1 key=$2 line value='' count=0
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      "$key="*)
+        count=$((count + 1))
+        value=${line#*=}
+        ;;
+    esac
+  done < "$meta"
+  [ "$count" -eq 1 ] || return 1
+  printf '%s' "$value"
+}
+
+fm_backend_zellij_socket_path() {  # <session>
+  local session=$1 root
+  case "$session" in ''|*/*|*:*|*$'\n'*|*$'\r'*) return 1 ;; esac
+  if [ -n "${ZELLIJ_SOCKET_DIR:-}" ]; then
+    root=$ZELLIJ_SOCKET_DIR
+  elif [ -n "${XDG_RUNTIME_DIR:-}" ] && [ "$(uname -s)" != Darwin ]; then
+    root="$XDG_RUNTIME_DIR/zellij"
+  else
+    root="${TMPDIR:-/tmp}/zellij-$(id -u)"
+  fi
+  printf '%s/contract_version_1/%s' "${root%/}" "$session"
+}
+
+fm_backend_zellij_fingerprint_path() {  # <session> <fingerprint>
+  local socket fingerprint=$2
+  case "$fingerprint" in
+    fmz-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
+    *) return 1 ;;
+  esac
+  socket=$(fm_backend_zellij_socket_path "$1") || return 1
+  printf '%s/.firstmate-incarnations/%s' "${socket%/*}" "$fingerprint"
+}
+
+fm_backend_zellij_session_fingerprint() {  # <session>
+  local session=$1 socket dir entropy fingerprint proof old_umask
+  socket=$(fm_backend_zellij_socket_path "$session") || return 1
+  [ -S "$socket" ] && [ ! -L "$socket" ] || return 1
+  dir="${socket%/*}/.firstmate-incarnations"
+  old_umask=$(umask)
+  umask 077
+  [ ! -L "$dir" ] || { umask "$old_umask"; return 1; }
+  mkdir -p "$dir" || { umask "$old_umask"; return 1; }
+  [ -d "$dir" ] && [ ! -L "$dir" ] || { umask "$old_umask"; return 1; }
+  chmod 700 "$dir" || { umask "$old_umask"; return 1; }
+  for _ in 1 2 3 4; do
+    entropy=$(od -An -N16 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n') || continue
+    case "$entropy" in
+      [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
+      *) continue ;;
+    esac
+    fingerprint="fmz-$entropy"
+    proof="$dir/$fingerprint"
+    if ln "$socket" "$proof" 2>/dev/null; then
+      umask "$old_umask"
+      printf '%s' "$fingerprint"
+      return 0
+    fi
+  done
+  umask "$old_umask"
+  return 1
+}
+
+fm_backend_zellij_session_fingerprint_matches() {  # <session> <fingerprint>
+  local socket proof
+  socket=$(fm_backend_zellij_socket_path "$1") || return 1
+  proof=$(fm_backend_zellij_fingerprint_path "$1" "$2") || return 1
+  [ -S "$socket" ] && [ ! -L "$socket" ] \
+    && [ -S "$proof" ] && [ ! -L "$proof" ] \
+    && [ "$socket" -ef "$proof" ]
+}
+
+fm_backend_zellij_session_fingerprint_retire() {  # <session> <fingerprint>
+  local proof
+  proof=$(fm_backend_zellij_fingerprint_path "$1" "$2") || return 0
+  [ ! -L "$proof" ] || return 1
+  rm -f -- "$proof"
+}
+
+fm_backend_zellij_sidecar_fingerprint() {  # <session> <sidecar>
+  local session=$1 sidecar=$2 fingerprint
+  [ -f "$sidecar" ] && [ ! -L "$sidecar" ] || return 1
+  fingerprint=$(cat "$sidecar") || return 1
+  case "$fingerprint" in ''|*$'\n'*) return 1 ;; esac
+  fm_backend_zellij_fingerprint_path "$session" "$fingerprint" >/dev/null || return 1
+  printf '%s' "$fingerprint"
+}
+
+fm_backend_zellij_relaunch_fingerprints_retire() {  # <session> <metadata-fingerprint> <sidecar>
+  local session=$1 metadata_fingerprint=$2 sidecar=$3 sidecar_fingerprint=""
+  if [ -e "$sidecar" ] || [ -L "$sidecar" ]; then
+    sidecar_fingerprint=$(fm_backend_zellij_sidecar_fingerprint "$session" "$sidecar") || return 1
+  fi
+  if [ -n "$metadata_fingerprint" ]; then
+    fm_backend_zellij_session_fingerprint_retire "$session" "$metadata_fingerprint" || return 1
+  fi
+  if [ -n "$sidecar_fingerprint" ] && [ "$sidecar_fingerprint" != "$metadata_fingerprint" ]; then
+    fm_backend_zellij_session_fingerprint_retire "$session" "$sidecar_fingerprint" || return 1
+  fi
+  rm -f -- "$sidecar"
+}
+
+fm_backend_zellij_process_descends_from() {  # <pid> <ancestor>
+  local pid=$1 ancestor=$2 parent
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32; do
+    [ "$pid" = "$ancestor" ] && return 0
+    parent=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ') || return 1
+    case "$parent" in ''|*[!0-9]*|0|1) return 1 ;; esac
+    pid=$parent
+  done
+  return 1
+}
+
+fm_backend_zellij_socket_holder_pids() {  # <socket>
+  local socket=$1 line inode fd pid found=1
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -t -- "$socket" 2>/dev/null
+    return $?
+  fi
+  [ -r /proc/net/unix ] || return 1
+  while IFS= read -r line; do
+    case "$line" in *" $socket") inode=$(printf '%s\n' "$line" | awk '{print $7}'); break ;; esac
+  done < /proc/net/unix
+  case "${inode:-}" in ''|*[!0-9]*) return 1 ;; esac
+  for fd in /proc/[0-9]*/fd/*; do
+    [ -L "$fd" ] || continue
+    [ "$(readlink "$fd" 2>/dev/null)" = "socket:[$inode]" ] || continue
+    pid=${fd#/proc/}
+    pid=${pid%%/*}
+    printf '%s\n' "$pid"
+    found=0
+  done
+  return "$found"
+}
+
+fm_backend_zellij_preupgrade_ownership_proven() {  # <session> <pane-id> <meta>
+  local session=$1 pane=$2 meta=$3 socket server_pids server_pid worktree pid cwd env
+  socket=$(fm_backend_zellij_socket_path "$session") || return 1
+  server_pids=$(fm_backend_zellij_socket_holder_pids "$socket") || return 1
+  worktree=$(fm_backend_zellij_meta_exact_value "$meta" worktree) || return 1
+  case "$worktree" in /*) ;; *) return 1 ;; esac
+  while IFS= read -r server_pid; do
+    case "$server_pid" in ''|*[!0-9]*) continue ;; esac
+    while IFS= read -r pid; do
+      case "$pid" in ''|*[!0-9]*) continue ;; esac
+      fm_backend_zellij_process_descends_from "$pid" "$server_pid" || continue
+      if [ -d "/proc/$pid" ]; then
+        cwd=$(readlink "/proc/$pid/cwd" 2>/dev/null) || continue
+        env=$(tr '\0' ' ' < "/proc/$pid/environ" 2>/dev/null) || continue
+      else
+        command -v lsof >/dev/null 2>&1 || continue
+        cwd=$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -1)
+        env=$(ps eww -p "$pid" -o command= 2>/dev/null) || continue
+      fi
+      case "$cwd" in "$worktree"|"$worktree"/*) ;; *) continue ;; esac
+      case " $env " in *" ZELLIJ_SESSION_NAME=$session "*) ;; *) continue ;; esac
+      case " $env " in *" ZELLIJ_PANE_ID=$pane "*|*" ZELLIJ_PANE_ID=terminal_$pane "*) ;; *) continue ;; esac
+      case " $env " in *" FM_HOME=$FM_HOME "*) return 0 ;; esac
+    done < <(ps -axo pid=)
+  done <<< "$server_pids"
+  return 1
+}
+
+fm_backend_zellij_migrate_session_fingerprint() {  # <session> <pane-id> <meta> <sidecar>
+  local session=$1 pane=$2 meta=$3 sidecar=$4 fingerprint tmp old_umask
+  [ ! -e "$sidecar" ] && [ ! -L "$sidecar" ] || return 1
+  fm_backend_zellij_preupgrade_ownership_proven "$session" "$pane" "$meta" || return 1
+  fingerprint=$(fm_backend_zellij_session_fingerprint "$session") || return 1
+  old_umask=$(umask)
+  umask 077
+  tmp=$(mktemp "${sidecar%/*}/.zellij-session-fingerprint.XXXXXX") || {
+    umask "$old_umask"
+    fm_backend_zellij_session_fingerprint_retire "$session" "$fingerprint" || true
+    return 1
+  }
+  if ! printf '%s\n' "$fingerprint" > "$tmp" || ! mv -f "$tmp" "$sidecar"; then
+    umask "$old_umask"
+    rm -f -- "$tmp"
+    fm_backend_zellij_session_fingerprint_retire "$session" "$fingerprint" || true
+    return 1
+  fi
+  umask "$old_umask"
+  printf '%s' "$fingerprint"
+}
+
+fm_backend_zellij_recorded_ownership_proven() {  # <session> <tab-id> <label> [allow-migration] [require-stable]
+  local session=$1 tab_id=$2 label=$3 allow_migration=${4:-1} require_stable=${5:-0} id state meta sidecar backend endpoint meta_session meta_tab meta_pane window recorded_fingerprint
+  case "$label" in fm-*) id=${label#fm-} ;; *) id=$label ;; esac
+  case "$id" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac
+  state=${FM_STATE_OVERRIDE:-$FM_HOME/state}
+  meta="$state/$id.meta"
+  [ -f "$meta" ] && [ ! -L "$meta" ] || return 1
+  backend=$(fm_backend_zellij_meta_exact_value "$meta" backend) || return 1
+  endpoint=$(fm_backend_zellij_meta_exact_value "$meta" endpoint_task_id) || return 1
+  meta_session=$(fm_backend_zellij_meta_exact_value "$meta" zellij_session) || return 1
+  meta_tab=$(fm_backend_zellij_meta_exact_value "$meta" zellij_tab_id) || return 1
+  meta_pane=$(fm_backend_zellij_meta_exact_value "$meta" zellij_pane_id) || return 1
+  window=$(fm_backend_zellij_meta_exact_value "$meta" window) || return 1
+  [ "$backend" = zellij ] && [ "$endpoint" = "$id" ] \
+    && [ "$meta_session" = "$session" ] && [ "$meta_tab" = "$tab_id" ] \
+    && [ "$meta_pane" = "${FM_BACKEND_ZELLIJ_PANE:-}" ] \
+    && [ "$window" = "$session:$meta_pane" ] || return 1
+  if recorded_fingerprint=$(fm_backend_zellij_meta_exact_value "$meta" zellij_session_fingerprint); then
+    :
+  elif grep -q '^zellij_session_fingerprint=' "$meta" 2>/dev/null; then
+    return 1
+  else
+    sidecar="$state/$id.zellij-session-fingerprint"
+    if [ -f "$sidecar" ] && [ ! -L "$sidecar" ]; then
+      recorded_fingerprint=$(fm_backend_zellij_sidecar_fingerprint "$session" "$sidecar") || return 1
+    elif [ "$require_stable" = 1 ]; then
+      return 1
+    elif [ "$allow_migration" != 1 ]; then
+      fm_backend_zellij_preupgrade_ownership_proven "$session" "$meta_pane" "$meta"
+      return $?
+    else
+      recorded_fingerprint=$(fm_backend_zellij_migrate_session_fingerprint "$session" "$meta_pane" "$meta" "$sidecar") || return 1
+    fi
+  fi
+  fm_backend_zellij_session_fingerprint_matches "$session" "$recorded_fingerprint"
+}
+
+fm_backend_zellij_unpublished_ownership_proven() {  # <session> <tab-id> <label>
+  local session=$1 tab_id=$2 label=$3 id state meta
+  case "$label" in fm-*) id=${label#fm-} ;; *) id=$label ;; esac
+  case "$id" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac
+  state=${FM_STATE_OVERRIDE:-$FM_HOME/state}
+  meta="$state/$id.meta"
+  [ ! -e "$meta" ] && [ ! -L "$meta" ] || return 1
+  [ "${FM_BACKEND_ZELLIJ_UNPUBLISHED_SESSION:-}" = "$session" ] \
+    && [ "${FM_BACKEND_ZELLIJ_UNPUBLISHED_TAB_ID:-}" = "$tab_id" ] \
+    && [ "${FM_BACKEND_ZELLIJ_UNPUBLISHED_PANE_ID:-}" = "${FM_BACKEND_ZELLIJ_PANE:-}" ] \
+    && [ "${FM_BACKEND_ZELLIJ_UNPUBLISHED_LABEL:-}" = "$label" ] \
+    && fm_backend_zellij_session_fingerprint_matches \
+      "$session" "${FM_BACKEND_ZELLIJ_UNPUBLISHED_FINGERPRINT:-}"
+}
+
+fm_backend_zellij_ownership_proven() {  # <session> <tab-id> <label> [allow-migration] [require-stable]
+  local session=$1 tab_id=$2 label=$3 allow_migration=${4:-1} require_stable=${5:-0}
+  if fm_backend_zellij_recorded_ownership_proven \
+      "$session" "$tab_id" "$label" "$allow_migration" "$require_stable"; then
+    return 0
+  fi
+  fm_backend_zellij_unpublished_ownership_proven "$session" "$tab_id" "$label"
+}
+
+fm_backend_zellij_legacy_ownership_proven() {  # <session> <tab-id> <label> [allow-migration]
+  fm_backend_zellij_ownership_proven "$@"
 }
 
 # fm_backend_zellij_tool_check: refuse loudly if zellij or jq is missing.
@@ -285,27 +553,37 @@ fm_backend_zellij_pane_exists() {  # <session> <pane_id>
 # tab name firstmate expects for the caller-facing task label <label>?
 # Checks the home-scoped, tagged title first (fm_backend_zellij_scoped_title
 # - what every NEW tab is created with), then falls back to the legacy
-# untagged bare title (the plain <label>, e.g. "fm-<id>") for a tab created
-# before this home-scoping change shipped - but ONLY when that bare name is
-# not ambiguous: exactly one live tab in the whole session carries it. A bare
+# root-tagged or untagged title for a tab created before this home-scoping
+# change shipped - but ONLY when that name is not ambiguous and the recorded
+# task metadata proves the ids were issued by this session incarnation. A bare
 # name shared by 2+ live tabs (this home's own pre-migration tab plus, say, a
 # same-named tab from a different firstmate home sharing this one zellij
 # session) refuses rather than silently trusting whichever one happened to
 # match - the migration posture documented in docs/zellij-backend.md
 # "Home-scoped tab titles". One list-tabs call serves every check here (the
-# scoped check, the bare check, and the ambiguity count all read the SAME
+# scoped check, the legacy checks, and the ambiguity count all read the SAME
 # already-fetched JSON), so a caller whose fake-CLI fixture supplies exactly
 # one list-tabs response keeps working unchanged.
-fm_backend_zellij_tab_matches_label() {  # <session> <tab_id> <label>
-  local session=$1 tab_id=$2 label=$3 scoped tabs count
-  scoped=$(fm_backend_zellij_scoped_title "$label")
+fm_backend_zellij_tab_matches_label() {  # <session> <tab_id> <label> [allow-migration]
+  local session=$1 tab_id=$2 label=$3 allow_migration=${4:-1} scoped legacy_scoped tabs candidate count
+  scoped=$(fm_backend_zellij_scoped_title "$label") || return 1
+  legacy_scoped=$(fm_backend_zellij_legacy_scoped_title "$label") || return 1
   tabs=$(fm_backend_zellij_cli "$session" action list-tabs --json 2>/dev/null)
-  printf '%s' "$tabs" | jq -e --argjson t "$tab_id" --arg want "$scoped" \
-    '[.[]? | select(.tab_id == $t and .name == $want)] | length > 0' >/dev/null 2>&1 && return 0
-  printf '%s' "$tabs" | jq -e --argjson t "$tab_id" --arg want "$label" \
-    '[.[]? | select(.tab_id == $t and .name == $want)] | length > 0' >/dev/null 2>&1 || return 1
-  count=$(printf '%s' "$tabs" | jq -r --arg want "$label" '[.[]? | select(.name == $want)] | length' 2>/dev/null)
-  [ "$count" = "1" ]
+  if printf '%s' "$tabs" | jq -e --argjson t "$tab_id" --arg want "$scoped" \
+      '[.[]? | select(.tab_id == $t and .name == $want)] | length > 0' >/dev/null 2>&1; then
+    fm_backend_zellij_ownership_proven "$session" "$tab_id" "$label" "$allow_migration" 1
+    return $?
+  fi
+  for candidate in "$legacy_scoped" "$label"; do
+    [ "$candidate" != "$scoped" ] || continue
+    printf '%s' "$tabs" | jq -e --argjson t "$tab_id" --arg want "$candidate" \
+      '[.[]? | select(.tab_id == $t and .name == $want)] | length > 0' >/dev/null 2>&1 || continue
+    count=$(printf '%s' "$tabs" | jq -r --arg want "$candidate" '[.[]? | select(.name == $want)] | length' 2>/dev/null)
+    [ "$count" = "1" ] || return 1
+    fm_backend_zellij_ownership_proven "$session" "$tab_id" "$label" "$allow_migration"
+    return $?
+  done
+  return 1
 }
 
 # fm_backend_zellij_create_task: create the task's tab (one terminal pane) in
@@ -328,7 +606,7 @@ fm_backend_zellij_tab_matches_label() {  # <session> <tab_id> <label>
 fm_backend_zellij_create_task() {  # <session> <label> <cwd>
   local session=$1 label=$2 cwd=$3 title tabs dup prev_active tab_id pane_id
   fm_backend_zellij_session_exists "$session" || { echo "error: zellij session '$session' does not exist; run container_ensure first" >&2; return 1; }
-  title=$(fm_backend_zellij_scoped_title "$label")
+  title=$(fm_backend_zellij_scoped_title "$label") || return 1
   tabs=$(fm_backend_zellij_cli "$session" action list-tabs --json 2>/dev/null)
   dup=$(printf '%s' "$tabs" | jq -r --arg want "$title" '.[]? | select(.name == $want) | .tab_id' 2>/dev/null | head -1)
   if [ -n "$dup" ]; then
@@ -379,6 +657,25 @@ fm_backend_zellij_target_ready() {  # <target> [expected-label]
     return $?
   fi
   fm_backend_zellij_pane_exists "$FM_BACKEND_ZELLIJ_SESSION" "$FM_BACKEND_ZELLIJ_PANE"
+}
+
+fm_backend_zellij_endpoint_ownership_preflight() {  # <target> <tab-id> <expected-label>
+  local target=$1 tab_id=$2 expected_label=$3 resolved_tab tabs
+  fm_backend_zellij_parse_target "$target" || return 1
+  case "$tab_id" in ''|*[!0-9]*) return 1 ;; esac
+  fm_backend_zellij_session_exists "$FM_BACKEND_ZELLIJ_SESSION" || return 0
+  resolved_tab=$(fm_backend_zellij_tab_for_pane "$FM_BACKEND_ZELLIJ_SESSION" "$FM_BACKEND_ZELLIJ_PANE" 2>/dev/null)
+  if [ -n "$resolved_tab" ]; then
+    fm_backend_zellij_tab_matches_label "$FM_BACKEND_ZELLIJ_SESSION" "$resolved_tab" "$expected_label" 0
+    return $?
+  fi
+  tabs=$(fm_backend_zellij_cli "$FM_BACKEND_ZELLIJ_SESSION" action list-tabs --json 2>/dev/null) || return 1
+  printf '%s' "$tabs" | jq -e 'type == "array"' >/dev/null 2>&1 || return 1
+  if printf '%s' "$tabs" | jq -e --argjson t "$tab_id" '.[]? | select(.tab_id == $t)' >/dev/null 2>&1; then
+    fm_backend_zellij_tab_matches_label "$FM_BACKEND_ZELLIJ_SESSION" "$tab_id" "$expected_label" 0
+    return $?
+  fi
+  return 0
 }
 
 # fm_backend_zellij_current_path: the live pane's cwd, or empty on any error.
@@ -446,6 +743,9 @@ fm_backend_zellij_normalize_key() {  # <key>
     Enter|enter) printf 'Enter' ;;
     Escape|escape|Esc|esc) printf 'Esc' ;;
     C-c|c-c|ctrl+c|Ctrl+c|Ctrl+C|'Ctrl c'|'ctrl c') printf 'Ctrl c' ;;
+    # C-u clears a composer line. fm-send.sh's muse interrupt path needs it to
+    # drop the prompt muse restores into the composer after Escape.
+    C-u|c-u|ctrl+u|Ctrl+u|Ctrl+U|'Ctrl u'|'ctrl u') printf 'Ctrl u' ;;
     *) printf '%s' "$1" ;;
   esac
 }
@@ -460,16 +760,12 @@ fm_backend_zellij_send_key() {  # <target> <key> [expected-label]
   fm_backend_zellij_cli "$FM_BACKEND_ZELLIJ_SESSION" action send-keys --pane-id "$FM_BACKEND_ZELLIJ_PANE" "$key" >/dev/null 2>&1
 }
 
-# fm_backend_zellij_send_text_line: send one line of TEXT then submit,
-# ATOMICALLY - mirrors tmux's `send-keys -t T text Enter` / herdr's `pane
-# run`. Used for the fixed spawn-time commands (treehouse get, the GOTMPDIR
-# export). Zellij has no single-call atomic "run and submit" action, so this
-# composes paste (literal) + send-keys Enter, exactly like send_literal +
-# send_key are composed elsewhere - the two-step form is the ONLY form for
-# this adapter, unlike tmux/herdr which have a genuinely atomic primitive.
+# fm_backend_zellij_send_text_line: send one line of TEXT then submit.
 fm_backend_zellij_send_text_line() {  # <target> <text> [expected-label]
   fm_backend_zellij_send_literal "$1" "$2" "${3:-}" || return 1
-  fm_backend_zellij_send_key "$1" Enter "${3:-}"
+  fm_backend_zellij_send_key "$1" Enter "${3:-}" && return 0
+  fm_backend_zellij_send_key "$1" C-c "${3:-}" >/dev/null 2>&1 && return 1
+  return 2
 }
 
 # fm_backend_zellij_capture: bounded plain-text pane capture. Mirrors
@@ -489,36 +785,90 @@ fm_backend_zellij_capture() {  # <target> <lines> [expected-label]
   printf '%s' "$out" | tail -n "$lines"
 }
 
+# --- zellij composer capture and capability primitives ----------------------
+#
+# `zellij action dump-screen --ansi` ("Preserve ANSI styling in the dump
+# output", verified live at zellij 0.44.0 against real Claude Code) gives
+# zellij a styled capture, so the shared classifier reads its composer with
+# the same ghost-stripping confidence as tmux and herdr. Every shape lives in
+# the shared owner (bin/fm-composer-lib.sh, fm_composer_classify_screen);
+# this adapter contributes only the capture and its capability facts.
+
+# fm_backend_zellij_composer_capture: bounded styled tail of the pane. When
+# --ansi is unsupported (an older zellij), the caller falls back to the plain
+# dump and a styled=0 descriptor - see fm_backend_zellij_composer_state.
+fm_backend_zellij_composer_capture() {  # <target> [expected-label]
+  fm_backend_zellij_target_ready "$1" "${2:-}" || return 1
+  local out
+  out=$(fm_backend_zellij_cli "$FM_BACKEND_ZELLIJ_SESSION" action dump-screen --pane-id "$FM_BACKEND_ZELLIJ_PANE" --ansi 2>/dev/null) || return 1
+  [ -n "$out" ] || return 1
+  printf '%s' "$out" | tail -n "$FM_COMPOSER_CAPTURE_LINES"
+}
+
+# fm_backend_zellij_composer_state: thin adapter - capture plus capabilities
+# in, shared verdict out. This replaced the content-diff submit heuristic
+# that was the fleet's only FALSE-POSITIVE delivery confirmation: a pane
+# whose content changed for any reason (a spinner, streaming output, a
+# clock) read as "submitted", which could close a --resolve-key decision for
+# a message the crew never received. A dead pane still fails safe here: the
+# unconditional-exit-0 CLI quirk (file header) yields an empty dump, which
+# classifies unknown - never a confirmation.
+fm_backend_zellij_composer_state() {  # <target> [expected-label] -> empty|pending|pending-unproven|unknown
+  local target=$1 expected_label=${2:-} cap caps verdict
+  if cap=$(fm_backend_zellij_composer_capture "$target" "$expected_label"); then
+    caps=$(printf 'styled=1\ncursor=0\nidentity=0\nrows=%s' "$FM_COMPOSER_CAPTURE_LINES")
+  elif cap=$(fm_backend_zellij_capture "$target" "$FM_COMPOSER_CAPTURE_LINES" "$expected_label") && [ -n "$cap" ]; then
+    caps=$(printf 'styled=0\ncursor=0\nidentity=0\nrows=%s' "$FM_COMPOSER_CAPTURE_LINES")
+  else
+    printf 'unknown'
+    return 0
+  fi
+  verdict=$(fm_composer_classify_screen "$caps" "$cap")
+  [ "$verdict" != need-identity ] || verdict=unknown
+  printf '%s' "$verdict"
+}
+
+fm_backend_zellij_composer_content() {  # <target> [expected-label]
+  local target=$1 expected_label=${2:-} cap caps
+  cap=$(fm_backend_zellij_composer_capture "$target" "$expected_label") || return 1
+  caps=$(printf 'styled=1\ncursor=0\nidentity=0\nrows=%s' "$FM_COMPOSER_CAPTURE_LINES")
+  fm_composer_extract_selected_content "$caps" "$cap"
+}
+
+fm_backend_zellij_composer_observed_append() {  # <target> <before> <text> [expected-label]
+  local target=$1 before=$2 text=$3 expected_label=${4:-} cap caps after expected
+  [ -n "$text" ] || return 1
+  cap=$(fm_backend_zellij_composer_capture "$target" "$expected_label") || return 1
+  caps=$(printf 'styled=1\ncursor=0\nidentity=0\nrows=%s' "$FM_COMPOSER_CAPTURE_LINES")
+  after=$(fm_composer_extract_selected_content "$caps" "$cap") || return 1
+  fm_composer_normalize_spaces_var before
+  fm_composer_normalize_spaces_var text
+  fm_composer_normalize_spaces_var after
+  before=${before//[$' \t\r\n\v\f']/}
+  text=${text//[$' \t\r\n\v\f']/}
+  after=${after//[$' \t\r\n\v\f']/}
+  [ -n "$text" ] || return 1
+  expected=$before$text
+  [ "$after" = "$expected" ]
+}
+
 # fm_backend_zellij_send_text_submit: type <text> into <target> once (raw,
-# unsubmitted, via send_literal), then submit with a named Enter key, retried
-# (Enter only, never retyped) until the pane visibly changes. Unlike herdr's
-# current native agent-state idle-baseline verifier and composer-state
-# fallback, zellij still uses a content-diff strategy because its CLI has no
-# cursor-row/ANSI capture primitive exposed:
-# capture the pane right after typing (before any Enter) as the TYPED baseline,
-# then after each Enter attempt capture again - unchanged means Enter was
-# swallowed (retry); changed means submitted. This content-diff approach is
-# also the load-bearing defense against the
-# unconditional-exit-0 CLI quirk documented in the file header: a truly dead
-# target never shows a change, so it correctly reports pending/unknown rather
-# than a false "sent". Echoes empty|pending|unknown|send-failed, the SAME
-# vocabulary fm-send.sh already branches on for tmux and herdr.
+# unsubmitted, via send_literal), then drive the shared verify-and-retry-Enter
+# loop (bin/fm-composer-lib.sh: fm_composer_submit_retry_core) against the
+# real composer verdict above. Echoes empty|pending|unknown|send-failed, a
+# subset of the proof-carrying submit vocabulary. Only a positively classified
+# empty composer confirms delivery - a pane that merely CHANGED does not, so
+# the old heuristic's false "delivery confirmed" cannot recur.
 fm_backend_zellij_send_text_submit() {  # <target> <text> <retries> <enter-sleep> <settle> [expected-label]
-  local target=$1 text=$2 retries=$3 sleep_s=$4 settle=$5 expected_label=${6:-} typed after i=0
+  local target=$1 text=$2 retries=$3 sleep_s=$4 settle=$5 expected_label=${6:-} before
+  before=$(fm_backend_zellij_composer_content "$target" "$expected_label") \
+    || { printf 'send-failed'; return 0; }
   fm_backend_zellij_send_literal "$target" "$text" "$expected_label" || { printf 'send-failed'; return 0; }
   sleep "$settle"
-  typed=$(fm_backend_zellij_capture "$target" 6 "$expected_label") || { printf 'unknown'; return 0; }
-  while :; do
-    fm_backend_zellij_send_key "$target" Enter "$expected_label" || true
-    sleep "$sleep_s"
-    after=$(fm_backend_zellij_capture "$target" 6 "$expected_label") || { printf 'unknown'; return 0; }
-    if [ "$after" != "$typed" ]; then
-      printf 'empty'
-      return 0
-    fi
-    i=$((i + 1))
-    [ "$i" -lt "$retries" ] || { printf 'pending'; return 0; }
-  done
+  fm_backend_zellij_composer_observed_append "$target" "$before" "$text" "$expected_label" \
+    || { printf 'send-failed'; return 0; }
+  fm_composer_submit_retry_core fm_backend_zellij_send_key fm_backend_zellij_composer_state \
+    "$target" "$retries" "$sleep_s" "$expected_label"
 }
 
 # fm_backend_zellij_kill: remove the task's tab, best-effort (mirrors
@@ -555,6 +905,35 @@ fm_backend_zellij_kill() {  # <target> [tab_id] [expected_label]
   fi
 }
 
+fm_backend_zellij_endpoint_confirmed_gone() {  # <target> <tab-id> <expected-label>
+  local target=$1 tab_id=$2 expected_label=$3 sessions panes tabs scoped legacy candidate candidate_ids candidate_id
+  fm_backend_zellij_parse_target "$target" || return 1
+  case "$tab_id" in ''|*[!0-9]*) return 1 ;; esac
+  sessions=$(zellij list-sessions --short --no-formatting 2>/dev/null) || return 1
+  printf '%s\n' "$sessions" | grep -qxF "$FM_BACKEND_ZELLIJ_SESSION" || return 0
+  panes=$(fm_backend_zellij_cli "$FM_BACKEND_ZELLIJ_SESSION" action list-panes --json 2>/dev/null) || return 1
+  printf '%s' "$panes" | jq -e 'type == "array"' >/dev/null 2>&1 || return 1
+  printf '%s' "$panes" | jq -e --argjson p "$FM_BACKEND_ZELLIJ_PANE" \
+    '.[]? | select(.id == $p and .is_plugin == false)' >/dev/null 2>&1 && return 1
+  tabs=$(fm_backend_zellij_cli "$FM_BACKEND_ZELLIJ_SESSION" action list-tabs --json 2>/dev/null) || return 1
+  printf '%s' "$tabs" | jq -e 'type == "array"' >/dev/null 2>&1 || return 1
+  printf '%s' "$tabs" | jq -e --argjson t "$tab_id" '.[]? | select(.tab_id == $t)' >/dev/null 2>&1 && return 1
+  scoped=$(fm_backend_zellij_scoped_title "$expected_label") || return 1
+  printf '%s' "$tabs" | jq -e --arg want "$scoped" '.[]? | select(.name == $want)' >/dev/null 2>&1 && return 1
+  legacy=$(fm_backend_zellij_legacy_scoped_title "$expected_label") || return 1
+  for candidate in "$legacy" "$expected_label"; do
+    [ "$candidate" != "$scoped" ] || continue
+    candidate_ids=$(printf '%s' "$tabs" | jq -r --arg want "$candidate" '.[]? | select(.name == $want) | .tab_id' 2>/dev/null) || return 1
+    while IFS= read -r candidate_id; do
+      [ -n "$candidate_id" ] || continue
+      fm_backend_zellij_legacy_ownership_proven "$FM_BACKEND_ZELLIJ_SESSION" "$candidate_id" "$expected_label" 0 && return 1
+    done <<FMEOF
+$candidate_ids
+FMEOF
+  done
+  return 0
+}
+
 # fm_backend_zellij_list_live: recovery/orphan discovery. Lists every tab in
 # <session> whose title carries THIS firstmate home's own tag
 # (fm-<hometag>-, fm_backend_zellij_home_label) - never any other home's
@@ -573,7 +952,7 @@ fm_backend_zellij_kill() {  # <target> [tab_id] [expected_label]
 fm_backend_zellij_list_live() {  # <session>
   local session=$1 home prefix tabs tab_id name pane_id plain
   fm_backend_zellij_session_exists "$session" || return 0
-  home=$(fm_backend_zellij_home_label)
+  home=$(fm_backend_zellij_home_label) || return 1
   prefix="fm-$home-"
   tabs=$(fm_backend_zellij_cli "$session" action list-tabs --json 2>/dev/null) || return 0
   while IFS=$'\t' read -r tab_id name; do
@@ -600,7 +979,7 @@ fm_backend_zellij_list_live() {  # <session>
 # meta or an explicit recorded target.
 fm_backend_zellij_resolve_bare_selector() {  # <name>
   local name=$1 scoped sessions session tabs tab_id count=0 pane_id bare_session='' bare_tab_id=''
-  scoped=$(fm_backend_zellij_scoped_title "$name")
+  scoped=$(fm_backend_zellij_scoped_title "$name") || return 1
   sessions=$(zellij list-sessions --short --no-formatting 2>/dev/null)
   while IFS= read -r session; do
     [ -n "$session" ] || continue

@@ -7,10 +7,11 @@
 #   state/.supervise-daemon.lock, and:
 #     - prints "afk: daemon already running pid=<pid>" then exits 0 when that
 #       lock is held by a live daemon (a REFRESH: no stale-artifact clear);
-#     - otherwise clears any prior away session's stale escalation artifacts
-#       (fm_afk_clear_stale_artifacts) for a direct, non-prepared start, then
-#       execs bin/fm-supervise-daemon.sh in the foreground. A prepared start was
-#       already cleared transactionally by bin/fm-afk-launch.sh.
+#     - otherwise preserves staged delivery artifacts when the durable .afk
+#       flag proves this is recovery within the same away lifecycle, or clears
+#       prior-lifecycle artifacts for a genuinely fresh direct start, then execs
+#       bin/fm-supervise-daemon.sh in the foreground. A prepared start was
+#       already classified transactionally by bin/fm-afk-launch.sh.
 #
 # This file is sourceable: its BASH_SOURCE guard keeps main from running, while
 # exposing the daemon-lock helpers and fm_afk_clear_stale_artifacts. Sourcing it
@@ -46,19 +47,12 @@ fm_afk_start_usage() {
   sed -n '2,14p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
-# fm_afk_clear_stale_artifacts: on a FRESH away-session entry (the daemon is not
-# already running), drop the previous away session's leftover escalation-delivery
-# artifacts so they cannot surface as stale escalations under the new session.
-# These are session-scoped by timing: a fresh entry owns a new supervision
-# session and the new daemon has not produced anything yet, so anything present
-# here belongs to a PRIOR session. This never drops a genuinely-pending
-# escalation - the delivery buffer is a transient cache, and any condition still
-# true (a crew still blocked, a check still firing) is re-derived and re-escalated
-# fresh by the daemon's heartbeat catch-all scan and the durable
-# state/.wake-queue replay (see docs/herdr-backend.md "Away-mode stale-artifact
-# lifecycle" and bin/fm-supervise-daemon.sh's escalate_add/inject_wedge_alarm).
-# NOT called on a refresh (daemon already alive), so the current session's own
-# buffered escalations are preserved.
+# fm_afk_clear_stale_artifacts: on a genuinely fresh away-lifecycle entry
+# (state/.afk was absent before entry), drop a prior lifecycle's leftover
+# escalation-delivery artifacts so they cannot surface as current escalations.
+# The durable away flag survives both daemon and primary-session restarts, so a
+# dead daemon alone never makes these artifacts stale. This helper is not called
+# for same-lifecycle recovery or a live-daemon refresh.
 fm_afk_clear_stale_artifacts() {  # <state-dir>
   local state=$1
   rm -f "$state/.subsuper-escalations" \
@@ -110,7 +104,28 @@ daemon_lock_held_by_live_daemon() {
   daemon_pid_matches "$pid" "$owner"
 }
 
+fm_afk_flag_write() {  # <state-dir>
+  local state=$1 lock="$1/.cursor-park-owner.lock" pending attempt=0 status=1
+  mkdir -p "$state" || return 1
+  [ ! -d "$state/.afk" ] || return 1
+  pending=$(mktemp "$state/.afk.pending.XXXXXX") || return 1
+  date '+%s' > "$pending" || { rm -f "$pending"; return 1; }
+  while [ "$attempt" -lt 50 ]; do
+    attempt=$((attempt + 1))
+    if fm_lock_try_acquire "$lock"; then
+      mv "$pending" "$state/.afk" && status=0
+      fm_lock_release "$lock"
+      rm -f "$pending" 2>/dev/null || true
+      return "$status"
+    fi
+    [ "$attempt" -lt 50 ] && sleep 0.1
+  done
+  rm -f "$pending" 2>/dev/null || true
+  return 1
+}
+
 fm_afk_start_main() {
+  local had_afk=0 pid
   case "${1:-}" in
     '' ) ;;
     -h|--help) fm_afk_start_usage; return 0 ;;
@@ -118,13 +133,13 @@ fm_afk_start_main() {
   esac
 
   mkdir -p "$FM_AFK_STATE"
+  [ -f "$FM_AFK_STATE/.afk" ] && had_afk=1
   if [ "${FM_AFK_STATE_PREPARED:-0}" = 1 ]; then
     [ -f "$FM_AFK_STATE/.afk" ] || { echo "afk: launcher-prepared state is missing" >&2; return 1; }
   else
-    date '+%s' > "$FM_AFK_STATE/.afk"
+    fm_afk_flag_write "$FM_AFK_STATE" || { echo "afk: failed to write away-mode flag" >&2; return 1; }
   fi
 
-  local pid
   pid=$(daemon_lock_pid 2>/dev/null || true)
   if daemon_lock_held_by_live_daemon; then
     echo "afk: daemon already running pid=$pid"
@@ -135,9 +150,10 @@ fm_afk_start_main() {
     fm_lock_remove_path "$FM_AFK_LOCK" 2>/dev/null || true
   fi
 
-  # Fresh start: clear the previous away session's stale delivery artifacts
-  # before the new daemon can surface them (fix for the leaked-artifact defect).
-  if [ "${FM_AFK_STATE_PREPARED:-0}" != 1 ]; then
+  # Only absence of the durable lifecycle flag before entry proves a fresh
+  # lifecycle. A dead daemon with an existing flag is crash recovery, and its
+  # already-staged delivery must survive into the successor.
+  if [ "${FM_AFK_STATE_PREPARED:-0}" != 1 ] && [ "$had_afk" -eq 0 ]; then
     fm_afk_clear_stale_artifacts "$FM_AFK_STATE"
   fi
 

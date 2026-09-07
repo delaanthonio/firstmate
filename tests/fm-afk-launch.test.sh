@@ -3,9 +3,10 @@
 # launch (bin/fm-afk-launch.sh) and the away-mode stale-artifact lifecycle fixes
 # (bin/fm-afk-start.sh). Two layers:
 #
-#   UNIT (always run, no backend): the session-scoped stale-artifact clear on a
-#   fresh entry vs a refresh, and the correct-ordered stop (daemon SIGTERM'd
-#   while state/.afk is still present, .afk cleared last).
+#   UNIT (always run, no backend): prior-lifecycle artifact clearing on a fresh
+#   entry, delivery preservation across same-lifecycle daemon recovery, and the
+#   correct-ordered stop (daemon SIGTERM'd while state/.afk is still present,
+#   .afk cleared last).
 #
 #   E2E TOPOLOGY (per backend, skipped when its tool is absent): the anti-
 #   regression for the pane split/shrink - entering AND exiting away mode leaves
@@ -70,9 +71,57 @@ unit_clear_stale() {
   rm -rf "$st"
 }
 
+unit_relative_paths_are_absolute_before_daemon_launch() {
+  local root home state out status linked_home
+  root=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-relative-home.XXXXXX")
+  mkdir -p "$root/home/state" "$root/cdpath/home/state"
+  home=$(cd "$root/home" && pwd -P)
+  state="$home/state"
+  out=$(
+    cd "$root" || exit 1
+    CDPATH="$root/cdpath" FM_HOME=home FM_STATE_OVERRIDE=home/state \
+      bash -c '. "$1"; printf "%s\n%s\n" "$FM_HOME" "$FM_AFK_LAUNCH_STATE"' _ "$LAUNCH"
+  )
+  if [ "$out" = "$home"$'\n'"$state" ]; then
+    pass "launcher paths: relative home and state ignore CDPATH before daemon command construction"
+  else
+    fail "launcher paths: relative home or state remained cwd-dependent ($out)"
+  fi
+  linked_home="$root/home-link"
+  ln -s "$root/home" "$linked_home"
+  out=$(FM_HOME="$linked_home" FM_STATE_OVERRIDE="$linked_home/state" \
+    bash -c '. "$1"; printf "%s\n%s\n" "$FM_HOME" "$FM_AFK_LAUNCH_STATE"' _ "$LAUNCH")
+  if [ "$out" = "$linked_home"$'\n'"$linked_home/state" ]; then
+    pass "launcher paths: absolute symlink spellings are preserved"
+  else
+    fail "launcher paths: absolute symlink spelling changed ($out)"
+  fi
+  out=$(
+    cd "$root" || exit 1
+    FM_HOME=missing-home "$LAUNCH" help 2>&1
+  )
+  status=$?
+  if [ "$status" -ne 0 ] && printf '%s\n' "$out" | grep -F "FM_HOME directory cannot be resolved: missing-home" >/dev/null; then
+    pass "launcher paths: unresolved relative FM_HOME fails loudly"
+  else
+    fail "launcher paths: unresolved relative FM_HOME did not name the bad input ($out)"
+  fi
+  out=$(
+    cd "$root" || exit 1
+    FM_HOME=home FM_STATE_OVERRIDE=missing-state "$LAUNCH" help 2>&1
+  )
+  status=$?
+  if [ "$status" -ne 0 ] && printf '%s\n' "$out" | grep -F "FM_STATE_OVERRIDE directory cannot be resolved: missing-state" >/dev/null; then
+    pass "launcher paths: unresolved relative FM_STATE_OVERRIDE fails loudly"
+  else
+    fail "launcher paths: unresolved relative FM_STATE_OVERRIDE did not name the bad input ($out)"
+  fi
+  rm -rf "$root"
+}
+
 # ---------------------------------------------------------------------------
-# UNIT 2: a FRESH entry clears; a REFRESH (daemon already alive) preserves the
-# current session's buffered escalations.
+# UNIT 2: a FRESH lifecycle entry clears; a REFRESH (daemon already alive)
+# preserves the current lifecycle's buffered escalations.
 # ---------------------------------------------------------------------------
 unit_fresh_vs_refresh() {
   local st sleep_pid lock
@@ -99,6 +148,119 @@ unit_fresh_vs_refresh() {
   rm -rf "$st"
 }
 
+unit_crash_recovery_preserves_delivery_boundaries() {
+  local st
+  st=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-recovery.XXXXXX")
+  mkdir -p "$st/state"
+  printf 'away-lifecycle\n' > "$st/state/.afk"
+  printf 'staged-after-ack\n' > "$st/state/.subsuper-escalations"
+  printf '12345\n' > "$st/state/.subsuper-escalations.since"
+  printf 'delivery-deferred\n' > "$st/state/.subsuper-inject-wedged"
+  # The durable queue models a second wake that was staged but whose
+  # acknowledgement had not completed when the daemon crashed.
+  printf '7\t2\tsignal\ttask-2\tsignal: task-2.status\n' > "$st/state/.wake-queue"
+  FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" bash -c '
+    . "$1"
+    fm_afk_launch_reconcile() { return 0; }
+    fm_afk_launch_record_write() { return 0; }
+    fm_afk_launch_start_native
+  ' _ "$LAUNCH" >/dev/null 2>&1
+  if [ "$(cat "$st/state/.subsuper-escalations" 2>/dev/null || true)" = staged-after-ack ] \
+    && [ "$(cat "$st/state/.subsuper-escalations.since" 2>/dev/null || true)" = 12345 ] \
+    && [ "$(cat "$st/state/.subsuper-inject-wedged" 2>/dev/null || true)" = delivery-deferred ]; then
+    pass "crash recovery: same-lifecycle staged delivery and timing state survive daemon replacement"
+  else
+    fail "crash recovery: same-lifecycle staged delivery was discarded"
+  fi
+  if grep -F $'7\t2\tsignal\ttask-2' "$st/state/.wake-queue" >/dev/null 2>&1; then
+    pass "crash recovery: an unacknowledged durable wake survives beside the staged delivery"
+  else
+    fail "crash recovery: unacknowledged durable wake was discarded"
+  fi
+  rm -rf "$st"
+}
+
+unit_confirmed_submission_is_not_resurrected() {
+  local st
+  st=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-submitted.XXXXXX")
+  mkdir -p "$st/state"
+  printf 'away-lifecycle\n' > "$st/state/.afk"
+  # A confirmed escalation submission removes the delivery buffer and sidecar.
+  # Recovery must preserve that absence rather than manufacturing a replay.
+  FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" bash -c '
+    . "$1"
+    fm_afk_launch_reconcile() { return 0; }
+    fm_afk_launch_record_write() { return 0; }
+    fm_afk_launch_start_native
+  ' _ "$LAUNCH" >/dev/null 2>&1
+  if [ ! -e "$st/state/.subsuper-escalations" ] \
+    && [ ! -e "$st/state/.subsuper-escalations.since" ]; then
+    pass "crash recovery: a confirmed submission is not resurrected"
+  else
+    fail "crash recovery: confirmed submission artifacts were recreated"
+  fi
+  rm -rf "$st"
+}
+
+unit_direct_entry_distinguishes_recovery_from_fresh() {
+  local recovered fresh
+  recovered=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-direct-recovery.XXXXXX")
+  fresh=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-direct-fresh.XXXXXX")
+  mkdir -p "$recovered/state" "$fresh/state"
+  printf 'away-lifecycle\n' > "$recovered/state/.afk"
+  printf 'pending-recovery\n' > "$recovered/state/.subsuper-escalations"
+  printf 'stale-prior-lifecycle\n' > "$fresh/state/.subsuper-escalations"
+  FM_HOME="$recovered" FM_STATE_OVERRIDE="$recovered/state" bash -c '
+    . "$1"
+    FM_AFK_DAEMON=/bin/true
+    fm_afk_start_main
+  ' _ "$START" >/dev/null 2>&1
+  FM_HOME="$fresh" FM_STATE_OVERRIDE="$fresh/state" bash -c '
+    . "$1"
+    FM_AFK_DAEMON=/bin/true
+    fm_afk_start_main
+  ' _ "$START" >/dev/null 2>&1
+  if [ "$(cat "$recovered/state/.subsuper-escalations" 2>/dev/null || true)" = pending-recovery ]; then
+    pass "direct daemon entry: existing durable lifecycle preserves staged delivery"
+  else
+    fail "direct daemon entry: same-lifecycle recovery discarded staged delivery"
+  fi
+  if [ ! -e "$fresh/state/.subsuper-escalations" ]; then
+    pass "direct daemon entry: absent lifecycle flag still clears prior-lifecycle artifacts"
+  else
+    fail "direct daemon entry: genuine fresh lifecycle retained stale delivery artifacts"
+  fi
+  rm -rf "$recovered" "$fresh"
+}
+
+unit_recovery_rejects_stale_owner_and_retargets_primary() {
+  local st
+  st=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-retarget.XXXXXX")
+  mkdir -p "$st/state/.supervise-daemon.lock"
+  printf 'away-lifecycle\n' > "$st/state/.afk"
+  printf 'pending-after-primary-restart\n' > "$st/state/.subsuper-escalations"
+  printf 'none\t-\tnative\n' > "$st/state/.afk-daemon-terminal"
+  FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" \
+    FM_SUPERVISOR_TARGET=new-primary-pane FM_SUPERVISOR_BACKEND=tmux bash -c '
+      printf "%s\n" "$$" > "$FM_STATE_OVERRIDE/.supervise-daemon.lock/pid"
+      printf "%s\n" "stale-owner-identity" > "$FM_STATE_OVERRIDE/.supervise-daemon.lock/pid-identity"
+      . "$1"
+      fm_afk_launch_create_tmux() {
+        printf "%s\n" "$1" > "$FM_HOME/created-target"
+        fm_afk_launch_record_write tmux successor-terminal ""
+      }
+      fm_afk_launch_start
+    ' _ "$LAUNCH" >/dev/null 2>&1
+  if [ "$(cat "$st/created-target" 2>/dev/null || true)" = new-primary-pane ] \
+    && [ "$(cat "$st/state/.subsuper-escalations" 2>/dev/null || true)" = pending-after-primary-restart ] \
+    && [ "$(cut -f2 "$st/state/.afk-daemon-terminal" 2>/dev/null || true)" = successor-terminal ]; then
+    pass "primary restart: stale PID owner is rejected while durable lifecycle preserves delivery for the new target"
+  else
+    fail "primary restart: recovery trusted stale PID ownership, lost delivery, or retained the old target"
+  fi
+  rm -rf "$st"
+}
+
 # ---------------------------------------------------------------------------
 # UNIT 3: exit ordering - fm_afk_launch_stop SIGTERMs the daemon WHILE .afk is
 # still present (so its flush is not a no-op), and clears .afk last.
@@ -121,6 +283,7 @@ unit_stop_ordering() {
   ( . "$ROOT/bin/fm-wake-lib.sh"; fm_pid_identity "$daemon_pid" > "$lock/pid-identity" 2>/dev/null ) || true
   printf 'none\t-\tnative\n' > "$st/state/.afk-daemon-terminal"
   FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$LAUNCH" stop >/dev/null 2>&1
+  # shellcheck disable=SC2031 # The background daemon writes this shared file; no shell variable is reassigned.
   if [ "$(cat "$marker" 2>/dev/null || echo missing)" = present ]; then
     pass "stop-ordering: daemon SIGTERM'd while .afk still present (flush is not a no-op)"
   else
@@ -182,6 +345,95 @@ unit_failed_start_rolls_back_state() {
   rm -rf "$st"
 }
 
+unit_failed_recovery_rolls_back_state() {
+  local st
+  st=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-failed-recovery.XXXXXX")
+  mkdir -p "$st/state"
+  printf 'original-away-epoch\n' > "$st/state/.afk"
+  printf 'pending-recovery\n' > "$st/state/.subsuper-escalations"
+  printf '24680\n' > "$st/state/.subsuper-escalations.since"
+  printf 'wedged-recovery\n' > "$st/state/.subsuper-inject-wedged"
+  if FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_SUPERVISOR_TARGET=unused \
+    FM_SUPERVISOR_BACKEND=unsupported "$LAUNCH" start >/dev/null 2>&1; then
+    fail "failed recovery: unsupported backend unexpectedly succeeded"
+  elif [ "$(cat "$st/state/.afk" 2>/dev/null || true)" = original-away-epoch ] \
+    && [ "$(cat "$st/state/.subsuper-escalations" 2>/dev/null || true)" = pending-recovery ] \
+    && [ "$(cat "$st/state/.subsuper-escalations.since" 2>/dev/null || true)" = 24680 ] \
+    && [ "$(cat "$st/state/.subsuper-inject-wedged" 2>/dev/null || true)" = wedged-recovery ]; then
+    pass "failed recovery: durable lifecycle and staged delivery roll back exactly"
+  else
+    fail "failed recovery: lifecycle or staged delivery changed after launch failure"
+  fi
+  rm -rf "$st"
+}
+
+unit_failed_recovery_preserves_readiness_mutations() {
+  local staged cleared
+  staged=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-failed-recovery-staged.XXXXXX")
+  cleared=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-failed-recovery-cleared.XXXXXX")
+  mkdir -p "$staged/state" "$cleared/state"
+  printf 'original-away-epoch\n' > "$staged/state/.afk"
+  printf 'old-delivery\n' > "$staged/state/.subsuper-escalations"
+  printf 'old-since\n' > "$staged/state/.subsuper-escalations.since"
+  printf 'old-wedge\n' > "$staged/state/.subsuper-inject-wedged"
+  FM_HOME="$staged" FM_STATE_OVERRIDE="$staged/state" FM_SUPERVISOR_TARGET=unused \
+    FM_SUPERVISOR_BACKEND=tmux bash -c '
+      . "$1"
+      fm_afk_launch_wait_ready() {
+        printf "newly-staged\n" > "$FM_AFK_LAUNCH_STATE/.subsuper-escalations"
+        printf "new-since\n" > "$FM_AFK_LAUNCH_STATE/.subsuper-escalations.since"
+        printf "new-wedge\n" > "$FM_AFK_LAUNCH_STATE/.subsuper-inject-wedged"
+        return 1
+      }
+      fm_afk_launch_close_terminal() { return 0; }
+      fm_afk_launch_terminal_absent() { return 0; }
+      fm_afk_launch_create_tmux() {
+        fm_afk_launch_record_write tmux successor ""
+        fm_afk_launch_commit_terminal tmux successor "" 1
+      }
+      ! fm_afk_launch_start
+    ' _ "$LAUNCH"
+  if [ "$(cat "$staged/state/.afk" 2>/dev/null || true)" = original-away-epoch ] \
+    && [ "$(cat "$staged/state/.subsuper-escalations" 2>/dev/null || true)" = newly-staged ] \
+    && [ "$(cat "$staged/state/.subsuper-escalations.since" 2>/dev/null || true)" = new-since ] \
+    && [ "$(cat "$staged/state/.subsuper-inject-wedged" 2>/dev/null || true)" = new-wedge ]; then
+    pass "failed recovery readiness: newly staged delivery remains current"
+  else
+    fail "failed recovery readiness: newly staged delivery was replaced by the pre-launch snapshot"
+  fi
+
+  printf 'original-away-epoch\n' > "$cleared/state/.afk"
+  printf 'submitted-delivery\n' > "$cleared/state/.subsuper-escalations"
+  printf 'submitted-since\n' > "$cleared/state/.subsuper-escalations.since"
+  printf 'submitted-wedge\n' > "$cleared/state/.subsuper-inject-wedged"
+  FM_HOME="$cleared" FM_STATE_OVERRIDE="$cleared/state" FM_SUPERVISOR_TARGET=unused \
+    FM_SUPERVISOR_BACKEND=tmux bash -c '
+      . "$1"
+      fm_afk_launch_wait_ready() {
+        rm -f "$FM_AFK_LAUNCH_STATE/.subsuper-escalations" \
+          "$FM_AFK_LAUNCH_STATE/.subsuper-escalations.since" \
+          "$FM_AFK_LAUNCH_STATE/.subsuper-inject-wedged"
+        return 1
+      }
+      fm_afk_launch_close_terminal() { return 0; }
+      fm_afk_launch_terminal_absent() { return 0; }
+      fm_afk_launch_create_tmux() {
+        fm_afk_launch_record_write tmux successor ""
+        fm_afk_launch_commit_terminal tmux successor "" 1
+      }
+      ! fm_afk_launch_start
+    ' _ "$LAUNCH"
+  if [ "$(cat "$cleared/state/.afk" 2>/dev/null || true)" = original-away-epoch ] \
+    && [ ! -e "$cleared/state/.subsuper-escalations" ] \
+    && [ ! -e "$cleared/state/.subsuper-escalations.since" ] \
+    && [ ! -e "$cleared/state/.subsuper-inject-wedged" ]; then
+    pass "failed recovery readiness: confirmed submission remains cleared"
+  else
+    fail "failed recovery readiness: confirmed submission was resurrected from the pre-launch snapshot"
+  fi
+  rm -rf "$staged" "$cleared"
+}
+
 unit_concurrent_start_serialized() {
   command -v tmux >/dev/null 2>&1 || { echo "skip: tmux not found (concurrent start)"; return 0; }
   local st cap_session cap_pane first second rec count
@@ -218,12 +470,14 @@ unit_lock_initialization_grace() {
     if [ -d "$st/state/.afk-launch.lock" ]; then
       printf '%s' "$$" > "$st/state/.afk-launch.lock/pid"
       ( . "$ROOT/bin/fm-wake-lib.sh"; fm_pid_identity "$$" > "$st/state/.afk-launch.lock/pid-identity" 2>/dev/null ) || true
+      # shellcheck disable=SC2031 # The subshell writes the path value; it does not reassign the variable.
       : > "$marker"
       sleep 0.15
       rm -rf "$st/state/.afk-launch.lock"
     fi
   ) &
   initializer=$!
+  # shellcheck disable=SC2031 # The initializer communicates through this shared file path.
   if FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" bash -c '
     . "$1"
     fm_afk_launch_lock_acquire
@@ -248,12 +502,23 @@ unit_signal_exits_with_lock_cleanup() {
     : > "$2"
   ' _ "$LAUNCH" "$marker" &
   child=$!
-  for _ in $(seq 1 40); do
-    [ -d "$st/state/.afk-launch.lock" ] && break
+  # Signal only once the lifecycle actually holds its lock. Killing before the
+  # lock exists tests nothing, and on a loaded machine it used to race: the
+  # lock could be created just after the kill and outlive the process.
+  local locked=0 _
+  for _ in $(seq 1 100); do
+    if [ -d "$st/state/.afk-launch.lock" ]; then locked=1; break; fi
     sleep 0.05
   done
+  [ "$locked" = 1 ] || fail "launcher signal: lifecycle never acquired its lock to interrupt"
   kill -TERM "$child" 2>/dev/null || true
   wait "$child" 2>/dev/null || true
+  # The signal handler releases the lock as it exits; give that removal a
+  # bounded settle rather than sampling the instant `wait` returns.
+  for _ in $(seq 1 100); do
+    [ -e "$st/state/.afk-launch.lock" ] || break
+    sleep 0.05
+  done
   if [ ! -e "$marker" ] && [ ! -e "$st/state/.afk-launch.lock" ]; then
     pass "launcher signal: TERM exits and releases the lifecycle lock"
   else
@@ -771,7 +1036,7 @@ e2e_herdr() {
   command -v jq >/dev/null 2>&1 || { echo "skip: jq not found (herdr e2e)"; return 0; }
   # shellcheck source=tests/herdr-test-safety.sh
   . "$ROOT/tests/herdr-test-safety.sh"
-  # shellcheck source=bin/fm-backend.sh
+  # shellcheck source=/dev/null
   . "$ROOT/bin/fm-backend.sh"
 
   local SESSION home_tmp cap_ws cap_tab cap_pane target
@@ -780,6 +1045,7 @@ e2e_herdr() {
   export HERDR_SESSION="$SESSION"
   home_tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-e2e-home.XXXXXX")
   E2E_HERDR_CLEANUP() {
+    # shellcheck disable=SC2031 # Cleanup reads the caller's resolved target; it does not reassign it.
     FM_HOME="$home_tmp" FM_STATE_OVERRIDE="$home_tmp/state" \
       FM_SUPERVISOR_TARGET="$target" FM_SUPERVISOR_BACKEND=herdr "$LAUNCH" stop >/dev/null 2>&1 || true
     herdr_safe_stop_and_delete "$SESSION" >/dev/null 2>&1 || true
@@ -830,7 +1096,7 @@ e2e_herdr() {
 # ---------------------------------------------------------------------------
 e2e_tmux() {
   command -v tmux >/dev/null 2>&1 || { echo "skip: tmux not found (tmux e2e)"; return 0; }
-  local cap_session home_tmp cap_pane before during after rec
+  local cap_session home_tmp cap_pane before during after rec crashed_rec
   cap_session="fm-afk-launch-cap-$$"
   home_tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-tmux-home.XXXXXX")
   tmux new-session -d -s "$cap_session" 2>/dev/null || { fail "tmux e2e: could not create captain session"; rm -rf "$home_tmp"; return 0; }
@@ -848,6 +1114,22 @@ e2e_tmux() {
   if [ "$before" = "$during" ]; then pass "tmux e2e: captain window pane count unchanged after start (no split-window)"; else fail "tmux e2e: captain window pane count changed ($before -> $during)"; fi
   if [ -n "$rec" ] && tmux has-session -t "$rec" 2>/dev/null && [ "$rec" != "$cap_session" ]; then pass "tmux e2e: daemon launched in a separate detached session"; else fail "tmux e2e: no separate daemon session ($rec)"; fi
 
+  printf 'buffered-before-daemon-crash\n' > "$home_tmp/state/.subsuper-escalations"
+  crashed_rec=$rec
+  tmux kill-session -t "$crashed_rec" 2>/dev/null \
+    || fail "tmux e2e recovery: could not crash the exact daemon session"
+  FM_HOME="$home_tmp" FM_STATE_OVERRIDE="$home_tmp/state" \
+    FM_SUPERVISOR_TARGET="$cap_pane" FM_SUPERVISOR_BACKEND=tmux FM_AFK_LAUNCH_ENTRY="$SLEEPER" \
+    "$LAUNCH" start >/dev/null 2>&1
+  rec=$(cut -f2 "$home_tmp/state/.afk-daemon-terminal" 2>/dev/null || true)
+  TRACK_TMUX_SESSIONS="$TRACK_TMUX_SESSIONS $rec"
+  if [ "$rec" != "$crashed_rec" ] && tmux has-session -t "$rec" 2>/dev/null \
+    && [ "$(cat "$home_tmp/state/.subsuper-escalations" 2>/dev/null || true)" = buffered-before-daemon-crash ]; then
+    pass "tmux e2e recovery: successor terminal preserves same-lifecycle buffered delivery"
+  else
+    fail "tmux e2e recovery: successor terminal was missing, reused, or lost buffered delivery"
+  fi
+
   FM_HOME="$home_tmp" FM_STATE_OVERRIDE="$home_tmp/state" \
     FM_SUPERVISOR_TARGET="$cap_pane" FM_SUPERVISOR_BACKEND=tmux "$LAUNCH" stop >/dev/null 2>&1
 
@@ -861,10 +1143,17 @@ e2e_tmux() {
 }
 
 unit_clear_stale
+unit_relative_paths_are_absolute_before_daemon_launch
 unit_fresh_vs_refresh
+unit_crash_recovery_preserves_delivery_boundaries
+unit_confirmed_submission_is_not_resurrected
+unit_direct_entry_distinguishes_recovery_from_fresh
+unit_recovery_rejects_stale_owner_and_retargets_primary
 unit_stop_ordering
 unit_stop_rejects_reused_pid
 unit_failed_start_rolls_back_state
+unit_failed_recovery_rolls_back_state
+unit_failed_recovery_preserves_readiness_mutations
 unit_concurrent_start_serialized
 unit_lock_initialization_grace
 unit_signal_exits_with_lock_cleanup
