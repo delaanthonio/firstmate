@@ -207,6 +207,17 @@ test_ship_modes_generate_clean_briefs() {
     brief="$home/data/$id/brief.md"
     assert_present "$brief" "$id: brief was not scaffolded"
     assert_grep "# Definition of done" "$brief" "$id: brief missing Definition of done section"
+    assert_grep "# UI screenshot contract" "$brief" "$id: brief missing UI screenshot contract"
+    assert_grep "**Verify isolation before anything else.**" "$brief" \
+      "$id: review evidence displaced the worktree-isolation assertion"
+    assert_grep "blocked: launched in primary checkout, not an isolated worktree" "$brief" \
+      "$id: review evidence displaced the primary-checkout refusal"
+    assert_grep "Before reporting done, make the change beautiful:" "$brief" \
+      "$id: review evidence displaced the code-quality pass"
+    assert_grep "run the project's formatter." "$brief" \
+      "$id: review evidence displaced the formatting requirement"
+    assert_grep "no user-visible change - screenshots not applicable" "$brief" \
+      "$id: brief missing non-UI screenshot applicability wording"
     grep -qx "Delivery contract: mode=$mode" "$brief" \
       || fail "$id: brief did not record its machine-readable delivery contract line"
     assert_grep "{TASK}" "$brief" "$id: brief missing the {TASK} placeholder"
@@ -215,6 +226,94 @@ test_ship_modes_generate_clean_briefs() {
     assert_no_grep "EOF" "$brief" "$id: brief leaked a heredoc EOF marker (unterminated heredoc)"
   done
   pass "fm-brief.sh: no-mistakes/direct-PR/local-only briefs generate cleanly"
+}
+
+test_ship_contracts_are_mode_specific() {
+  local home id brief mode id_mode
+  home="$TMP_ROOT/mode-contract-home"
+  write_registry "$home"
+
+  for id_mode in "brief-contract-nomistakes:no-mistakes" "brief-contract-directpr:direct-PR"; do
+    id=${id_mode%%:*}
+    mode=${id_mode##*:}
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode "$mode" >/dev/null 2>&1
+    brief="$home/data/$id/brief.md"
+    assert_grep "# PR description contract" "$brief" "$id: brief missing PR description contract"
+    assert_grep 'Include explicitly titled sections named "Summary", "What changed", "Why", and "How it was tested".' "$brief" \
+      "$id: PR description contract does not require all four headings"
+    assert_grep "both in every done status line and in the PR description's explicitly titled \"How it was tested\" section." "$brief" \
+      "$id: non-UI evidence is not required in both status and PR description"
+    assert_grep "For native UI, use surface-specific capture: iOS simulator screenshots via \`xcrun\`, native desktop window capture, or programmatic evidence when no display is available." "$brief" \
+      "$id: brief does not support surface-specific native UI evidence"
+    assert_grep "Capture only with seeded fixture or demo accounts." "$brief" \
+      "$id: brief permits screenshots from non-fixture accounts"
+    assert_grep "Redact any real identifier before uploading or otherwise sharing evidence" "$brief" \
+      "$id: brief does not require identifier redaction"
+    assert_grep "never attach an unredacted image to a PR in a public repository" "$brief" \
+      "$id: brief permits unredacted public PR attachments"
+    assert_no_grep "agenda-mobile" "$brief" \
+      "$id: brief contains an unrequired project-specific screenshot path"
+    if [ "$mode" = direct-PR ]; then
+      assert_grep "capture before and after screenshots and embed them in the PR description before reporting done" "$brief" \
+        "$id: direct-PR brief missing pre-completion screenshot embedding requirement"
+      assert_grep "done: PR {url} - {summary}" "$brief" \
+        "$id: direct-PR done status has no summary slot"
+    else
+      assert_grep "capture before and after screenshots before appending the implementation-ready \`done: {summary}\` status" "$brief" \
+        "$id: no-mistakes brief does not require screenshot capture before implementation-ready status"
+      assert_grep 'refresh the after screenshot if any pipeline-authored change affected the rendered UI' "$brief" \
+        "$id: no-mistakes brief permits stale after evidence after pipeline fixes"
+      assert_grep 'then embed both current screenshots in the PR description' "$brief" \
+        "$id: no-mistakes brief does not require current evidence before final PR-ready status"
+      assert_grep "done: PR {url} checks green - {summary}" "$brief" \
+        "$id: no-mistakes final done status has no summary slot"
+    fi
+  done
+
+  id="brief-contract-localonly"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" local-proj --mode local-only >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_no_grep "# PR description contract" "$brief" \
+    "local-only brief gained a PR description contract"
+  assert_no_grep "embed them in the PR description" "$brief" \
+    "local-only brief still requires PR screenshot embedding"
+  assert_grep "Save both files under \`$home/data/$id/shots/\`" "$brief" \
+    "local-only brief does not save screenshots under the task shots directory"
+  assert_grep "screenshot evidence explicitly required below" "$brief" \
+    "local-only brief rules still forbid required screenshot evidence writes"
+  assert_grep "done: ready in branch fm/$id; screenshots: $home/data/$id/shots/" "$brief" \
+    "local-only brief does not reference the task shots directory in its done status"
+  assert_grep "done: ready in branch fm/$id; no user-visible change - screenshots not applicable" "$brief" \
+    "local-only brief does not preserve non-UI applicability in its done status"
+  assert_no_grep "done report" "$brief" \
+    "local-only brief still requires an undefined done report"
+  assert_no_grep "agenda-mobile" "$brief" \
+    "local-only brief contains an unrequired project-specific screenshot path"
+  assert_grep "For native UI, use surface-specific capture: iOS simulator screenshots via \`xcrun\`, native desktop window capture, or programmatic evidence when no display is available." "$brief" \
+    "local-only brief does not support surface-specific native UI evidence"
+  assert_grep "Capture only with seeded fixture or demo accounts." "$brief" \
+    "local-only brief permits screenshots from non-fixture accounts"
+  assert_grep "Redact any real identifier before uploading or otherwise sharing evidence" "$brief" \
+    "local-only brief does not require identifier redaction before handoff"
+  pass "fm-brief.sh: ship contracts match PR-producing and local-only delivery modes"
+}
+
+test_ship_contracts_do_not_leak_to_other_brief_kinds() {
+  local home brief
+  home="$TMP_ROOT/contract-scope-home"
+  mkdir -p "$home/data"
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-contract-scout some-proj --scout >/dev/null 2>&1
+  brief="$home/data/brief-contract-scout/brief.md"
+  assert_no_grep "# PR description contract" "$brief" "scout brief gained the PR description contract"
+  assert_no_grep "# UI screenshot contract" "$brief" "scout brief gained the UI screenshot contract"
+
+  FM_HOME="$home" FM_SECONDMATE_CHARTER=ops \
+    "$ROOT/bin/fm-brief.sh" brief-contract-secondmate --secondmate --no-projects >/dev/null 2>&1
+  brief="$home/data/brief-contract-secondmate/brief.md"
+  assert_no_grep "# PR description contract" "$brief" "secondmate brief gained the PR description contract"
+  assert_no_grep "# UI screenshot contract" "$brief" "secondmate brief gained the UI screenshot contract"
+  pass "fm-brief.sh: ship-only PR and screenshot contracts do not leak to scout or secondmate briefs"
 }
 
 # A ship task's delivery mode is firstmate's per-task decision, so a missing or
@@ -725,6 +824,8 @@ test_script_parses
 test_no_heredoc_in_command_substitution
 test_help_includes_entire_header
 test_ship_modes_generate_clean_briefs
+test_ship_contracts_are_mode_specific
+test_ship_contracts_do_not_leak_to_other_brief_kinds
 test_ship_mode_is_required_and_closed_set
 test_ship_mode_is_explicit_not_registry
 test_delivery_flags_are_refused_where_they_do_not_apply
