@@ -243,7 +243,7 @@ test_ship_contracts_are_mode_specific() {
       "$id: PR description contract does not require all four headings"
     assert_grep "both in every done status line and in the PR description's explicitly titled \"How it was tested\" section." "$brief" \
       "$id: non-UI evidence is not required in both status and PR description"
-    assert_grep 'For native UI, use surface-specific capture: iOS simulator screenshots via `xcrun`, native desktop window capture, or programmatic evidence when no display is available.' "$brief" \
+    assert_grep "For native UI, use surface-specific capture: iOS simulator screenshots via \`xcrun\`, native desktop window capture, or programmatic evidence when no display is available." "$brief" \
       "$id: brief does not support surface-specific native UI evidence"
     assert_grep "Capture only with seeded fixture or demo accounts." "$brief" \
       "$id: brief permits screenshots from non-fixture accounts"
@@ -259,7 +259,7 @@ test_ship_contracts_are_mode_specific() {
       assert_grep "done: PR {url} - {summary}" "$brief" \
         "$id: direct-PR done status has no summary slot"
     else
-      assert_grep 'capture before and after screenshots before appending the implementation-ready `done: {summary}` status' "$brief" \
+      assert_grep "capture before and after screenshots before appending the implementation-ready \`done: {summary}\` status" "$brief" \
         "$id: no-mistakes brief does not require screenshot capture before implementation-ready status"
       assert_grep 'refresh the after screenshot if any pipeline-authored change affected the rendered UI' "$brief" \
         "$id: no-mistakes brief permits stale after evidence after pipeline fixes"
@@ -289,7 +289,7 @@ test_ship_contracts_are_mode_specific() {
     "local-only brief still requires an undefined done report"
   assert_no_grep "agenda-mobile" "$brief" \
     "local-only brief contains an unrequired project-specific screenshot path"
-  assert_grep 'For native UI, use surface-specific capture: iOS simulator screenshots via `xcrun`, native desktop window capture, or programmatic evidence when no display is available.' "$brief" \
+  assert_grep "For native UI, use surface-specific capture: iOS simulator screenshots via \`xcrun\`, native desktop window capture, or programmatic evidence when no display is available." "$brief" \
     "local-only brief does not support surface-specific native UI evidence"
   assert_grep "Capture only with seeded fixture or demo accounts." "$brief" \
     "local-only brief permits screenshots from non-fixture accounts"
