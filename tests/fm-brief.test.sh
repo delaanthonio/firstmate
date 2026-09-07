@@ -243,6 +243,14 @@ test_ship_contracts_are_mode_specific() {
       "$id: PR description contract does not require all four headings"
     assert_grep "both in every done status line and in the PR description's explicitly titled \"How it was tested\" section." "$brief" \
       "$id: non-UI evidence is not required in both status and PR description"
+    assert_grep 'For native UI, use surface-specific capture: iOS simulator screenshots via `xcrun`, native desktop window capture, or programmatic evidence when no display is available.' "$brief" \
+      "$id: brief does not support surface-specific native UI evidence"
+    assert_grep "Capture only with seeded fixture or demo accounts." "$brief" \
+      "$id: brief permits screenshots from non-fixture accounts"
+    assert_grep "Redact any real identifier before uploading or otherwise sharing evidence" "$brief" \
+      "$id: brief does not require identifier redaction"
+    assert_grep "never attach an unredacted image to a PR in a public repository" "$brief" \
+      "$id: brief permits unredacted public PR attachments"
     assert_no_grep "agenda-mobile" "$brief" \
       "$id: brief contains an unrequired project-specific screenshot path"
     if [ "$mode" = direct-PR ]; then
@@ -281,6 +289,12 @@ test_ship_contracts_are_mode_specific() {
     "local-only brief still requires an undefined done report"
   assert_no_grep "agenda-mobile" "$brief" \
     "local-only brief contains an unrequired project-specific screenshot path"
+  assert_grep 'For native UI, use surface-specific capture: iOS simulator screenshots via `xcrun`, native desktop window capture, or programmatic evidence when no display is available.' "$brief" \
+    "local-only brief does not support surface-specific native UI evidence"
+  assert_grep "Capture only with seeded fixture or demo accounts." "$brief" \
+    "local-only brief permits screenshots from non-fixture accounts"
+  assert_grep "Redact any real identifier before uploading or otherwise sharing evidence" "$brief" \
+    "local-only brief does not require identifier redaction before handoff"
   pass "fm-brief.sh: ship contracts match PR-producing and local-only delivery modes"
 }
 

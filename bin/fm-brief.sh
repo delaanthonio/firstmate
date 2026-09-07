@@ -440,6 +440,14 @@ EOF
   PR_DESCRIPTION_CONTRACT=${PR_DESCRIPTION_CONTRACT%$'\n'}
 fi
 
+IFS= read -r -d '' UI_CAPTURE_POLICY <<'EOF' || true
+Use the shared automation browser, `chrome-devtools-axi`, for web UI.
+For native UI, use surface-specific capture: iOS simulator screenshots via `xcrun`, native desktop window capture, or programmatic evidence when no display is available.
+Capture only with seeded fixture or demo accounts.
+Redact any real identifier before uploading or otherwise sharing evidence, and never attach an unredacted image to a PR in a public repository.
+EOF
+UI_CAPTURE_POLICY=${UI_CAPTURE_POLICY%$'\n'}
+
 case "$MODE" in
   local-only)
     IFS= read -r -d '' UI_SCREENSHOT_CONTRACT <<EOF || true
@@ -447,7 +455,7 @@ case "$MODE" in
 If the change alters a user-visible web page, mobile screen, desktop window, or email template, capture before and after screenshots.
 Save both files under \`$DATA/$ID/shots/\`, never commit them to the repo, and append \`done: ready in branch fm/$ID; screenshots: $DATA/$ID/shots/\` so firstmate can relay them for review.
 This mode has no PR, so do not embed the screenshots in a PR description.
-Use the shared automation browser, \`chrome-devtools-axi\`.
+$UI_CAPTURE_POLICY
 For a non-UI change, skip screenshots and append \`done: ready in branch fm/$ID; no user-visible change - screenshots not applicable\`.
 EOF
     ;;
@@ -468,7 +476,7 @@ if [ "$MODE" != local-only ]; then
   IFS= read -r -d '' UI_SCREENSHOT_CONTRACT <<EOF || true
 # UI screenshot contract
 $PR_UI_TIMING
-Use the shared automation browser, \`chrome-devtools-axi\`.
+$UI_CAPTURE_POLICY
 Attach each image by converting base64 to a File and dispatching a native drop event on the GitHub description textarea; file inputs and synthetic drags do not work.
 Verify the saved description renders the \`user-attachments\` image URLs, and never commit screenshot files to the repo.
 For a non-UI change, skip screenshots and include the exact sentence \`no user-visible change - screenshots not applicable\` both in every done status line and in the PR description's explicitly titled "How it was tested" section.
