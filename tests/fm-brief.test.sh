@@ -243,6 +243,8 @@ test_ship_contracts_are_mode_specific() {
       "$id: PR description contract does not require all four headings"
     assert_grep "both in every done status line and in the PR description's explicitly titled \"How it was tested\" section." "$brief" \
       "$id: non-UI evidence is not required in both status and PR description"
+    assert_no_grep "agenda-mobile" "$brief" \
+      "$id: brief contains an unrequired project-specific screenshot path"
     if [ "$mode" = direct-PR ]; then
       assert_grep "capture before and after screenshots and embed them in the PR description before reporting done" "$brief" \
         "$id: direct-PR brief missing pre-completion screenshot embedding requirement"
@@ -251,8 +253,10 @@ test_ship_contracts_are_mode_specific() {
     else
       assert_grep 'capture before and after screenshots before appending the implementation-ready `done: {summary}` status' "$brief" \
         "$id: no-mistakes brief does not require screenshot capture before implementation-ready status"
-      assert_grep 'embed both screenshots in the PR description before appending the final PR-ready `done: PR {url} checks green - {summary}` status' "$brief" \
-        "$id: no-mistakes brief does not defer PR embedding until final PR-ready status"
+      assert_grep 'refresh the after screenshot if any pipeline-authored change affected the rendered UI' "$brief" \
+        "$id: no-mistakes brief permits stale after evidence after pipeline fixes"
+      assert_grep 'then embed both current screenshots in the PR description' "$brief" \
+        "$id: no-mistakes brief does not require current evidence before final PR-ready status"
       assert_grep "done: PR {url} checks green - {summary}" "$brief" \
         "$id: no-mistakes final done status has no summary slot"
     fi
@@ -275,6 +279,8 @@ test_ship_contracts_are_mode_specific() {
     "local-only brief does not preserve non-UI applicability in its done status"
   assert_no_grep "done report" "$brief" \
     "local-only brief still requires an undefined done report"
+  assert_no_grep "agenda-mobile" "$brief" \
+    "local-only brief contains an unrequired project-specific screenshot path"
   pass "fm-brief.sh: ship contracts match PR-producing and local-only delivery modes"
 }
 

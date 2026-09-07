@@ -448,34 +448,32 @@ If the change alters a user-visible web page, mobile screen, desktop window, or 
 Save both files under \`$DATA/$ID/shots/\`, never commit them to the repo, and append \`done: ready in branch fm/$ID; screenshots: $DATA/$ID/shots/\` so firstmate can relay them for review.
 This mode has no PR, so do not embed the screenshots in a PR description.
 Use the shared automation browser, \`chrome-devtools-axi\`.
-For agenda-mobile UI, prefer Expo web in the automation browser over the iOS simulator.
 For a non-UI change, skip screenshots and append \`done: ready in branch fm/$ID; no user-visible change - screenshots not applicable\`.
 EOF
     ;;
   direct-PR)
-    IFS= read -r -d '' UI_SCREENSHOT_CONTRACT <<'EOF' || true
-# UI screenshot contract
+    IFS= read -r -d '' PR_UI_TIMING <<'EOF' || true
 If the change alters a user-visible web page, mobile screen, desktop window, or email template, capture before and after screenshots and embed them in the PR description before reporting done.
-Use the shared automation browser, `chrome-devtools-axi`.
-Attach each image by converting base64 to a File and dispatching a native drop event on the GitHub description textarea; file inputs and synthetic drags do not work.
-Verify the saved description renders the `user-attachments` image URLs, and never commit screenshot files to the repo.
-For agenda-mobile UI, prefer Expo web in the automation browser over the iOS simulator.
-For a non-UI change, skip screenshots and include the exact sentence `no user-visible change - screenshots not applicable` both in every done status line and in the PR description's explicitly titled "How it was tested" section.
 EOF
     ;;
   *)
-    IFS= read -r -d '' UI_SCREENSHOT_CONTRACT <<'EOF' || true
-# UI screenshot contract
+    IFS= read -r -d '' PR_UI_TIMING <<'EOF' || true
 If the change alters a user-visible web page, mobile screen, desktop window, or email template, capture before and after screenshots before appending the implementation-ready `done: {summary}` status that starts the no-mistakes pipeline.
-After the pipeline creates the PR, embed both screenshots in the PR description before appending the final PR-ready `done: PR {url} checks green - {summary}` status.
-Use the shared automation browser, `chrome-devtools-axi`.
-Attach each image by converting base64 to a File and dispatching a native drop event on the GitHub description textarea; file inputs and synthetic drags do not work.
-Verify the saved description renders the `user-attachments` image URLs, and never commit screenshot files to the repo.
-For agenda-mobile UI, prefer Expo web in the automation browser over the iOS simulator.
-For a non-UI change, skip screenshots and include the exact sentence `no user-visible change - screenshots not applicable` both in every done status line and in the PR description's explicitly titled "How it was tested" section.
+Before appending the final PR-ready `done: PR {url} checks green - {summary}` status, refresh the after screenshot if any pipeline-authored change affected the rendered UI so the evidence represents the shipped result, then embed both current screenshots in the PR description.
 EOF
     ;;
 esac
+if [ "$MODE" != local-only ]; then
+  PR_UI_TIMING=${PR_UI_TIMING%$'\n'}
+  IFS= read -r -d '' UI_SCREENSHOT_CONTRACT <<EOF || true
+# UI screenshot contract
+$PR_UI_TIMING
+Use the shared automation browser, \`chrome-devtools-axi\`.
+Attach each image by converting base64 to a File and dispatching a native drop event on the GitHub description textarea; file inputs and synthetic drags do not work.
+Verify the saved description renders the \`user-attachments\` image URLs, and never commit screenshot files to the repo.
+For a non-UI change, skip screenshots and include the exact sentence \`no user-visible change - screenshots not applicable\` both in every done status line and in the PR description's explicitly titled "How it was tested" section.
+EOF
+fi
 UI_SCREENSHOT_CONTRACT=${UI_SCREENSHOT_CONTRACT%$'\n'}
 
 cat > "$BRIEF" <<EOF
