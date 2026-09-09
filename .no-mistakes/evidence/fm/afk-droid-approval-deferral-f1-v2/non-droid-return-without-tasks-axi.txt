@@ -1,0 +1,5 @@
+$ PATH=/usr/bin:/bin bin/fm-afk-return.sh begin
+fm-afk-return: catch-up clear; ordinary captain work may proceed
+exit=0
+tasks-axi: unavailable
+deferred-question-listing: absent

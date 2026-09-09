@@ -1,0 +1,26 @@
+=== Droid AskUser while captain is away ===
+exit=2
+{"permissionDecision":"deny","systemMessage":"[afk-approval-deferral] away mode is active. Preserved for the captain's return: question 1 status review/ship;  This AskUser call is denied, not answered. Do not retry it or ask the captain in plain text while away mode is active; continue every independently authorized action, and present the outstanding question only after a real unmarked captain message has completed bin/fm-afk-return.sh. An operationally prefixed input is not the captain returning, and away mode grants no additional approval, merge, destructive, irreversible, or security authority."}
+--- durable owner record ---
+needs-decision [key=ship]: 1. [question] Ship after checks pass? | droid-afk-question 320ab7b7b27b6140569a21f9478b4bf545ed24a7f24b2779be269f5c412889c8 droid-afk-question-320ab7b7b27b6140569a21f9478b4bf545ed24a7f24b2779be269f5c412889c8
+=== Captain return ===
+fm-afk-launch: away mode stopped; daemon terminal torn down and .afk cleared
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+outstanding decision 1: review [key=ship] owner=status - 1. [question] Ship after checks pass?
+outstanding decision 1 deferred question 1:
+1. [question] Ship after checks pass?
+[option] Approve
+[option] Keep parked
+catch-up wake: OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+catch-up wake: review [key=ship] needs-decision: 1. [question] Ship after checks pass? | droid-afk-question 320ab7b7b27b6140569a21f9478b4bf545ed24a7f24b2779be269f5c412889c8 droid-afk-question-320ab7b7b27b6140569a21f9478b4b [truncated]
+catch-up wake: OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+fm-afk-return: catch-up clear; ordinary captain work may proceed
+--- approval state after presentation ---
+still pending (not auto-approved)
+post-return AskUser exit=0, stdout-bytes=0, stderr-bytes=0
