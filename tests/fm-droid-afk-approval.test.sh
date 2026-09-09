@@ -12,6 +12,7 @@ CHECK="$ROOT/bin/fm-droid-afk-askuser-check.sh"
 HOLD="$ROOT/bin/fm-decision-hold.sh"
 RETURN="$ROOT/bin/fm-afk-return.sh"
 TMP_ROOT=$(fm_test_tmproot fm-droid-afk-approval)
+TASKS_AXI_BIN=$(command -v tasks-axi || true)
 
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; exit 0; }
 command -v tasks-axi >/dev/null 2>&1 || { echo "skip: tasks-axi not found"; exit 0; }
@@ -55,7 +56,7 @@ ask() {  # <home> <questionnaire>; stdout/stderr land in <home>/out and <home>/e
 holds() {  # <home> <command args...>
   local home=$1
   shift
-  PATH="$home/fakebin:$PATH" FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" \
+  PATH="$home/fakebin:$PATH" REAL_TASKS_AXI="$TASKS_AXI_BIN" FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" \
     FM_DATA_OVERRIDE="$home/data" FM_CONFIG_OVERRIDE="$home/config" "$HOLD" "$@"
 }
 
@@ -631,6 +632,78 @@ test_derived_keys_close_and_invalid_answer_records_fail_loudly() {
   pass "derived keys close normally and invalid answer records fail loudly"
 }
 
+test_concurrent_preservation_cannot_erase_a_captain_answer() {
+  local home rc=0 preserve_pid answer_pid answer_state='' show i
+  home=$(make_home preserve-answer-race)
+  seed_task "$home" release 'working: release prep'
+  date +%s > "$home/state/.afk"
+  ask "$home" '1. [question] Ship after checks pass?
+[firstmate-decision origin=release key=ship state=unseeded]
+[option] Approve' || rc=$?
+  [ "$rc" -eq 2 ] || fail "the initial away-mode question must be denied and filed"
+  printf '1. [question] Ship after checks pass with the final evidence?
+[option] Approve\n' > "$home/reworded-question"
+  printf 'ship\tapprove\tApprove\n' > "$home/answer.tsv"
+
+  cat > "$home/fakebin/tasks-axi" <<'SH'
+#!/usr/bin/env bash
+if [ "${INTERLEAVE_PRESERVE:-0}" = 1 ] && [ "${1:-}" = update ] \
+    && [ "${2:-}" = release-decision-ship ]; then
+  : > "$FM_HOME/preserve-ready"
+  while [ ! -f "$FM_HOME/release-preserve" ]; do /bin/sleep 0.02; done
+fi
+PATH=${PATH#*:}
+export PATH
+exec "$REAL_TASKS_AXI" "$@"
+SH
+  cat > "$home/fakebin/sleep" <<'SH'
+#!/usr/bin/env bash
+[ "${INTERLEAVE_ANSWER:-0}" != 1 ] || : > "$FM_HOME/answer-waiting"
+exec /bin/sleep "$@"
+SH
+  chmod +x "$home/fakebin/tasks-axi" "$home/fakebin/sleep"
+
+  INTERLEAVE_PRESERVE=1 holds "$home" preserve-question release ship \
+    --state existing --question-file "$home/reworded-question" > "$home/preserve.out" 2> "$home/preserve.err" &
+  preserve_pid=$!
+  i=0
+  while [ "$i" -lt 200 ]; do
+    [ -f "$home/preserve-ready" ] && break
+    kill -0 "$preserve_pid" 2>/dev/null || break
+    /bin/sleep 0.01
+    i=$((i + 1))
+  done
+  if [ ! -f "$home/preserve-ready" ]; then
+    : > "$home/release-preserve"
+    wait "$preserve_pid" || true
+    fail "question preservation did not reach the forced interleaving point"
+  fi
+
+  (INTERLEAVE_ANSWER=1 holds "$home" answers release --source return \
+    < "$home/answer.tsv" > "$home/answer.out" 2> "$home/answer.err"; printf '%s\n' "$?" > "$home/answer.rc") &
+  answer_pid=$!
+  i=0
+  while [ "$i" -lt 200 ]; do
+    if [ -f "$home/answer-waiting" ]; then answer_state=waiting; break; fi
+    if [ -f "$home/answer.rc" ]; then answer_state=closed; break; fi
+    /bin/sleep 0.01
+    i=$((i + 1))
+  done
+  : > "$home/release-preserve"
+  wait "$preserve_pid" || fail "concurrent question preservation failed: $(cat "$home/preserve.err")"
+  wait "$answer_pid" || fail "concurrent captain answer failed: $(cat "$home/answer.err")"
+  [ -n "$answer_state" ] || fail "concurrent answer neither waited nor completed"
+  [ "$(cat "$home/answer.rc")" -eq 0 ] || fail "concurrent keyed-answer intake reported failure"
+  [ "$answer_state" = waiting ] \
+    || fail "captain answer did not serialize behind in-flight question preservation"
+
+  show=$( (cd "$home" && tasks-axi show release-decision-ship --full) )
+  assert_contains "$show" 'state: done' "concurrent preservation reopened the answered hold"
+  assert_contains "$show" 'Resolution mode: answered' "concurrent preservation erased the durable captain answer"
+  assert_contains "$show" 'Answer: approve' "concurrent preservation changed the captain answer"
+  pass "concurrent preservation cannot erase a durable captain answer"
+}
+
 # Answering a returned question must close it through the owner's own existing
 # close path, and only then may it leave the outstanding listing.
 test_answers_close_through_the_existing_owner_paths() {
@@ -686,4 +759,5 @@ test_return_restores_askuser_without_approving_anything
 test_oversized_question_is_parked_and_returned_losslessly
 test_non_droid_return_does_not_project_deferred_questions
 test_derived_keys_close_and_invalid_answer_records_fail_loudly
+test_concurrent_preservation_cannot_erase_a_captain_answer
 test_answers_close_through_the_existing_owner_paths

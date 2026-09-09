@@ -140,6 +140,13 @@ decision_hold_cleanup() {
 }
 trap decision_hold_cleanup EXIT
 
+acquire_origin_meta_lock() {  # <origin-id>
+  DECISION_META_LOCK=$(fm_meta_lock_path "$STATE/$1.meta") \
+    || fail "could not resolve task metadata lock"
+  fm_lock_acquire_wait "$DECISION_META_LOCK"
+  DECISION_META_LOCK_HELD=1
+}
+
 usage() {
   awk '
     NR == 1 { next }
@@ -606,7 +613,7 @@ finish_status_transfer() {  # <origin> <key> <hold-id> <status-file>
 
 command_preserve_question() {
   local origin=${1:-} key=${2:-} state='' question_file='' \
-    id status_file meta question digest reference summary verb
+    id status_file question digest reference summary verb
   [ "$#" -ge 2 ] || { usage >&2; exit 2; }
   shift 2
   while [ "$#" -gt 0 ]; do
@@ -633,13 +640,8 @@ command_preserve_question() {
 
   require_tasks_axi
   origin_exists_here "$origin" || fail "origin $origin is not owned by the active home $FM_HOME"
-  meta="$STATE/$origin.meta"
-  if [ -f "$meta" ]; then
-    DECISION_META_LOCK=$(fm_meta_lock_path "$meta") || fail "could not resolve task metadata lock"
-    fm_lock_acquire_wait "$DECISION_META_LOCK"
-    DECISION_META_LOCK_HELD=1
-    [ -f "$meta" ] || fail "task metadata disappeared while preserving a question"
-  fi
+  acquire_origin_meta_lock "$origin"
+  origin_exists_here "$origin" || fail "origin $origin disappeared while preserving a question"
   id=$(hold_id "$origin" "$key")
   status_file="$STATE/$origin.status"
 
@@ -1190,6 +1192,8 @@ close_unrouted_hold() {  # <mode> <outcome-word> <origin-id> <decision-key> <fla
 
 command_answer() {
   [ "$#" -ge 2 ] || { usage >&2; exit 2; }
+  validate_slug origin-id "$1"
+  acquire_origin_meta_lock "$1"
   close_unrouted_hold answered answered "$@"
 }
 
