@@ -222,6 +222,7 @@ test_incomplete_question_projection_keeps_catchup_pending() {
   install_runner "$dir"
   gate="$dir/home/state/.afk-return-catchup"
   date +%s > "$dir/home/state/.afk"
+  touch "$dir/home/state/.droid-afk-question-deferral"
   touch "$dir/home/state/.fail-question-projection"
 
   set +e

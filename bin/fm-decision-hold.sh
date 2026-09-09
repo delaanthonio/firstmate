@@ -407,8 +407,9 @@ verify_resolution_identity() {
 # A created hold's title is derived from the key rather than the question
 # wording, so a reworded variant can never collide with the stable identity.
 QUESTION_MARKER='droid-afk-question'
-QUESTION_MAX_BYTES=8192
+QUESTION_FILE_PREFIX='droid-afk-question-'
 QUESTION_CHUNK_CHARS=800
+DROID_DEFERRAL_MARKER="$STATE/.droid-afk-question-deferral"
 
 BASE64_DECODE_FLAG=''
 base64_decode_flag() {
@@ -420,12 +421,6 @@ base64_decode_flag() {
     fi
   fi
   printf '%s' "$BASE64_DECODE_FLAG"
-}
-
-# Base64 keeps an arbitrary question block on one status line and out of every
-# quoting, escaping, and multibyte boundary this repo's ledgers care about.
-encode_question() {  # <text>
-  printf '%s' "$1" | LC_ALL=C base64 | LC_ALL=C tr -d '\n'
 }
 
 decode_question() {  # <encoded>
@@ -476,36 +471,123 @@ status_open_verb() {  # <status-file> <decision-key>
 }
 
 # The question's own first line, for the capped ordinary drain view only. The
-# lossless block always travels in the encoded evidence beside it, so this
+# lossless block always travels in its digest-addressed evidence file, so this
 # summary is never the record.
 question_summary() {  # <question-text>
   local summary
   summary=$(printf '%s\n' "$1" | sed -n '1p' | LC_ALL=C tr '\t\r' '  ')
-  printf '%s' "$summary"
+  printf '%s' "${summary:0:240}"
 }
 
-preserve_in_hold() {  # <hold-id> <digest> <encoded>
-  local id=$1 digest=$2 encoded=$3 show body
+sha256_file() {  # <path>
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    fail "shasum or sha256sum is required"
+  fi
+}
+
+question_evidence_path() {  # <origin> <digest> <reference>
+  local origin=$1 digest=$2 reference=$3 directory path
+  [ "${#digest}" -eq 64 ] || return 1
+  case "$digest" in *[!0-9a-f]*) return 1 ;; esac
+  [ "$reference" = "$QUESTION_FILE_PREFIX$digest" ] || return 1
+  directory="$DATA/$origin"
+  path="$directory/$reference"
+  [ -d "$directory" ] && [ ! -L "$directory" ] || return 1
+  [ -f "$path" ] && [ ! -L "$path" ] && [ -r "$path" ] || return 1
+  [ "$(sha256_file "$path")" = "$digest" ] || return 1
+  printf '%s' "$path"
+}
+
+park_question() {  # <origin> <digest> <question-text>
+  local origin=$1 digest=$2 question=$3 directory reference path staged
+  directory="$DATA/$origin"
+  reference="$QUESTION_FILE_PREFIX$digest"
+  (umask 077; mkdir -p "$directory") || fail "could not create deferred-question evidence directory for $origin"
+  [ -d "$directory" ] && [ ! -L "$directory" ] \
+    || fail "deferred-question evidence directory is unsafe for $origin"
+  path="$directory/$reference"
+  if [ -e "$path" ] || [ -L "$path" ]; then
+    question_evidence_path "$origin" "$digest" "$reference" >/dev/null \
+      || fail "deferred-question evidence is unsafe or corrupted for $origin/$digest"
+    [ "$(cat "$path")" = "$question" ] \
+      || fail "deferred-question evidence conflicts for $origin/$digest"
+    printf '%s' "$reference"
+    return 0
+  fi
+  staged=$(umask 077; mktemp "$directory/.${reference}.XXXXXX") \
+    || fail "could not stage deferred-question evidence for $origin/$digest"
+  if ! printf '%s' "$question" > "$staged" || ! chmod 0600 "$staged"; then
+    rm -f -- "$staged"
+    fail "could not stage deferred-question evidence for $origin/$digest"
+  fi
+  if ! ln "$staged" "$path" 2>/dev/null; then
+    rm -f -- "$staged"
+    question_evidence_path "$origin" "$digest" "$reference" >/dev/null \
+      || fail "could not publish deferred-question evidence for $origin/$digest"
+    [ "$(cat "$path")" = "$question" ] \
+      || fail "deferred-question evidence conflicts for $origin/$digest"
+  else
+    rm -f -- "$staged"
+  fi
+  printf '%s' "$reference"
+}
+
+activate_question_evidence() {  # <origin> <digest> <question-text>
+  local reference staged
+  reference=$(park_question "$1" "$2" "$3")
+  if [ -e "$DROID_DEFERRAL_MARKER" ] || [ -L "$DROID_DEFERRAL_MARKER" ]; then
+    [ -f "$DROID_DEFERRAL_MARKER" ] && [ ! -L "$DROID_DEFERRAL_MARKER" ] \
+      || fail "Droid deferred-question marker is unsafe"
+  else
+    staged=$(umask 077; mktemp "$STATE/.droid-afk-question-deferral.XXXXXX") \
+      || fail "could not stage Droid deferred-question state"
+    : > "$staged"
+    chmod 0600 "$staged"
+    if ! ln "$staged" "$DROID_DEFERRAL_MARKER" 2>/dev/null; then
+      rm -f -- "$staged"
+      [ -f "$DROID_DEFERRAL_MARKER" ] && [ ! -L "$DROID_DEFERRAL_MARKER" ] \
+        || fail "could not mark Droid deferred-question state"
+    else
+      rm -f -- "$staged"
+    fi
+  fi
+  printf '%s' "$reference"
+}
+
+preserve_in_hold() {  # <hold-id> <digest> <reference>
+  local id=$1 digest=$2 reference=$3 show body evidence existing_digest existing_reference
   show=$(task_show "$id") || fail "captain hold $id disappeared while preserving a question"
   body=$(decode_body "$(show_field "$show" body)")
-  case "$body" in
-    *"$QUESTION_MARKER $digest"*) return 0 ;;
-  esac
-  # Command substitution already stripped any trailing newline from the body.
+  evidence=$(hold_question_evidence "$body") \
+    || fail "captain hold $id has malformed deferred-question evidence"
+  while IFS=$'\t' read -r existing_digest existing_reference; do
+    [ "$existing_digest" = "$digest" ] || continue
+    [ "$existing_reference" = "$reference" ] \
+      || fail "captain hold $id has conflicting deferred-question evidence"
+    return 0
+  done <<EOF
+$evidence
+EOF
   [ -z "$body" ] || body="${body}"$'\n'
-  body="${body}${QUESTION_MARKER} ${digest}"$'\n'"${encoded}"
+  body="${body}${QUESTION_MARKER} ${digest} ${reference}"
   tasks_axi update "$id" --body "$body" >/dev/null \
     || fail "could not preserve the attempted question on $id"
 }
 
-preserve_in_status() {  # <status-file> <key> <verb> <summary> <digest> <encoded>
-  local status_file=$1 key=$2 verb=$3 summary=$4 digest=$5 encoded=$6 rc=0
-  if status_question_evidence "$status_file" "$key" \
+preserve_in_status() {  # <status-file> <key> <verb> <summary> <digest> <reference>
+  local status_file=$1 key=$2 verb=$3 summary=$4 digest=$5 reference=$6 evidence rc=0
+  evidence=$(status_question_evidence "$status_file" "$key") \
+    || fail "cannot read existing deferred-question evidence for [key=$key]"
+  if printf '%s\n' "$evidence" \
       | LC_ALL=C awk -F '\t' -v digest="$digest" '$1 == digest { found = 1 } END { exit found ? 0 : 1 }'; then
     return 0
   fi
   fm_wake_status_append_self_announced "$STATE" "$status_file" \
-    "$verb [key=$key]: $summary | $QUESTION_MARKER $digest $encoded" || rc=$?
+    "$verb [key=$key]: $summary | $QUESTION_MARKER $digest $reference" || rc=$?
   [ "$rc" -ne 2 ] || fail "cannot preserve the attempted question for [key=$key]"
 }
 
@@ -524,7 +606,7 @@ finish_status_transfer() {  # <origin> <key> <hold-id> <status-file>
 
 command_preserve_question() {
   local origin=${1:-} key=${2:-} state='' question_file='' \
-    id status_file meta question digest encoded summary verb
+    id status_file meta question digest reference summary verb
   [ "$#" -ge 2 ] || { usage >&2; exit 2; }
   shift 2
   while [ "$#" -gt 0 ]; do
@@ -545,10 +627,7 @@ command_preserve_question() {
   [ -f "$question_file" ] || fail "question file does not exist: $question_file"
   question=$(cat "$question_file")
   [ -n "$question" ] || fail "question file must not be empty"
-  [ "$(printf '%s' "$question" | LC_ALL=C wc -c | tr -d ' ')" -le "$QUESTION_MAX_BYTES" ] \
-    || fail "question file exceeds $QUESTION_MAX_BYTES bytes"
   digest=$(sha256_text "$question")
-  encoded=$(encode_question "$question")
   summary=$(question_summary "$question")
   [ -n "$summary" ] || summary="deferred away-mode approval question"
 
@@ -565,7 +644,8 @@ command_preserve_question() {
   status_file="$STATE/$origin.status"
 
   if hold_is_active "$id"; then
-    preserve_in_hold "$id" "$digest" "$encoded"
+    reference=$(activate_question_evidence "$origin" "$digest" "$question")
+    preserve_in_hold "$id" "$digest" "$reference"
     finish_status_transfer "$origin" "$key" "$id" "$status_file"
     printf 'preserved: hold %s\n' "$id"
     return 0
@@ -573,7 +653,8 @@ command_preserve_question() {
 
   verb=$(status_open_verb "$status_file" "$key")
   if [ -n "$verb" ]; then
-    preserve_in_status "$status_file" "$key" "$verb" "$summary" "$digest" "$encoded"
+    reference=$(activate_question_evidence "$origin" "$digest" "$question")
+    preserve_in_status "$status_file" "$key" "$verb" "$summary" "$digest" "$reference"
     printf 'preserved: status %s/%s\n' "$origin" "$key"
     return 0
   fi
@@ -584,7 +665,8 @@ command_preserve_question() {
   command_hold "$origin" "$key" \
     --title "Deferred away-mode approval question $key" \
     --reason "deferred away-mode approval question awaiting captain decision" >/dev/null
-  preserve_in_hold "$id" "$digest" "$encoded"
+  reference=$(activate_question_evidence "$origin" "$digest" "$question")
+  preserve_in_hold "$id" "$digest" "$reference"
   printf 'preserved: hold %s\n' "$id"
 }
 
@@ -609,23 +691,50 @@ command_preserve_question() {
 #   chunk     <item> <variant> <chunk> <chunks> <base64>
 #   limitation <text>
 status_question_evidence() {  # <status-file> <decision-key>
-  LC_ALL=C awk -v key="[key=$2]:" -v marker="$QUESTION_MARKER" '
-    index($0, key) > 0 {
-      for (i = 1; i + 2 <= NF; i++) {
-        if ($i == marker) print $(i + 1) "\t" $(i + 2)
-      }
-    }
-  ' "$1" 2>/dev/null || true
+  local status_file=$1 wanted=$2 line key evidence digest reference complete=1
+  [ -f "$status_file" ] && [ ! -L "$status_file" ] && [ -r "$status_file" ] || return 1
+  while IFS= read -r line || [ -n "$line" ]; do
+    key=$(_fm_decision_key "$line") || continue
+    [ "$key" = "$wanted" ] || continue
+    case "$line" in
+      *" | $QUESTION_MARKER "*) evidence=${line##*" | $QUESTION_MARKER "} ;;
+      *) continue ;;
+    esac
+    digest=${evidence%% *}
+    reference=${evidence#* }
+    if [ -z "$digest" ] || [ "$reference" = "$evidence" ] || [ -z "$reference" ] \
+        || [ "${reference#* }" != "$reference" ]; then
+      complete=0
+      continue
+    fi
+    printf '%s\t%s\n' "$digest" "$reference"
+  done < "$status_file"
+  [ "$complete" -eq 1 ]
 }
 
-status_question_variants() {  # <status-file> <decision-key>
-  status_question_evidence "$1" "$2" | LC_ALL=C cut -f2
+hold_question_evidence() {  # <decoded-hold-body>
+  local line marker digest reference extra complete=1
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in "$QUESTION_MARKER "*) ;; *) continue ;; esac
+    IFS=' ' read -r marker digest reference extra <<EOF
+$line
+EOF
+    if [ "$marker" != "$QUESTION_MARKER" ] || [ -z "$digest" ] \
+        || [ -z "$reference" ] || [ -n "${extra:-}" ]; then
+      complete=0
+      continue
+    fi
+    printf '%s\t%s\n' "$digest" "$reference"
+  done <<EOF
+$1
+EOF
+  [ "$complete" -eq 1 ]
 }
 
-hold_question_variants() {  # <decoded-hold-body>
-  printf '%s\n' "$1" | LC_ALL=C awk -v marker="$QUESTION_MARKER" '
-    $1 == marker && NF == 2 { if ((getline blob) > 0) print blob }
-  '
+encode_question_reference() {  # <origin> <digest> <reference>
+  local path
+  path=$(question_evidence_path "$1" "$2" "$3") || return 1
+  LC_ALL=C base64 < "$path" | LC_ALL=C tr -d '\n'
 }
 
 emit_question_chunks() {  # <item> <variant> <encoded>
@@ -642,7 +751,7 @@ EOF
 
 emit_question_records() {
   local held_ids='' held_rows='' id show body origin key status_file open summary \
-    item=0 variant encoded seen=$'\n' pair complete=1
+    item=0 variant digest reference encoded evidence seen=$'\n' pair complete=1
 
   if fm_tasks_axi_compatible 2>/dev/null; then
     if held_rows=$(tasks_axi list --state held --kind captain 2>/dev/null); then
@@ -672,19 +781,35 @@ emit_question_records() {
     seen="${seen}${origin}/${key}"$'\n'
     printf 'decision\t%s\t%s\t%s\thold\t%s\n' "$item" "$origin" "$key" "$(show_field "$show" title)"
     variant=0
-    while IFS= read -r encoded; do
-      [ -n "$encoded" ] || continue
+    evidence=''
+    if ! evidence=$(hold_question_evidence "$body"); then
+      printf 'limitation\tcaptain-decision hold %s has malformed deferred-question evidence\n' "$id"
+      complete=0
+    fi
+    while IFS=$'\t' read -r digest reference; do
+      [ -n "$digest" ] && [ -n "$reference" ] || continue
+      if ! encoded=$(encode_question_reference "$origin" "$digest" "$reference"); then
+        printf 'limitation\tcaptain-decision hold %s has unreadable deferred-question evidence %s\n' "$id" "$reference"
+        complete=0
+        continue
+      fi
       variant=$((variant + 1))
       emit_question_chunks "$item" "$variant" "$encoded"
     done <<EOF
-$(hold_question_variants "$body")
+$evidence
 EOF
   done
 
   for status_file in "$STATE"/*.status; do
-    [ -f "$status_file" ] && [ ! -L "$status_file" ] || continue
+    [ -e "$status_file" ] || [ -L "$status_file" ] || continue
     origin=$(basename "$status_file")
     origin=${origin%.status}
+    if [ ! -f "$status_file" ] || [ -L "$status_file" ] || [ ! -r "$status_file" ] \
+        || ! sed -n '' "$status_file" >/dev/null 2>&1; then
+      printf 'limitation\tstatus owner %s could not be read safely\n' "$origin"
+      complete=0
+      continue
+    fi
     open=$(status_open_decisions "$status_file")
     [ -n "$open" ] || continue
     while IFS=$'\t' read -r key _verb summary; do
@@ -696,12 +821,22 @@ EOF
       summary=${summary%% | "$QUESTION_MARKER" *}
       printf 'decision\t%s\t%s\t%s\tstatus\t%s\n' "$item" "$origin" "$key" "$summary"
       variant=0
-      while IFS= read -r encoded; do
-        [ -n "$encoded" ] || continue
+      evidence=''
+      if ! evidence=$(status_question_evidence "$status_file" "$key"); then
+        printf 'limitation\tstatus owner %s/%s has malformed deferred-question evidence\n' "$origin" "$key"
+        complete=0
+      fi
+      while IFS=$'\t' read -r digest reference; do
+        [ -n "$digest" ] && [ -n "$reference" ] || continue
+        if ! encoded=$(encode_question_reference "$origin" "$digest" "$reference"); then
+          printf 'limitation\tstatus owner %s/%s has unreadable deferred-question evidence %s\n' "$origin" "$key" "$reference"
+          complete=0
+          continue
+        fi
         variant=$((variant + 1))
         emit_question_chunks "$item" "$variant" "$encoded"
       done <<EOF
-$(status_question_variants "$status_file" "$key")
+$evidence
 EOF
     done <<EOF
 $open
@@ -813,7 +948,8 @@ command_hold() {
 }
 
 command_complete() {
-  local origin=${1:-} meta previous='' supplied='' keys='' key status_file open raw_open key_seen=0 has_meta=0
+  local origin=${1:-} meta previous='' supplied='' keys='' key status_file open raw_open \
+    question_evidence question_digest question_reference transfer_rc key_seen=0 has_meta=0
   [ "$#" -ge 2 ] || { usage >&2; exit 2; }
   validate_slug origin-id "$origin"
   shift
@@ -874,11 +1010,16 @@ EOF
     while IFS=$'\t' read -r key _verb _summary; do
       [ -n "$key" ] || continue
       list_has_key "$keys" "$key" || continue
-      while IFS=$'\t' read -r question_digest question_encoded; do
-        [ -n "$question_digest" ] && [ -n "$question_encoded" ] || continue
-        preserve_in_hold "$(hold_id "$origin" "$key")" "$question_digest" "$question_encoded"
+      question_evidence=''
+      question_evidence=$(status_question_evidence "$status_file" "$key") \
+        || fail "cannot read deferred-question evidence for $origin/$key"
+      while IFS=$'\t' read -r question_digest question_reference; do
+        [ -n "$question_digest" ] && [ -n "$question_reference" ] || continue
+        question_evidence_path "$origin" "$question_digest" "$question_reference" >/dev/null \
+          || fail "cannot transfer unreadable deferred-question evidence for $origin/$key"
+        preserve_in_hold "$(hold_id "$origin" "$key")" "$question_digest" "$question_reference"
       done <<QUESTION_EVIDENCE
-$(status_question_evidence "$status_file" "$key")
+$question_evidence
 QUESTION_EVIDENCE
       transfer_rc=0
       fm_wake_status_append_self_announced "$STATE" "$status_file" \
@@ -1131,7 +1272,8 @@ sanitize_field() {  # <text>
 }
 
 command_answers() {
-  local origin=${1:-} source='' key answer label hold tmp err closed=0 skipped=0 reason
+  local origin=${1:-} source='' record rest key answer label hold tmp err \
+    closed=0 skipped=0 reason valid
   [ "$#" -ge 1 ] || { usage >&2; exit 2; }
   shift
   while [ "$#" -gt 0 ]; do
@@ -1148,13 +1290,27 @@ command_answers() {
   tmp=$(umask 077; mktemp "${TMPDIR:-/tmp}/fm-keyed-decision.XXXXXX") || fail "cannot stage the captain decision"
   err=$(umask 077; mktemp "${TMPDIR:-/tmp}/fm-keyed-decision-err.XXXXXX") \
     || { rm -f -- "$tmp"; fail "cannot stage the captain decision diagnostics"; }
-  while IFS=$'\t' read -r key answer label; do
-    [ -n "${key:-}" ] || continue
-    case "$key" in *[!A-Za-z0-9._-]*) continue ;; esac
-    [ "${#key}" -le 64 ] || continue
-    answer=$(sanitize_field "${answer:-}")
-    [ -n "$answer" ] || continue
-    label=$(sanitize_field "${label:-}")
+  while IFS= read -r record || [ -n "$record" ]; do
+    [ -n "$record" ] || continue
+    valid=1
+    case "$record" in
+      *$'\t'*) key=${record%%$'\t'*}; rest=${record#*$'\t'} ;;
+      *) valid=0; key=''; rest='' ;;
+    esac
+    case "$rest" in
+      *$'\t'*) answer=${rest%%$'\t'*}; label=${rest#*$'\t'} ;;
+      *) valid=0; answer=''; label='' ;;
+    esac
+    case "$label" in *$'\t'*) valid=0 ;; esac
+    case "$key" in ''|*[!A-Za-z0-9._-]*) valid=0 ;; esac
+    answer=$(sanitize_field "$answer")
+    [ -n "$answer" ] || valid=0
+    label=$(sanitize_field "$label")
+    if [ "$valid" -ne 1 ]; then
+      printf 'skipped: invalid keyed-answer record (expected decision-key, answer, and label TSV fields)\n'
+      skipped=$((skipped + 1))
+      continue
+    fi
     hold="$origin-decision-$key"
     keyed_decision_text "$source" "$key" "$answer" "$label" > "$tmp" \
       || fail "cannot stage the captain decision for $hold"

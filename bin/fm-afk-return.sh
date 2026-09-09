@@ -7,8 +7,8 @@
 #   fm-afk-return.sh check    Re-present and close the gate only after blockers resolve.
 #   fm-afk-return.sh guard    Read-only refusal while away or catch-up is pending.
 #
-# Catch-up also presents every outstanding captain decision, including each
-# approval question that away mode deferred instead of asking interactively.
+# Catch-up also presents every outstanding Droid approval question that away
+# mode deferred instead of asking interactively.
 # bin/fm-decision-hold.sh owns that union of the captain-hold and status-decision
 # owners; this script only publishes it, so presenting a question never resolves,
 # approves, or reorders one.
@@ -34,6 +34,7 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 GATE="$STATE/.afk-return-catchup"
 LOCK="$STATE/.afk-return-catchup.lock"
+DROID_DEFERRAL_MARKER="$STATE/.droid-afk-question-deferral"
 
 usage() {
   sed -n '2,7p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
@@ -139,6 +140,7 @@ print_open_questions() {
 
 clear_delivery_artifacts() {
   rm -f \
+    "$DROID_DEFERRAL_MARKER" \
     "$STATE/.subsuper-escalations" \
     "$STATE/.subsuper-escalations.since" \
     "$STATE/.subsuper-inject-wedged"
@@ -197,9 +199,11 @@ return_reconcile() {
   fi
 
   scan_open_blockers > "$blockers"
-  if ! print_open_questions > "$questions"; then
-    append_evidence lifecycle 'outstanding-question listing is incomplete; retry catch-up before ordinary work' "$evidence"
-    lifecycle_ok=0
+  if [ -e "$DROID_DEFERRAL_MARKER" ]; then
+    if ! print_open_questions > "$questions"; then
+      append_evidence lifecycle 'outstanding-question listing is incomplete; retry catch-up before ordinary work' "$evidence"
+      lifecycle_ok=0
+    fi
   fi
   if [ "$lifecycle_ok" -ne 1 ] || [ -s "$blockers" ]; then
     write_gate "$evidence" "$blockers" || { rm -f "$evidence" "$blockers" "$drain_err" "$questions"; return 1; }

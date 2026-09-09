@@ -203,6 +203,33 @@ test_identical_questions_are_preserved_for_each_status_key() {
   pass "identical status-owned questions retain evidence under each decision key"
 }
 
+test_status_evidence_uses_the_authoritative_transition_key() {
+  local home rc=0 records alpha_item beta_item actual
+  home=$(make_home status-key-association)
+  seed_task "$home" review \
+    'needs-decision [key=alpha]: choose alpha' \
+    'needs-decision [key=beta]: choose beta'
+  date +%s > "$home/state/.afk"
+
+  ask "$home" '1. [question] Should beta preserve literal [key=alpha]: text?
+[firstmate-decision origin=review key=beta state=existing]
+[option] Yes' || rc=$?
+  [ "$rc" -eq 2 ] || fail "the key-association question must be denied"
+
+  records=$(holds "$home" open-questions)
+  alpha_item=$(printf '%s\n' "$records" | awk -F '\t' '$1 == "decision" && $4 == "alpha" { print $2 }')
+  beta_item=$(printf '%s\n' "$records" | awk -F '\t' '$1 == "decision" && $4 == "beta" { print $2 }')
+  [ -n "$alpha_item" ] && [ -n "$beta_item" ] || fail "both status decisions must remain projected"
+  [ "$(printf '%s\n' "$records" | awk -F '\t' -v it="$alpha_item" '$1 == "chunk" && $2 == it { n++ } END { print n + 0 }')" -eq 0 ] \
+    || fail "beta question evidence was incorrectly projected under alpha"
+  actual=$(printf '%s\n' "$records" \
+    | awk -F '\t' -v it="$beta_item" '$1 == "chunk" && $2 == it { printf "%s", $6 }' \
+    | base64 --decode)
+  assert_contains "$actual" 'literal [key=alpha]: text' \
+    'beta lost its question text containing another key token'
+  pass "status evidence is projected only under its authoritative transition key"
+}
+
 # An unseeded review or merge question has no prior record, so it becomes an
 # ordinary captain hold under its real origin - never a synthetic ledger.
 test_unseeded_binding_creates_an_ordinary_captain_hold() {
@@ -296,6 +323,29 @@ test_open_questions_reports_incomplete_hold_enumeration() {
   pass "open-questions reports incomplete captain-hold enumeration"
 }
 
+test_open_questions_reports_unsafe_status_owners() {
+  local home out rc=0
+  home=$(make_home unsafe-status-enumeration)
+  seed_task "$home" review 'needs-decision [key=choice]: choose safely'
+  ln -s review.status "$home/state/unsafe.status"
+
+  out=$(holds "$home" open-questions --render 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "open-questions reported success while a symlinked status owner was skipped"
+  assert_contains "$out" 'status owner unsafe could not be read safely' \
+    'the unsafe status owner was omitted without a limitation'
+
+  rm -f "$home/state/unsafe.status"
+  : > "$home/state/unreadable.status"
+  chmod 000 "$home/state/unreadable.status"
+  rc=0
+  out=$(holds "$home" open-questions --render 2>&1) || rc=$?
+  chmod 600 "$home/state/unreadable.status"
+  [ "$rc" -ne 0 ] || fail "open-questions reported success while an unreadable status owner was skipped"
+  assert_contains "$out" 'status owner unreadable could not be read safely' \
+    'the unreadable status owner was omitted without a limitation'
+  pass "unsafe and unreadable status owners make question projection incomplete"
+}
+
 # Ownership must come from the caller. Anything less is rejected loudly rather
 # than guessed from a topic, the question text, or the session.
 test_unbound_and_malformed_questions_are_rejected_without_mutation() {
@@ -342,6 +392,17 @@ test_unbound_and_malformed_questions_are_rejected_without_mutation() {
     'the extra-token rejection did not name the strict binding requirement'
   [ "$before" = "$(cksum < "$home/state/review.status")" ] \
     || fail "an extra binding token mutated the durable decision owner"
+
+  rc=0
+  ask "$home" '1. [question] Keep the fixture parked?
+[firstmate-decision origin=review key=helper-versions state=existing]
+[firstmate-decision origin=review key=helper-versions state=existing] trailing
+[option] Keep parked' || rc=$?
+  assert_denied "$rc" "$home" "a question with one valid and one malformed binding candidate"
+  assert_contains "$(deny_message "$home")" 'multiple [firstmate-decision] candidate lines' \
+    'the malformed second binding candidate was not counted'
+  [ "$before" = "$(cksum < "$home/state/review.status")" ] \
+    || fail "a malformed second binding candidate mutated the durable decision owner"
 
   rc=0
   ask "$home" '1. [question] Stale binding?
@@ -488,6 +549,88 @@ test_return_restores_askuser_without_approving_anything() {
   pass "a real return restores AskUser, approves nothing, and leaves linked workers untouched"
 }
 
+test_oversized_question_is_parked_and_returned_losslessly() {
+  local home rc=0 large expected records item actual line_max evidence_file
+  home=$(make_home oversized-question)
+  seed_task "$home" review 'needs-decision [key=oversized]: inspect the complete request'
+  date +%s > "$home/state/.afk"
+  large=$(awk 'BEGIN { for (i = 0; i < 900; i++) printf "oversized café segment %d ", i }')
+
+  ask "$home" "1. [question] $large
+[firstmate-decision origin=review key=oversized state=existing]
+[option] Preserve every byte" || rc=$?
+  [ "$rc" -eq 2 ] || fail "the oversized away-mode question must be denied and parked"
+  assert_not_contains "$(deny_message "$home")" 'OWNER FAULT' \
+    'the oversized owner-bound question was rejected instead of parked'
+
+  line_max=$(LC_ALL=C awk '{ if (length > max) max = length } END { print max + 0 }' "$home/state/review.status")
+  [ "$line_max" -le 512 ] || fail "the status owner stored an unbounded question line ($line_max bytes)"
+  set -- "$home/data/review"/droid-afk-question-*
+  [ "$#" -eq 1 ] && [ -f "$1" ] || fail "the oversized question was not parked in one durable per-origin file"
+  evidence_file=$1
+  [ "$(LC_ALL=C wc -c < "$evidence_file" | tr -d ' ')" -gt 8192 ] \
+    || fail "the parked oversized evidence did not retain more than 8192 bytes"
+
+  records=$(holds "$home" open-questions)
+  item=$(printf '%s\n' "$records" | awk -F '\t' '$1 == "decision" && $4 == "oversized" { print $2 }')
+  [ -n "$item" ] || fail "the oversized question is missing from the public projection"
+  actual=$(printf '%s\n' "$records" \
+    | awk -F '\t' -v it="$item" '$1 == "chunk" && $2 == it { printf "%s", $6 }' \
+    | base64 --decode)
+  expected=$(printf '1. [question] %s\n[option] Preserve every byte' "$large")
+  [ "$actual" = "$expected" ] || fail "the parked oversized question did not round-trip losslessly"
+  pass "oversized questions use bounded owner references and return losslessly"
+}
+
+test_non_droid_return_does_not_project_deferred_questions() {
+  local home out
+  home=$(make_home non-droid-return)
+  seed_task "$home" review 'working: ordinary non-Droid work'
+  holds "$home" hold review ordinary-choice --title 'Ordinary captain choice' \
+    --reason 'captain decision pending' >/dev/null || fail "could not seed an ordinary captain hold"
+  date +%s > "$home/state/.afk"
+
+  out=$(FM_TASKS_AXI_COMPATIBLE=0 run_return "$home") \
+    || fail "a non-Droid return was gated by the Droid question projection: $out"
+  assert_not_contains "$out" 'outstanding decisions limitation' \
+    'a non-Droid return received the Droid projection limitation'
+  assert_not_contains "$out" 'Ordinary captain choice' \
+    'a non-Droid return received the Droid deferred-question listing'
+  [ ! -e "$home/state/.afk-return-catchup" ] \
+    || fail "a non-Droid return stayed gated on Droid-only owner enumeration"
+  pass "non-Droid return behavior is unchanged by Droid question deferral"
+}
+
+test_derived_keys_close_and_invalid_answer_records_fail_loudly() {
+  local home rc=0 records key out show
+  home=$(make_home derived-answer)
+  seed_task "$home" release 'working: release prep'
+  date +%s > "$home/state/.afk"
+  ask "$home" '1. [question] Ship after checks pass?
+[firstmate-decision origin=release key=derive state=unseeded]
+[option] Approve' || rc=$?
+  [ "$rc" -eq 2 ] || fail "the derived-key question must be denied and filed"
+
+  records=$(holds "$home" open-questions)
+  key=$(printf '%s\n' "$records" | awk -F '\t' '$1 == "decision" && $4 ~ /^droid-askuser-/ { print $4 }')
+  [ "${#key}" -eq 78 ] || fail "the accepted derived key did not retain its 78-character identity"
+  printf '%s\tapprove\tApprove\n' "$key" \
+    | holds "$home" answers release --source return >/dev/null \
+    || fail "the shared keyed-answer intake rejected a valid derived key"
+  show=$( (cd "$home" && tasks-axi show "release-decision-$key" --full) )
+  assert_contains "$show" 'state: done' 'the valid derived key did not close its hold'
+
+  rc=0
+  out=$(printf 'bad key\tapprove\tApprove\n' \
+    | holds "$home" answers release --source return 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "an invalid keyed-answer record was silently reported as success"
+  assert_contains "$out" 'skipped: invalid keyed-answer record' \
+    'invalid keyed-answer input did not report a nonzero skip'
+  assert_contains "$out" 'answers: closed=0 skipped=1 origin=release' \
+    'invalid keyed-answer input reported the wrong closure totals'
+  pass "derived keys close normally and invalid answer records fail loudly"
+}
+
 # Answering a returned question must close it through the owner's own existing
 # close path, and only then may it leave the outstanding listing.
 test_answers_close_through_the_existing_owner_paths() {
@@ -529,13 +672,18 @@ test_existing_status_owner_receives_the_deferred_question
 test_repeat_notifications_and_authorized_progress_keep_one_identity
 test_reworded_attempt_is_kept_as_another_variant
 test_identical_questions_are_preserved_for_each_status_key
+test_status_evidence_uses_the_authoritative_transition_key
 test_unseeded_binding_creates_an_ordinary_captain_hold
 test_transferred_hold_wins_and_status_is_never_reopened
 test_status_question_moves_to_hold_before_transfer_closes
 test_open_questions_reports_incomplete_hold_enumeration
+test_open_questions_reports_unsafe_status_owners
 test_unbound_and_malformed_questions_are_rejected_without_mutation
 test_leading_preamble_is_not_mistaken_for_a_question
 test_multi_origin_questionnaire_reaches_each_owner
 test_return_presents_every_question_losslessly
 test_return_restores_askuser_without_approving_anything
+test_oversized_question_is_parked_and_returned_losslessly
+test_non_droid_return_does_not_project_deferred_questions
+test_derived_keys_close_and_invalid_answer_records_fail_loudly
 test_answers_close_through_the_existing_owner_paths

@@ -120,9 +120,18 @@ for BLOCK in "$WORK"/block.*; do
   # skipped rather than rejected for carrying no binding.
   grep -q '\[question\]\|^\[firstmate-decision[[:space:]]' "$BLOCK" || continue
   INDEX=$((INDEX + 1))
+  BINDING_CANDIDATES=$(grep -c '^\[firstmate-decision' "$BLOCK" || true)
+  if [ "$BINDING_CANDIDATES" -ne 1 ]; then
+    if [ "$BINDING_CANDIDATES" -eq 0 ]; then
+      REJECTED="${REJECTED}question $INDEX has no [firstmate-decision origin=<origin> key=<key|derive> state=existing|unseeded] line; "
+    else
+      REJECTED="${REJECTED}question $INDEX has multiple [firstmate-decision] candidate lines; require exactly one origin=, one key=, and one state= field with no extra tokens; "
+    fi
+    continue
+  fi
   BINDING=$(sed -n 's/^\[firstmate-decision[[:space:]]\{1,\}\(.*\)\]$/\1/p' "$BLOCK")
   if [ -z "$BINDING" ]; then
-    REJECTED="${REJECTED}question $INDEX has no [firstmate-decision origin=<origin> key=<key|derive> state=existing|unseeded] line; "
+    REJECTED="${REJECTED}question $INDEX has a malformed [firstmate-decision] line; require exactly one origin=, one key=, and one state= field with no extra tokens; "
     continue
   fi
   if [ "$(printf '%s\n' "$BINDING" | wc -l | tr -d ' ')" -ne 1 ]; then
