@@ -7,6 +7,12 @@
 #   fm-afk-return.sh check    Re-present and close the gate only after blockers resolve.
 #   fm-afk-return.sh guard    Read-only refusal while away or catch-up is pending.
 #
+# Catch-up also presents every outstanding captain decision, including each
+# approval question that away mode deferred instead of asking interactively.
+# bin/fm-decision-hold.sh owns that union of the captain-hold and status-decision
+# owners; this script only publishes it, so presenting a question never resolves,
+# approves, or reorders one.
+#
 # `blocked:` is the crewmate protocol's firstmate-actionable verb. A live task's
 # open blocked event must be remediated and closed with `resolved [key=...]`, or
 # explicitly reclassified in the status stream with a durable reason, before an
@@ -120,6 +126,13 @@ print_blockers() {  # <file>
   done < "$file"
 }
 
+# The deferred-question listing is presentation only, so a projection failure is
+# recorded as catch-up evidence rather than silently dropping the questions.
+print_open_questions() {
+  "$SCRIPT_DIR/fm-decision-hold.sh" open-questions --render \
+    || printf 'outstanding decisions limitation: the outstanding-question listing could not be projected; run bin/fm-decision-hold.sh open-questions --render before ordinary work\n'
+}
+
 clear_delivery_artifacts() {
   rm -f \
     "$STATE/.subsuper-escalations" \
@@ -183,12 +196,14 @@ return_reconcile() {
     write_gate "$evidence" "$blockers" || { rm -f "$evidence" "$blockers" "$drain_err"; return 1; }
     printf 'fm-afk-return: catch-up must finish before the captain request\n' >&2
     print_evidence "$GATE" >&2
+    print_open_questions >&2
     print_blockers "$GATE" >&2
     printf 'fm-afk-return: handle each blocker now, or close it with resolved [key=...] and append a durable reclassification reason, then run bin/fm-afk-return.sh check\n' >&2
     rm -f "$evidence" "$blockers" "$drain_err"
     return 3
   fi
 
+  print_open_questions
   if ! print_evidence "$evidence"; then
     append_evidence lifecycle 'recovery evidence publication failed; retry catch-up before ordinary work' "$evidence"
     write_gate "$evidence" "$blockers" || { rm -f "$evidence" "$blockers" "$drain_err"; return 1; }

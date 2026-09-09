@@ -333,13 +333,14 @@ No Droid-only composer, submit, or background-delivery owner was added.
 
 ### AFK approval deferral
 
-Date: 2026-09-04.
-Platform: macOS arm64, Droid 0.212.1, Herdr 0.8.0.
+Date: 2026-09-09.
+Platform: macOS arm64, Droid 0.215.1, Herdr 0.8.0.
 
 The same guarded non-default Herdr lab was refreshed with the tracked Droid `AskUser` PreToolUse registration.
-While `state/.afk` existed, a real Droid `AskUser` call reached the exact matcher once, exited through the tracked deny guard without an answer, and the same turn completed an independently authorized file action.
-The durable keyed decision remained open and the AFK flag remained present.
-A subsequent real unmarked return ran `fm-afk-return.sh`, printed the keyed decision during ordered catch-up, removed the AFK flag, and then displayed the real Droid questionnaire without selecting either option.
+While `state/.afk` existed, a real Droid `AskUser` call carrying the owner-bearing `[firstmate-decision origin=... key=... state=existing]` line reached the exact matcher once, exited through the tracked deny guard without an answer, and the same turn completed an independently authorized file action.
+The attempted question was filed with the status decision its binding named, stayed one open identity, and was recoverable in full from that owner without its transport binding line.
+A second real call that deliberately named no owner was denied and filed nothing, leaving the durable decision bytes unchanged.
+A subsequent real unmarked return ran `fm-afk-return.sh`, presented the outstanding question during ordered catch-up, removed the AFK flag, and then displayed the real Droid questionnaire without selecting either option.
 The test cancelled that isolated questionnaire and tore down the named lab through `fm-herdr-lab.sh`; the live default Herdr session was unchanged.
 
 The exact command was:
@@ -353,17 +354,29 @@ FM_DROID_AFK_HERDR_E2E=1 \
 Its approval-specific results were:
 
 ```text
-ok - Droid denies interactive approval during AFK, grants no answer, and continues independently authorized work
+ok - Droid denies interactive approval during AFK, files it with its bound owner, and continues independently authorized work
+ok - a live question naming no owner is rejected without inventing or mutating one
 ok - a real unmarked Droid return runs ordered catch-up and presents the outstanding question first
 ok - Droid AskUser becomes available on return without an automatic approval
-ok - Droid 0.212.1 / Herdr away-mode live verification complete
+ok - Droid 0.215.1 / Herdr away-mode live verification complete
+ok - the isolated live probe left Droid's runtime-wide hook registration unchanged
 ok - guarded teardown deletes the isolated Herdr session after the scenario process exits
 ```
 
+`PreToolUse` supplies the questionnaire as one freeform `.tool_input.questionnaire` string with no task, origin, or decision-key field, so the owner binding is transported inside that text and a question without one cannot be filed at all.
+The run also reported this observation, which is why the settings axis asserts the hook subtree rather than whole-file bytes:
+
+```text
+# observed: a real Droid launch rewrote vendor-managed fields in ~/.factory/settings.json; the hook subtree above is the isolation claim
+```
+
+A counterfactual `droid --version` left that file byte-identical, so the rewrite follows a real interactive launch and is vendor-managed rather than leakage from the probe.
+Only presence, digests, and the hook subtree were read; no setting, token, or credential value was inspected.
+
 The portable counterfactual removes only `state/.afk` and proves the guard becomes silent with exit 0; its linked-worktree negative control proves the primary-only scope remains inert for workers.
-Repeated AFK calls also leave the original status bytes and both durable decision keys unchanged.
+Repeated AFK calls leave the durable decision bytes and every question digest unchanged.
 A direct live non-Droid `AskUser` comparison was not run, so this record does not claim interactive-question parity with another harness.
-The Factory hook reference was unavailable through the browser during this refresh; the exact `AskUser` tool token and deny transport were instead confirmed from the installed Droid binary and the isolated live hook payload.
+Reliable model emission of a valid binding in ordinary operation is likewise not established: the native tool accepts an omitted or malformed binding exactly as readily as a valid one, which is why the guard rejects those loudly instead of inferring an owner.
 
 ## Refresh
 

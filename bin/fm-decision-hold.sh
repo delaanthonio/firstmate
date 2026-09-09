@@ -31,6 +31,9 @@
 #   fm-decision-hold.sh binding <source-id>
 #   fm-decision-hold.sh decline <origin-id> <decision-key> --decision-file <path>
 #   fm-decision-hold.sh repair <origin-id> <decision-key> --decision-file <path>
+#   fm-decision-hold.sh preserve-question <origin-id> <decision-key> \
+#     --state existing|unseeded --question-file <path> [--repo <repo>]
+#   fm-decision-hold.sh open-questions [--render]
 #
 # `complete` is the shared investigation and visual-review completion gate.
 # `--none` is an explicit semantic attestation that the just-reviewed surface has
@@ -382,6 +385,349 @@ verify_resolution_identity() {
     || fail "captain hold $id records a different captain decision"
   [ "$recorded_routes" = "$routed_csv" ] \
     || fail "captain hold $id records different routed work"
+}
+
+# --- Deferred away-mode approval questions -------------------------------
+#
+# `preserve-question` is the ONE idempotent operation that files an approval
+# question attempted while away mode is active. The caller supplies the
+# authoritative `(origin,key)` binding; this command never derives one from
+# question prose, a questionnaire topic, session identity, or a working
+# directory. It routes the attempt to whichever owner already holds that
+# decision - the captain hold when one is active, otherwise the origin's own
+# status ledger - and creates an ordinary captain hold only when the binding
+# explicitly says the decision is unseeded. A binding that matches no owner
+# while claiming `existing` is rejected, because silently creating a decision
+# the caller believed already existed would hide the real one.
+#
+# Evidence is digest-addressed, so an exact replay after a restart, a
+# compaction, or a repeated operational notification finds its own digest
+# already stored and changes nothing, while a substantively different attempt
+# under the same key is retained as another variant of one unresolved decision.
+# A created hold's title is derived from the key rather than the question
+# wording, so a reworded variant can never collide with the stable identity.
+QUESTION_MARKER='droid-afk-question'
+QUESTION_MAX_BYTES=8192
+QUESTION_CHUNK_CHARS=800
+
+BASE64_DECODE_FLAG=''
+base64_decode_flag() {
+  if [ -z "$BASE64_DECODE_FLAG" ]; then
+    if printf 'eA==' | base64 -d >/dev/null 2>&1; then
+      BASE64_DECODE_FLAG='-d'
+    else
+      BASE64_DECODE_FLAG='-D'
+    fi
+  fi
+  printf '%s' "$BASE64_DECODE_FLAG"
+}
+
+# Base64 keeps an arbitrary question block on one status line and out of every
+# quoting, escaping, and multibyte boundary this repo's ledgers care about.
+encode_question() {  # <text>
+  printf '%s' "$1" | LC_ALL=C base64 | LC_ALL=C tr -d '\n'
+}
+
+decode_question() {  # <encoded>
+  printf '%s' "$1" | LC_ALL=C base64 "$(base64_decode_flag)"
+}
+
+# tasks-axi renders a body containing whitespace or a quote as one escaped and
+# quoted line. Decode it back to the exact stored bytes, refusing an escape this
+# writer never produces rather than silently corrupting a hand-edited body.
+decode_body() {  # <rendered-body-field>
+  local raw=$1 rc=0 out
+  case "$raw" in
+    ''|'""') printf ''; return 0 ;;
+    '"'*'"') raw=${raw#\"}; raw=${raw%\"} ;;
+    *) printf '%s' "$raw"; return 0 ;;
+  esac
+  out=$(printf '%s' "$raw" | LC_ALL=C awk '
+    {
+      n = length($0)
+      for (i = 1; i <= n; i++) {
+        c = substr($0, i, 1)
+        if (c != "\\") { printf "%s", c; continue }
+        i++
+        e = substr($0, i, 1)
+        if (e == "n") printf "\n"
+        else if (e == "t") printf "\t"
+        else if (e == "\"") printf "\""
+        else if (e == "\\") printf "\\"
+        else exit 3
+      }
+    }') || rc=$?
+  [ "$rc" -eq 0 ] || fail "captain hold body carries an unsupported escape sequence"
+  printf '%s' "$out"
+}
+
+hold_is_active() {  # <hold-id>
+  local show=''
+  show=$(task_show "$1") || return 1
+  [ "$(show_field "$show" state)" = queued ] || return 1
+  [ "$(show_field "$show" held)" = yes ] || return 1
+  [ "$(show_field "$show" kind)" = captain ] || return 1
+  [ "$(show_field "$show" hold_kind)" = captain ] || return 1
+  return 0
+}
+
+status_open_verb() {  # <status-file> <decision-key>
+  status_open_decisions "$1" | LC_ALL=C awk -F '\t' -v k="$2" '$1 == k { print $2; exit }'
+}
+
+# The question's own first line, for the capped ordinary drain view only. The
+# lossless block always travels in the encoded evidence beside it, so this
+# summary is never the record.
+question_summary() {  # <question-text>
+  local summary
+  summary=$(printf '%s\n' "$1" | sed -n '1p' | LC_ALL=C tr '\t\r' '  ')
+  printf '%s' "$summary"
+}
+
+preserve_in_hold() {  # <hold-id> <digest> <encoded>
+  local id=$1 digest=$2 encoded=$3 show body
+  show=$(task_show "$id") || fail "captain hold $id disappeared while preserving a question"
+  body=$(decode_body "$(show_field "$show" body)")
+  case "$body" in
+    *"$QUESTION_MARKER $digest"*) return 0 ;;
+  esac
+  # Command substitution already stripped any trailing newline from the body.
+  [ -z "$body" ] || body="${body}"$'\n'
+  body="${body}${QUESTION_MARKER} ${digest}"$'\n'"${encoded}"
+  tasks_axi update "$id" --body "$body" >/dev/null \
+    || fail "could not preserve the attempted question on $id"
+}
+
+preserve_in_status() {  # <status-file> <key> <verb> <summary> <digest> <encoded>
+  local status_file=$1 key=$2 verb=$3 summary=$4 digest=$5 encoded=$6 rc=0
+  ! grep -Fq "$QUESTION_MARKER $digest" "$status_file" 2>/dev/null || return 0
+  fm_wake_status_append_self_announced "$STATE" "$status_file" \
+    "$verb [key=$key]: $summary | $QUESTION_MARKER $digest $encoded" || rc=$?
+  [ "$rc" -ne 2 ] || fail "cannot preserve the attempted question for [key=$key]"
+}
+
+# An interrupted status-to-hold transfer leaves both a durable hold and a raw
+# open status key. The hold is authoritative, so finish the established transfer
+# instead of ever reopening status - fm-send.sh resolves status first, so a
+# reopened duplicate would swallow the answer the real hold is waiting for.
+finish_status_transfer() {  # <origin> <key> <hold-id> <status-file>
+  local origin=$1 key=$2 id=$3 status_file=$4 rc=0
+  [ -f "$status_file" ] || return 0
+  [ -n "$(status_open_verb "$status_file" "$key")" ] || return 0
+  fm_wake_status_append_self_announced "$STATE" "$status_file" \
+    "captain-held [key=$key]: tracked by $id" || rc=$?
+  [ "$rc" -ne 2 ] || fail "cannot finish the captain-held transfer for $origin/$key"
+}
+
+command_preserve_question() {
+  local origin=${1:-} key=${2:-} state='' question_file='' repo='' \
+    id status_file question digest encoded summary verb
+  [ "$#" -ge 2 ] || { usage >&2; exit 2; }
+  shift 2
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --state) shift; state=${1:-} ;;
+      --question-file) shift; question_file=${1:-} ;;
+      --repo) shift; repo=${1:-} ;;
+      *) usage >&2; exit 2 ;;
+    esac
+    shift
+  done
+  validate_slug origin-id "$origin"
+  validate_slug decision-key "$key"
+  case "$state" in
+    existing|unseeded) ;;
+    *) fail "--state must be existing or unseeded" ;;
+  esac
+  [ -n "$question_file" ] || fail "--question-file is required"
+  [ -f "$question_file" ] || fail "question file does not exist: $question_file"
+  question=$(cat "$question_file")
+  [ -n "$question" ] || fail "question file must not be empty"
+  [ "$(printf '%s' "$question" | LC_ALL=C wc -c | tr -d ' ')" -le "$QUESTION_MAX_BYTES" ] \
+    || fail "question file exceeds $QUESTION_MAX_BYTES bytes"
+  digest=$(sha256_text "$question")
+  encoded=$(encode_question "$question")
+  summary=$(question_summary "$question")
+  [ -n "$summary" ] || summary="deferred away-mode approval question"
+
+  require_tasks_axi
+  origin_exists_here "$origin" || fail "origin $origin is not owned by the active home $FM_HOME"
+  id=$(hold_id "$origin" "$key")
+  status_file="$STATE/$origin.status"
+
+  if hold_is_active "$id"; then
+    preserve_in_hold "$id" "$digest" "$encoded"
+    finish_status_transfer "$origin" "$key" "$id" "$status_file"
+    printf 'preserved: hold %s\n' "$id"
+    return 0
+  fi
+
+  verb=$(status_open_verb "$status_file" "$key")
+  if [ -n "$verb" ]; then
+    preserve_in_status "$status_file" "$key" "$verb" "$summary" "$digest" "$encoded"
+    printf 'preserved: status %s/%s\n' "$origin" "$key"
+    return 0
+  fi
+
+  [ "$state" = unseeded ] || fail \
+    "binding claims state=existing but $origin/$key has no active captain hold and no open status decision; re-attempt with the owner's real key or state=unseeded"
+
+  command_hold "$origin" "$key" \
+    --title "Deferred away-mode approval question $key" \
+    --reason "deferred away-mode approval question awaiting captain decision" \
+    ${repo:+--repo "$repo"} >/dev/null
+  preserve_in_hold "$id" "$digest" "$encoded"
+  printf 'preserved: hold %s\n' "$id"
+}
+
+# --- Outstanding-question projection --------------------------------------
+#
+# `open-questions` is a read-only union of the two owners, for the away-mode
+# return catch-up to present. It is a projection, never a third source of truth.
+#
+# It reads the RAW status fold rather than origin_open_decisions, because a
+# worker that legitimately continued independently authorized work, or that
+# later reached a terminal state, must not make its unanswered question vanish
+# from the captain's return listing.
+#
+# Rows are keyed by `(origin,key)` and an active captain hold wins, so an
+# interrupted transfer still presents exactly one item. Preserved question
+# blocks are emitted as base64 chunks: concatenating a variant's chunks in
+# order and decoding reproduces the stored bytes exactly, so no cap, no
+# multibyte boundary, and no omission can corrupt a returned question.
+#
+# Records, TAB-separated:
+#   decision  <item> <origin> <key> <owner> <summary>
+#   chunk     <item> <variant> <chunk> <chunks> <base64>
+#   limitation <text>
+status_question_variants() {  # <status-file> <decision-key>
+  LC_ALL=C awk -v key="[key=$2]:" -v marker="$QUESTION_MARKER " '
+    index($0, key) > 0 && index($0, marker) > 0 { print $NF }
+  ' "$1" 2>/dev/null || true
+}
+
+hold_question_variants() {  # <decoded-hold-body>
+  printf '%s\n' "$1" | LC_ALL=C awk -v marker="$QUESTION_MARKER" '
+    $1 == marker && NF == 2 { if ((getline blob) > 0) print blob }
+  '
+}
+
+emit_question_chunks() {  # <item> <variant> <encoded>
+  local item=$1 variant=$2 encoded=$3 total index=0 chunk
+  total=$(printf '%s' "$encoded" | LC_ALL=C fold -w "$QUESTION_CHUNK_CHARS" | LC_ALL=C awk 'END { print NR }')
+  [ "$total" -gt 0 ] || total=1
+  while IFS= read -r chunk || [ -n "$chunk" ]; do
+    index=$((index + 1))
+    printf 'chunk\t%s\t%s\t%s\t%s\t%s\n' "$item" "$variant" "$index" "$total" "$chunk"
+  done <<EOF
+$(printf '%s' "$encoded" | LC_ALL=C fold -w "$QUESTION_CHUNK_CHARS")
+EOF
+}
+
+emit_question_records() {
+  local held_ids='' id show body origin key status_file open summary \
+    item=0 variant encoded seen=$'\n' pair
+
+  if fm_tasks_axi_compatible 2>/dev/null; then
+    held_ids=$(tasks_axi list --state held --kind captain 2>/dev/null \
+      | LC_ALL=C awk -F ',' '/^  [A-Za-z0-9._-]+,/ { sub(/^  /, "", $1); print $1 }' || true)
+  else
+    printf 'limitation\tcompatible tasks-axi is unavailable; captain-decision holds were not read\n'
+  fi
+
+  for id in $held_ids; do
+    show=$(task_show "$id") || continue
+    body=$(decode_body "$(show_field "$show" body)")
+    origin=$(printf '%s\n' "$body" | sed -n 's/^Origin: //p' | head -1)
+    key=$(printf '%s\n' "$body" | sed -n 's/^Decision key: //p' | head -1)
+    [ -n "$origin" ] && [ -n "$key" ] || continue
+    [ "$id" = "$origin-decision-$key" ] || continue
+    item=$((item + 1))
+    seen="${seen}${origin}/${key}"$'\n'
+    printf 'decision\t%s\t%s\t%s\thold\t%s\n' "$item" "$origin" "$key" "$(show_field "$show" title)"
+    variant=0
+    while IFS= read -r encoded; do
+      [ -n "$encoded" ] || continue
+      variant=$((variant + 1))
+      emit_question_chunks "$item" "$variant" "$encoded"
+    done <<EOF
+$(hold_question_variants "$body")
+EOF
+  done
+
+  for status_file in "$STATE"/*.status; do
+    [ -f "$status_file" ] && [ ! -L "$status_file" ] || continue
+    origin=$(basename "$status_file")
+    origin=${origin%.status}
+    open=$(status_open_decisions "$status_file")
+    [ -n "$open" ] || continue
+    while IFS=$'\t' read -r key _verb summary; do
+      [ -n "$key" ] || continue
+      pair="${origin}/${key}"
+      case "$seen" in *$'\n'"$pair"$'\n'*) continue ;; esac
+      seen="${seen}${pair}"$'\n'
+      item=$((item + 1))
+      summary=${summary%% | "$QUESTION_MARKER" *}
+      printf 'decision\t%s\t%s\t%s\tstatus\t%s\n' "$item" "$origin" "$key" "$summary"
+      variant=0
+      while IFS= read -r encoded; do
+        [ -n "$encoded" ] || continue
+        variant=$((variant + 1))
+        emit_question_chunks "$item" "$variant" "$encoded"
+      done <<EOF
+$(status_question_variants "$status_file" "$key")
+EOF
+    done <<EOF
+$open
+EOF
+  done
+}
+
+# Render the same union as the captain-facing catch-up listing. Every variant of
+# every outstanding decision is printed; there is no cap and no omission path,
+# because a question the captain never sees is a question that was lost.
+render_question_records() {  # <records-file>
+  local file=$1 variants tag f2 f3 f4 f5 f6 vitem vvariant vblob
+  variants=$(LC_ALL=C awk -F '\t' '
+    $1 == "chunk" {
+      slot = $2 "\t" $3
+      if (!(slot in blob)) order[++n] = slot
+      blob[slot] = blob[slot] $6
+    }
+    END { for (i = 1; i <= n; i++) printf "%s\t%s\n", order[i], blob[order[i]] }
+  ' "$file")
+  while IFS=$'\t' read -r tag f2 f3 f4 f5 f6; do
+    case "$tag" in
+      limitation) printf 'outstanding decisions limitation: %s\n' "$f2"; continue ;;
+      decision) ;;
+      *) continue ;;
+    esac
+    printf 'outstanding decision %s: %s [key=%s] owner=%s - %s\n' "$f2" "$f3" "$f4" "$f5" "$f6"
+    while IFS=$'\t' read -r vitem vvariant vblob; do
+      [ "$vitem" = "$f2" ] || continue
+      printf 'outstanding decision %s deferred question %s:\n' "$f2" "$vvariant"
+      decode_question "$vblob"
+      printf '\n'
+    done <<VARIANTS
+$variants
+VARIANTS
+  done < "$file"
+}
+
+command_open_questions() {
+  local render=0 records
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --render) render=1 ;;
+      *) usage >&2; exit 2 ;;
+    esac
+    shift
+  done
+  [ "$render" = 1 ] || { emit_question_records; return 0; }
+  records=$(mktemp "${TMPDIR:-/tmp}/fm-open-questions.XXXXXX") || fail "could not stage the outstanding-question listing"
+  emit_question_records > "$records" || { rm -f "$records"; fail "could not project the outstanding questions"; }
+  render_question_records "$records"
+  rm -f "$records"
 }
 
 command_id() {
@@ -845,6 +1191,8 @@ case "${1:-}" in
   binding) shift; command_binding "$@" ;;
   decline) shift; command_decline "$@" ;;
   repair) shift; command_repair "$@" ;;
+  preserve-question) shift; command_preserve_question "$@" ;;
+  open-questions) shift; command_open_questions "$@" ;;
   -h|--help) usage ;;
   *) usage >&2; exit 2 ;;
 esac

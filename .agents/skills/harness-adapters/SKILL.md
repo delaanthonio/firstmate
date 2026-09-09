@@ -477,6 +477,7 @@ A Stop command that writes stderr and exits 2 blocks the turn and forces continu
 The first Stop payload carries `stop_hook_active: false`; the forced continuation's Stop carries `stop_hook_active: true`, so the shared guard's default one-block loop guard applies without a Droid-specific budget.
 PreToolUse receives the command at `.tool_input.command`; exit 2 plus stderr denies execution before the command runs, and Droid still honors the denial when the shared checker's default Grok-shaped stdout object is also present.
 The `AskUser` registration invokes `bin/fm-droid-afk-askuser-check.sh`, which denies only while the primary home's durable AFK flag exists, records no answer, and becomes inert again after the ordered return lifecycle removes that flag.
+PreToolUse receives the questionnaire at `.tool_input.questionnaire` as one freeform string with no task, origin, decision-key, or per-question owner field, so the away-mode owner binding travels inside that text and the `/afk` skill owns its required form.
 Droid does not reason while a foreground tool call is running, so [`docs/supervision-protocols/droid.md`](../../../docs/supervision-protocols/droid.md) owns its bounded foreground-checkpoint supervision shape.
 The busy footer is `Press ESC to stop` for both thinking and tool execution.
 The idle composer is a rounded bordered box with the shell prompt glyph `>`; while busy its de-emphasized placeholder reads `Enter to steer · Ctrl+Enter to queue`, and real typed text is bright.

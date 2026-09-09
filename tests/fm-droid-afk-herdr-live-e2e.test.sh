@@ -31,7 +31,32 @@ done
 LAB_HELPER=${HERDR_LAB_HELPER:-$ROOT/bin/fm-herdr-lab.sh}
 [ -x "$LAB_HELPER" ] || { echo "skip: Herdr lab helper not executable at $LAB_HELPER"; exit 0; }
 
+# Droid's runtime-wide hook registration must be provably untouched by this
+# probe, so the fingerprint is taken before anything in this file can launch
+# Droid. It records only presence, a digest, and the hook subtree that this
+# feature could leak into; no other setting, token, or credential value is read.
+#
+# A real interactive Droid launch rewrites vendor-managed fields in
+# ~/.factory/settings.json on its own, so the whole-file digest is reported
+# rather than asserted. The hook subtree and permissions file are the isolation
+# claim, and those must be identical.
+droid_global_fingerprint() {  # <mode: hooks|whole>
+  local file base
+  for file in "$HOME/.factory/settings.json" "$HOME/.factory/permissions.json"; do
+    base=$(basename "$file")
+    if [ ! -e "$file" ]; then
+      printf '%s absent\n' "$base"
+    elif [ "$1" = whole ]; then
+      printf '%s present %s\n' "$base" "$(shasum -a 256 < "$file" | awk '{print $1}')"
+    else
+      printf '%s hooks %s\n' "$base" "$(jq -S -c '.hooks // null' "$file" 2>/dev/null || printf unreadable)"
+    fi
+  done
+}
+
 if [ "${FM_DROID_AFK_HERDR_PHASE:-orchestrate}" = orchestrate ]; then
+  GLOBAL_HOOKS_BEFORE=$(droid_global_fingerprint hooks)
+  GLOBAL_WHOLE_BEFORE=$(droid_global_fingerprint whole)
   SESSION=$("$LAB_HELPER" name afk-droid-approval-deferral-f1)
   TMP_ROOT=$(fm_test_tmproot fm-droid-afk-herdr-e2e)
   ORIGINAL_PATH=$PATH
@@ -74,6 +99,15 @@ if [ "${FM_DROID_AFK_HERDR_PHASE:-orchestrate}" = orchestrate ]; then
     "$0"
   SCENARIO_RC=$?
   SCENARIO_FINISHED=1
+  if [ "$GLOBAL_HOOKS_BEFORE" = "$(droid_global_fingerprint hooks)" ]; then
+    pass "the isolated live probe left Droid's runtime-wide hook registration unchanged"
+  else
+    echo "not ok - the isolated live probe changed Droid's runtime-wide hook registration" >&2
+    SCENARIO_RC=1
+  fi
+  if [ "$GLOBAL_WHOLE_BEFORE" != "$(droid_global_fingerprint whole)" ]; then
+    echo "# observed: a real Droid launch rewrote vendor-managed fields in ~/.factory/settings.json; the hook subtree above is the isolation claim" >&2
+  fi
   exit "$SCENARIO_RC"
 fi
 
@@ -101,10 +135,15 @@ cleanup() {
 }
 trap cleanup EXIT
 
-mkdir -p "$HOME_DIR"/{state,data,config,projects} "$PROJECT/.factory" "$PROJECT/bin" "$FAKEBIN"
+mkdir -p "$HOME_DIR"/{state,data,config,projects} "$PROJECT/.factory" "$FAKEBIN"
 git init -q "$PROJECT"
 printf '%s\n' '# Synthetic isolated Firstmate Droid primary' > "$PROJECT/AGENTS.md"
-cp "$ROOT/bin/fm-droid-afk-askuser-check.sh" "$ROOT/bin/fm-primary-scope-lib.sh" "$PROJECT/bin/"
+# The guard files questions through the tracked decision owner, so the isolated
+# project reaches the real bin/ rather than a copied subset of it. Scope and
+# state stay isolated through FM_ROOT_OVERRIDE and FM_STATE_OVERRIDE below.
+ln -s "$ROOT/bin" "$PROJECT/bin"
+cp "$ROOT/.tasks.toml" "$HOME_DIR/.tasks.toml"
+printf '## In flight\n\n## Queued\n\n## Done\n' > "$HOME_DIR/data/backlog.md"
 
 cat > "$PROJECT/.factory/sessionstart.sh" <<'SH'
 #!/usr/bin/env bash
@@ -141,7 +180,7 @@ cat > "$PROJECT/.factory/settings.json" <<'JSON'
 JSON
 
 chmod +x "$PROJECT/.factory/sessionstart.sh" "$PROJECT/.factory/userprompt.sh" \
-  "$PROJECT/.factory/askuser.sh" "$PROJECT/bin/"*.sh
+  "$PROJECT/.factory/askuser.sh"
 
 # Route adapter-owned Herdr calls through the same guarded lab helper as every
 # explicit call below. The shim accepts only this test's exact trailing session
@@ -389,7 +428,7 @@ else
   ask_count_before=0
 fi
 
-AFK_APPROVAL_PROMPT='Read the open droid-herdr-live decision from the durable state. First use AskUser to ask whether to approve it, with APPROVE_ISOLATED_CHANGE and KEEP_ISOLATED_PARKED as the two options. If and only if the tool is denied, use Execute to run exactly: touch .factory/authorized-after-afk-denial. Then reply exactly DROID_AFK_ASKUSER_DEFERRED.'
+AFK_APPROVAL_PROMPT='Read the open droid-herdr-live decision from the durable state. First use AskUser to ask whether to approve it, with APPROVE_ISOLATED_CHANGE and KEEP_ISOLATED_PARKED as the two options, and include this exact line immediately after the question line, copied without alteration: [firstmate-decision origin=live-worker key=droid-herdr-live state=existing]. If and only if the tool is denied, use Execute to run exactly: touch .factory/authorized-after-afk-denial. Then reply exactly DROID_AFK_ASKUSER_DEFERRED.'
 FM_SEND_SETTLE=0 "$ROOT/bin/fm-send.sh" "$PRIMARY_TARGET" "$AFK_APPROVAL_PROMPT" >/dev/null \
   || fail "could not submit the AFK approval probe to Droid"
 for _ in $(seq 1 300); do
@@ -410,9 +449,40 @@ jq -s -e --argjson expected "$((ask_count_before + 1))" '
 ' "$PROJECT/.factory/askuser-payloads.jsonl" >/dev/null \
   || fail "the isolated Droid AskUser call did not reach the exact tracked matcher once"
 status_open=$(status_open_decisions "$STATE/live-worker.status")
-printf '%s' "$status_open" | grep -Fq $'droid-herdr-live\tneeds-decision\tchoose the isolated review path' \
+printf '%s' "$status_open" | grep -q '^droid-herdr-live	needs-decision	' \
   || fail "AFK AskUser denial lost or resolved the keyed decision"
-pass "Droid denies interactive approval during AFK, grants no answer, and continues independently authorized work"
+[ "$(printf '%s' "$status_open" | grep -c '^droid-herdr-live	')" -eq 1 ] \
+  || fail "the deferred question forked its decision into more than one open identity"
+
+# The attempted question must be recoverable from its bound owner, byte for byte.
+live_listing=$(FM_HOME="$HOME_DIR" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$HOME_DIR/data" \
+  PATH="$FAKEBIN:$ORIGINAL_PATH" "$ROOT/bin/fm-decision-hold.sh" open-questions --render) \
+  || fail "the deferred live question could not be projected for the captain's return"
+printf '%s' "$live_listing" | grep -Fq 'APPROVE_ISOLATED_CHANGE' \
+  || fail "the deferred live question was not preserved with its bound decision owner"
+printf '%s' "$live_listing" | grep -Fq '[firstmate-decision origin=' \
+  && fail "the transport binding line leaked into the captain-facing listing"
+pass "Droid denies interactive approval during AFK, files it with its bound owner, and continues independently authorized work"
+
+# A question that names no owner must be rejected loudly rather than guessed at.
+ask_count_before=$(jq -s 'length' "$PROJECT/.factory/askuser-payloads.jsonl")
+status_bytes_before=$(cksum < "$STATE/live-worker.status")
+UNBOUND_PROMPT='Use AskUser exactly once to ask whether to approve the isolated change, with UNBOUND_APPROVE and UNBOUND_KEEP_PARKED as the two options, and include no other bracketed metadata lines at all. If and only if the tool is denied, use Execute to run exactly: touch .factory/unbound-question-denied. Then reply exactly DROID_AFK_UNBOUND_REJECTED.'
+FM_SEND_SETTLE=0 "$ROOT/bin/fm-send.sh" "$PRIMARY_TARGET" "$UNBOUND_PROMPT" >/dev/null \
+  || fail "could not submit the unbound-question probe to Droid"
+for _ in $(seq 1 300); do
+  status=$("$LAB_HELPER" run "$SESSION" agent get "$PRIMARY_PANE" 2>/dev/null \
+    | jq -r '.result.agent.agent_status // empty' 2>/dev/null || true)
+  [ -e "$PROJECT/.factory/unbound-question-denied" ] && [ "$status" = idle ] && break
+  sleep 0.1
+done
+[ -e "$PROJECT/.factory/unbound-question-denied" ] \
+  || fail "the unbound live question was not denied before becoming interactive"
+[ "$(jq -s 'length' "$PROJECT/.factory/askuser-payloads.jsonl")" -gt "$ask_count_before" ] \
+  || fail "the unbound-question probe never reached the tracked matcher"
+[ "$status_bytes_before" = "$(cksum < "$STATE/live-worker.status")" ] \
+  || fail "a rejected unbound question still mutated a durable decision owner"
+pass "a live question naming no owner is rejected without inventing or mutating one"
 
 RETURN_OUTPUT="$PROJECT/.factory/return-output"
 POST_RETURN_PROMPT='DROID_REAL_RETURN_PROBE: this is an unmarked returning-captain message. Before any ordinary work, use Execute to run exactly: bash .factory/return-probe.sh > .factory/return-output 2>&1 . Only after that command succeeds, use AskUser to ask whether to approve the isolated change, with POST_RETURN_APPROVE and POST_RETURN_KEEP_PARKED as the two options. Do not answer the question yourself and do nothing after opening it.'
@@ -431,7 +501,7 @@ DAEMON_STARTED=0
 grep -Fq 'droid-herdr-live' "$RETURN_OUTPUT" \
   || fail "Droid return catch-up did not present the outstanding keyed question: $(cat "$RETURN_OUTPUT")"
 status_open=$(status_open_decisions "$STATE/live-worker.status")
-printf '%s' "$status_open" | grep -Fq $'droid-herdr-live\tneeds-decision\tchoose the isolated review path' \
+printf '%s' "$status_open" | grep -q '^droid-herdr-live	needs-decision	' \
   || fail "Droid return catch-up automatically approved or lost the question"
 pass "a real unmarked Droid return runs ordered catch-up and presents the outstanding question first"
 
