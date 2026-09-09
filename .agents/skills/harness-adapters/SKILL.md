@@ -468,7 +468,7 @@ The per-task settings merge deliberately omits autonomy fields, so an operator's
 The Stop hook is a watcher notification only.
 No full semantic lifecycle source was verified, so current worker state remains the isolated rendered fallback rather than an invented hook state machine.
 
-**Primary-session facts (verified 2026-08-29 on Droid 0.208.1; away transport refreshed 2026-09-04 on Droid 0.212.0; AFK approval deferral verified 2026-09-04 on Droid 0.212.1).**
+**Primary-session facts (verified 2026-08-29 on Droid 0.208.1; away transport refreshed 2026-09-04 on Droid 0.212.0; AFK approval deferral verified 2026-09-09 on Droid 0.215.1).**
 A normal interactive invocation reads project-level `.factory/settings.json`; no `--settings` flag is needed for standing primary configuration.
 Hook commands receive `DROID_PROJECT_DIR`, `FACTORY_PROJECT_DIR`, and `CLAUDE_PROJECT_DIR` equal to the project root, but none is a Droid identity marker for ordinary tool subprocess detection.
 The tracked settings register `SessionStart`, `PreToolUse` for Droid's `Execute` and `AskUser` tools, and `Stop`, all anchored through `DROID_PROJECT_DIR`.
