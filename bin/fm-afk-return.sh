@@ -129,8 +129,12 @@ print_blockers() {  # <file>
 # The deferred-question listing is presentation only, so a projection failure is
 # recorded as catch-up evidence rather than silently dropping the questions.
 print_open_questions() {
-  "$SCRIPT_DIR/fm-decision-hold.sh" open-questions --render \
-    || printf 'outstanding decisions limitation: the outstanding-question listing could not be projected; run bin/fm-decision-hold.sh open-questions --render before ordinary work\n'
+  local rc=0
+  "$SCRIPT_DIR/fm-decision-hold.sh" open-questions --render || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf 'outstanding decisions limitation: the outstanding-question listing could not be projected; run bin/fm-decision-hold.sh open-questions --render before ordinary work\n'
+    return "$rc"
+  fi
 }
 
 clear_delivery_artifacts() {
@@ -154,10 +158,11 @@ return_guard() {
 }
 
 return_reconcile() {
-  local evidence blockers drain_err drained wake_ack_line wake_ack_through wake_ack_generation wedge escalations lifecycle_ok=1
+  local evidence blockers drain_err questions drained wake_ack_line wake_ack_through wake_ack_generation wedge escalations lifecycle_ok=1
   evidence=$(mktemp "$STATE/.afk-return-evidence.XXXXXX") || return 1
   blockers=$(mktemp "$STATE/.afk-return-blockers.XXXXXX") || { rm -f "$evidence"; return 1; }
   drain_err=$(mktemp "$STATE/.afk-return-drain.XXXXXX") || { rm -f "$evidence" "$blockers"; return 1; }
+  questions=$(mktemp "$STATE/.afk-return-questions.XXXXXX") || { rm -f "$evidence" "$blockers" "$drain_err"; return 1; }
   preserve_evidence "$evidence"
 
   if [ -e "$STATE/.afk" ] || [ -e "$STATE/.afk-daemon-terminal" ]; then
@@ -192,36 +197,45 @@ return_reconcile() {
   fi
 
   scan_open_blockers > "$blockers"
+  if ! print_open_questions > "$questions"; then
+    append_evidence lifecycle 'outstanding-question listing is incomplete; retry catch-up before ordinary work' "$evidence"
+    lifecycle_ok=0
+  fi
   if [ "$lifecycle_ok" -ne 1 ] || [ -s "$blockers" ]; then
-    write_gate "$evidence" "$blockers" || { rm -f "$evidence" "$blockers" "$drain_err"; return 1; }
+    write_gate "$evidence" "$blockers" || { rm -f "$evidence" "$blockers" "$drain_err" "$questions"; return 1; }
     printf 'fm-afk-return: catch-up must finish before the captain request\n' >&2
     print_evidence "$GATE" >&2
-    print_open_questions >&2
+    cat "$questions" >&2
     print_blockers "$GATE" >&2
     printf 'fm-afk-return: handle each blocker now, or close it with resolved [key=...] and append a durable reclassification reason, then run bin/fm-afk-return.sh check\n' >&2
-    rm -f "$evidence" "$blockers" "$drain_err"
+    rm -f "$evidence" "$blockers" "$drain_err" "$questions"
     return 3
   fi
 
-  print_open_questions
+  if ! cat "$questions"; then
+    append_evidence lifecycle 'outstanding-question listing publication failed; retry catch-up before ordinary work' "$evidence"
+    write_gate "$evidence" "$blockers" || { rm -f "$evidence" "$blockers" "$drain_err" "$questions"; return 1; }
+    rm -f "$evidence" "$blockers" "$drain_err" "$questions"
+    return 3
+  fi
   if ! print_evidence "$evidence"; then
     append_evidence lifecycle 'recovery evidence publication failed; retry catch-up before ordinary work' "$evidence"
-    write_gate "$evidence" "$blockers" || { rm -f "$evidence" "$blockers" "$drain_err"; return 1; }
+    write_gate "$evidence" "$blockers" || { rm -f "$evidence" "$blockers" "$drain_err" "$questions"; return 1; }
     printf 'fm-afk-return: recovery evidence could not be published; catch-up remains pending\n' >&2
-    rm -f "$evidence" "$blockers" "$drain_err"
+    rm -f "$evidence" "$blockers" "$drain_err" "$questions"
     return 3
   fi
 
   if [ -n "$wake_ack_line" ] && ! printf '%s\n' "$wake_ack_line" >&2; then
     append_evidence lifecycle 'durable wake acknowledgement command publication failed; retry catch-up before ordinary work' "$evidence"
-    write_gate "$evidence" "$blockers" || { rm -f "$evidence" "$blockers" "$drain_err"; return 1; }
-    rm -f "$evidence" "$blockers" "$drain_err"
+    write_gate "$evidence" "$blockers" || { rm -f "$evidence" "$blockers" "$drain_err" "$questions"; return 1; }
+    rm -f "$evidence" "$blockers" "$drain_err" "$questions"
     return 3
   fi
 
   rm -f "$GATE"
   clear_delivery_artifacts
-  rm -f "$evidence" "$blockers" "$drain_err"
+  rm -f "$evidence" "$blockers" "$drain_err" "$questions"
   printf 'fm-afk-return: catch-up clear; ordinary captain work may proceed\n'
   return 0
 }

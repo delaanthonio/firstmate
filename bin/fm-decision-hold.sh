@@ -32,7 +32,7 @@
 #   fm-decision-hold.sh decline <origin-id> <decision-key> --decision-file <path>
 #   fm-decision-hold.sh repair <origin-id> <decision-key> --decision-file <path>
 #   fm-decision-hold.sh preserve-question <origin-id> <decision-key> \
-#     --state existing|unseeded --question-file <path> [--repo <repo>]
+#     --state existing|unseeded --question-file <path>
 #   fm-decision-hold.sh open-questions [--render]
 #
 # `complete` is the shared investigation and visual-review completion gate.
@@ -500,7 +500,10 @@ preserve_in_hold() {  # <hold-id> <digest> <encoded>
 
 preserve_in_status() {  # <status-file> <key> <verb> <summary> <digest> <encoded>
   local status_file=$1 key=$2 verb=$3 summary=$4 digest=$5 encoded=$6 rc=0
-  ! grep -Fq "$QUESTION_MARKER $digest" "$status_file" 2>/dev/null || return 0
+  if status_question_evidence "$status_file" "$key" \
+      | LC_ALL=C awk -F '\t' -v digest="$digest" '$1 == digest { found = 1 } END { exit found ? 0 : 1 }'; then
+    return 0
+  fi
   fm_wake_status_append_self_announced "$STATE" "$status_file" \
     "$verb [key=$key]: $summary | $QUESTION_MARKER $digest $encoded" || rc=$?
   [ "$rc" -ne 2 ] || fail "cannot preserve the attempted question for [key=$key]"
@@ -520,15 +523,14 @@ finish_status_transfer() {  # <origin> <key> <hold-id> <status-file>
 }
 
 command_preserve_question() {
-  local origin=${1:-} key=${2:-} state='' question_file='' repo='' \
-    id status_file question digest encoded summary verb
+  local origin=${1:-} key=${2:-} state='' question_file='' \
+    id status_file meta question digest encoded summary verb
   [ "$#" -ge 2 ] || { usage >&2; exit 2; }
   shift 2
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --state) shift; state=${1:-} ;;
       --question-file) shift; question_file=${1:-} ;;
-      --repo) shift; repo=${1:-} ;;
       *) usage >&2; exit 2 ;;
     esac
     shift
@@ -552,6 +554,13 @@ command_preserve_question() {
 
   require_tasks_axi
   origin_exists_here "$origin" || fail "origin $origin is not owned by the active home $FM_HOME"
+  meta="$STATE/$origin.meta"
+  if [ -f "$meta" ]; then
+    DECISION_META_LOCK=$(fm_meta_lock_path "$meta") || fail "could not resolve task metadata lock"
+    fm_lock_acquire_wait "$DECISION_META_LOCK"
+    DECISION_META_LOCK_HELD=1
+    [ -f "$meta" ] || fail "task metadata disappeared while preserving a question"
+  fi
   id=$(hold_id "$origin" "$key")
   status_file="$STATE/$origin.status"
 
@@ -574,8 +583,7 @@ command_preserve_question() {
 
   command_hold "$origin" "$key" \
     --title "Deferred away-mode approval question $key" \
-    --reason "deferred away-mode approval question awaiting captain decision" \
-    ${repo:+--repo "$repo"} >/dev/null
+    --reason "deferred away-mode approval question awaiting captain decision" >/dev/null
   preserve_in_hold "$id" "$digest" "$encoded"
   printf 'preserved: hold %s\n' "$id"
 }
@@ -600,10 +608,18 @@ command_preserve_question() {
 #   decision  <item> <origin> <key> <owner> <summary>
 #   chunk     <item> <variant> <chunk> <chunks> <base64>
 #   limitation <text>
-status_question_variants() {  # <status-file> <decision-key>
-  LC_ALL=C awk -v key="[key=$2]:" -v marker="$QUESTION_MARKER " '
-    index($0, key) > 0 && index($0, marker) > 0 { print $NF }
+status_question_evidence() {  # <status-file> <decision-key>
+  LC_ALL=C awk -v key="[key=$2]:" -v marker="$QUESTION_MARKER" '
+    index($0, key) > 0 {
+      for (i = 1; i + 2 <= NF; i++) {
+        if ($i == marker) print $(i + 1) "\t" $(i + 2)
+      }
+    }
   ' "$1" 2>/dev/null || true
+}
+
+status_question_variants() {  # <status-file> <decision-key>
+  status_question_evidence "$1" "$2" | LC_ALL=C cut -f2
 }
 
 hold_question_variants() {  # <decoded-hold-body>
@@ -625,18 +641,28 @@ EOF
 }
 
 emit_question_records() {
-  local held_ids='' id show body origin key status_file open summary \
-    item=0 variant encoded seen=$'\n' pair
+  local held_ids='' held_rows='' id show body origin key status_file open summary \
+    item=0 variant encoded seen=$'\n' pair complete=1
 
   if fm_tasks_axi_compatible 2>/dev/null; then
-    held_ids=$(tasks_axi list --state held --kind captain 2>/dev/null \
-      | LC_ALL=C awk -F ',' '/^  [A-Za-z0-9._-]+,/ { sub(/^  /, "", $1); print $1 }' || true)
+    if held_rows=$(tasks_axi list --state held --kind captain 2>/dev/null); then
+      held_ids=$(printf '%s\n' "$held_rows" \
+        | LC_ALL=C awk -F ',' '/^  [A-Za-z0-9._-]+,/ { sub(/^  /, "", $1); print $1 }')
+    else
+      printf 'limitation\tcaptain-decision holds could not be listed\n'
+      complete=0
+    fi
   else
     printf 'limitation\tcompatible tasks-axi is unavailable; captain-decision holds were not read\n'
+    complete=0
   fi
 
   for id in $held_ids; do
-    show=$(task_show "$id") || continue
+    if ! show=$(task_show "$id"); then
+      printf 'limitation\tcaptain-decision hold %s could not be read\n' "$id"
+      complete=0
+      continue
+    fi
     body=$(decode_body "$(show_field "$show" body)")
     origin=$(printf '%s\n' "$body" | sed -n 's/^Origin: //p' | head -1)
     key=$(printf '%s\n' "$body" | sed -n 's/^Decision key: //p' | head -1)
@@ -681,6 +707,7 @@ EOF
 $open
 EOF
   done
+  [ "$complete" -eq 1 ]
 }
 
 # Render the same union as the captain-facing catch-up listing. Every variant of
@@ -715,7 +742,7 @@ VARIANTS
 }
 
 command_open_questions() {
-  local render=0 records
+  local render=0 records projection_complete=1
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --render) render=1 ;;
@@ -723,11 +750,15 @@ command_open_questions() {
     esac
     shift
   done
-  [ "$render" = 1 ] || { emit_question_records; return 0; }
+  if [ "$render" -ne 1 ]; then
+    emit_question_records
+    return
+  fi
   records=$(mktemp "${TMPDIR:-/tmp}/fm-open-questions.XXXXXX") || fail "could not stage the outstanding-question listing"
-  emit_question_records > "$records" || { rm -f "$records"; fail "could not project the outstanding questions"; }
+  emit_question_records > "$records" || projection_complete=0
   render_question_records "$records"
   rm -f "$records"
+  [ "$projection_complete" -eq 1 ]
 }
 
 command_id() {
@@ -834,9 +865,6 @@ EOF
     if [ "$(meta_value "$meta" decisions_reviewed)" != 1 ] || [ "$previous" != "$keys" ]; then
       printf 'decisions_reviewed=1\ndecision_keys=%s\n' "$keys" >> "$meta"
     fi
-    fm_lock_release "$DECISION_META_LOCK"
-    DECISION_META_LOCK_HELD=0
-
     # Transfer any still-open status decision to its durable backlog owner so the
     # live status fold does not duplicate the same Captain's Call item.
     # The transfer line is this home's own bookkeeping close, written by the
@@ -846,6 +874,12 @@ EOF
     while IFS=$'\t' read -r key _verb _summary; do
       [ -n "$key" ] || continue
       list_has_key "$keys" "$key" || continue
+      while IFS=$'\t' read -r question_digest question_encoded; do
+        [ -n "$question_digest" ] && [ -n "$question_encoded" ] || continue
+        preserve_in_hold "$(hold_id "$origin" "$key")" "$question_digest" "$question_encoded"
+      done <<QUESTION_EVIDENCE
+$(status_question_evidence "$status_file" "$key")
+QUESTION_EVIDENCE
       transfer_rc=0
       fm_wake_status_append_self_announced "$STATE" "$status_file" \
         "captain-held [key=$key]: tracked by $(hold_id "$origin" "$key")" || transfer_rc=$?
@@ -854,6 +888,8 @@ EOF
     done <<EOF
 $raw_open
 EOF
+    fm_lock_release "$DECISION_META_LOCK"
+    DECISION_META_LOCK_HELD=0
   fi
   : "$key_seen"
   printf 'complete: %s decision inventory reviewed%s\n' "$origin" "${keys:+ ($keys)}"

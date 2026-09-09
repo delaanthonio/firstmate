@@ -120,14 +120,48 @@ for BLOCK in "$WORK"/block.*; do
   # skipped rather than rejected for carrying no binding.
   grep -q '\[question\]\|^\[firstmate-decision[[:space:]]' "$BLOCK" || continue
   INDEX=$((INDEX + 1))
-  BINDING=$(sed -n 's/^\[firstmate-decision[[:space:]]\{1,\}\(.*\)\]$/\1/p' "$BLOCK" | head -1)
+  BINDING=$(sed -n 's/^\[firstmate-decision[[:space:]]\{1,\}\(.*\)\]$/\1/p' "$BLOCK")
   if [ -z "$BINDING" ]; then
     REJECTED="${REJECTED}question $INDEX has no [firstmate-decision origin=<origin> key=<key|derive> state=existing|unseeded] line; "
     continue
   fi
-  ORIGIN=$(printf '%s' "$BINDING" | tr ' ' '\n' | sed -n 's/^origin=//p' | head -1)
-  KEY=$(printf '%s' "$BINDING" | tr ' ' '\n' | sed -n 's/^key=//p' | head -1)
-  BSTATE=$(printf '%s' "$BINDING" | tr ' ' '\n' | sed -n 's/^state=//p' | head -1)
+  if [ "$(printf '%s\n' "$BINDING" | wc -l | tr -d ' ')" -ne 1 ]; then
+    REJECTED="${REJECTED}question $INDEX has multiple [firstmate-decision] lines; require exactly one origin=, one key=, and one state= field with no extra tokens; "
+    continue
+  fi
+  ORIGIN=''
+  KEY=''
+  BSTATE=''
+  ORIGIN_COUNT=0
+  KEY_COUNT=0
+  STATE_COUNT=0
+  EXTRA_COUNT=0
+  read -r -a BINDING_FIELDS <<< "$BINDING"
+  for FIELD in "${BINDING_FIELDS[@]}"; do
+    case "$FIELD" in
+      origin=*) ORIGIN_COUNT=$((ORIGIN_COUNT + 1)); ORIGIN=${FIELD#origin=} ;;
+      key=*) KEY_COUNT=$((KEY_COUNT + 1)); KEY=${FIELD#key=} ;;
+      state=*) STATE_COUNT=$((STATE_COUNT + 1)); BSTATE=${FIELD#state=} ;;
+      *) EXTRA_COUNT=$((EXTRA_COUNT + 1)) ;;
+    esac
+  done
+  if [ "$ORIGIN_COUNT" -eq 0 ]; then
+    REJECTED="${REJECTED}question $INDEX has no valid origin= slug in its [firstmate-decision] line; "
+    continue
+  fi
+  if [ "$KEY_COUNT" -eq 0 ]; then
+    REJECTED="${REJECTED}question $INDEX has no valid key= slug or key=derive in its [firstmate-decision] line; "
+    continue
+  fi
+  if [ "$STATE_COUNT" -eq 0 ]; then
+    REJECTED="${REJECTED}question $INDEX has no state=existing or state=unseeded in its [firstmate-decision] line; "
+    continue
+  fi
+  if [ "${#BINDING_FIELDS[@]}" -ne 3 ] || [ "$ORIGIN_COUNT" -ne 1 ] \
+      || [ "$KEY_COUNT" -ne 1 ] || [ "$STATE_COUNT" -ne 1 ] || [ "$EXTRA_COUNT" -ne 0 ]; then
+    REJECTED="${REJECTED}question $INDEX has a malformed [firstmate-decision] line; require exactly one origin=, one key=, and one state= field with no extra tokens; "
+    continue
+  fi
   case "$ORIGIN" in
     ''|*[!A-Za-z0-9._-]*)
       REJECTED="${REJECTED}question $INDEX has no valid origin= slug in its [firstmate-decision] line; "

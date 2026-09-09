@@ -175,6 +175,34 @@ test_reworded_attempt_is_kept_as_another_variant() {
   pass "a reworded attempt is retained as another variant of one decision identity"
 }
 
+test_identical_questions_are_preserved_for_each_status_key() {
+  local home rc=0 listing
+  home=$(make_home identical-status-evidence)
+  seed_task "$home" review \
+    'needs-decision [key=first-choice]: choose the first policy' \
+    'needs-decision [key=second-choice]: choose the second policy'
+  date +%s > "$home/state/.afk"
+
+  ask "$home" '1. [question] Apply the shared policy?
+[firstmate-decision origin=review key=first-choice state=existing]
+[option] Approve' || rc=$?
+  [ "$rc" -eq 2 ] || fail "the first identical question must be denied"
+  rc=0
+  ask "$home" '1. [question] Apply the shared policy?
+[firstmate-decision origin=review key=second-choice state=existing]
+[option] Approve' || rc=$?
+  [ "$rc" -eq 2 ] || fail "the second identical question must be denied"
+
+  listing=$(holds "$home" open-questions --render)
+  assert_contains "$listing" '[key=first-choice] owner=status' \
+    'the first key lost its identical deferred question'
+  assert_contains "$listing" '[key=second-choice] owner=status' \
+    'the second key lost its identical deferred question'
+  [ "$(printf '%s\n' "$listing" | grep -Fxc '1. [question] Apply the shared policy?')" -eq 2 ] \
+    || fail "identical question evidence was not preserved once for each decision key"
+  pass "identical status-owned questions retain evidence under each decision key"
+}
+
 # An unseeded review or merge question has no prior record, so it becomes an
 # ordinary captain hold under its real origin - never a synthetic ledger.
 test_unseeded_binding_creates_an_ordinary_captain_hold() {
@@ -227,6 +255,47 @@ test_transferred_hold_wins_and_status_is_never_reopened() {
   pass "an active captain hold wins and the status ledger is never reopened behind it"
 }
 
+test_status_question_moves_to_hold_before_transfer_closes() {
+  local home rc=0 listing
+  home=$(make_home transfer-evidence)
+  seed_task "$home" review 'needs-decision [key=route-choice]: north or south'
+  date +%s > "$home/state/.afk"
+
+  ask "$home" '1. [question] Route north or south?
+[firstmate-decision origin=review key=route-choice state=existing]
+[option] North
+[option] South' || rc=$?
+  [ "$rc" -eq 2 ] || fail "the status-owned question must be denied"
+  holds "$home" hold review route-choice --title 'Choose the route' --reason 'captain decision pending' >/dev/null \
+    || fail "could not seed the captain hold"
+  holds "$home" complete review route-choice >/dev/null \
+    || fail "could not transfer the status decision to its hold"
+
+  listing=$(holds "$home" open-questions --render)
+  assert_contains "$listing" '[key=route-choice] owner=hold' \
+    'the transferred decision did not become hold-owned'
+  assert_contains "$listing" '1. [question] Route north or south?' \
+    'the status-owned question disappeared during transfer'
+  # shellcheck disable=SC1091
+  . "$ROOT/bin/fm-classify-lib.sh"
+  [ -z "$(status_open_decisions "$home/state/review.status")" ] \
+    || fail "the status decision stayed open after its evidence reached the hold"
+  pass "status question evidence reaches the hold before transfer closes its key"
+}
+
+test_open_questions_reports_incomplete_hold_enumeration() {
+  local home out rc=0
+  home=$(make_home incomplete-hold-enumeration)
+
+  out=$(PATH="$home/fakebin:$PATH" FM_TASKS_AXI_COMPATIBLE=0 \
+    FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_CONFIG_OVERRIDE="$home/config" "$HOLD" open-questions --render 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "open-questions reported success without enumerating captain holds"
+  assert_contains "$out" 'compatible tasks-axi is unavailable; captain-decision holds were not read' \
+    'incomplete hold enumeration did not report its missing owner surface'
+  pass "open-questions reports incomplete captain-hold enumeration"
+}
+
 # Ownership must come from the caller. Anything less is rejected loudly rather
 # than guessed from a topic, the question text, or the session.
 test_unbound_and_malformed_questions_are_rejected_without_mutation() {
@@ -253,6 +322,26 @@ test_unbound_and_malformed_questions_are_rejected_without_mutation() {
   assert_denied "$rc" "$home" "a question whose binding omits its origin"
   assert_contains "$(deny_message "$home")" 'has no valid origin=' \
     'the malformed binding rejection did not name the missing origin'
+
+  rc=0
+  ask "$home" '1. [question] Keep the fixture parked?
+[firstmate-decision origin=review origin=release key=helper-versions state=existing]
+[option] Keep parked' || rc=$?
+  assert_denied "$rc" "$home" "a question whose binding repeats its origin"
+  assert_contains "$(deny_message "$home")" 'require exactly one origin=' \
+    'the repeated-field rejection did not name the strict binding requirement'
+  [ "$before" = "$(cksum < "$home/state/review.status")" ] \
+    || fail "a repeated binding field mutated the durable decision owner"
+
+  rc=0
+  ask "$home" '1. [question] Keep the fixture parked?
+[firstmate-decision origin=review key=helper-versions state=existing extra=token]
+[option] Keep parked' || rc=$?
+  assert_denied "$rc" "$home" "a question whose binding carries an extra token"
+  assert_contains "$(deny_message "$home")" 'with no extra tokens' \
+    'the extra-token rejection did not name the strict binding requirement'
+  [ "$before" = "$(cksum < "$home/state/review.status")" ] \
+    || fail "an extra binding token mutated the durable decision owner"
 
   rc=0
   ask "$home" '1. [question] Stale binding?
@@ -439,8 +528,11 @@ test_answers_close_through_the_existing_owner_paths() {
 test_existing_status_owner_receives_the_deferred_question
 test_repeat_notifications_and_authorized_progress_keep_one_identity
 test_reworded_attempt_is_kept_as_another_variant
+test_identical_questions_are_preserved_for_each_status_key
 test_unseeded_binding_creates_an_ordinary_captain_hold
 test_transferred_hold_wins_and_status_is_never_reopened
+test_status_question_moves_to_hold_before_transfer_closes
+test_open_questions_reports_incomplete_hold_enumeration
 test_unbound_and_malformed_questions_are_rejected_without_mutation
 test_leading_preamble_is_not_mistaken_for_a_question
 test_multi_origin_questionnaire_reaches_each_owner
