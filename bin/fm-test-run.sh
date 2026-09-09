@@ -209,7 +209,7 @@ family_for_basename() {
     fm-teardown.test.sh|fm-x-mode.test.sh)
       printf '%s\n' pr-forge
       ;;
-    fm-afk-inject-e2e.test.sh|fm-afk-return.test.sh)
+    fm-afk-inject-e2e.test.sh|fm-afk-return.test.sh|fm-droid-afk-approval.test.sh)
       printf '%s\n' afk
       ;;
     fm-bearings-snapshot.test.sh|fm-fleet-snapshot-view.test.sh)
