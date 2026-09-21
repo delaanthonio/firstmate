@@ -47,7 +47,7 @@
 #   worktree is told once to return, and only a shell that will not go refuses.
 #   --harness <name> is the explicit per-spawn harness/profile adapter. The old
 #   positional harness arg still works for back-compat.
-#   --model <name> and --effort <low|medium|high|xhigh|max|ultra> are concrete profile
+#   --model <name> and --effort <low|medium|high|xhigh|max|ultra|dynamic> are concrete profile
 #   axes chosen by firstmate at intake. They are only threaded into harnesses whose
 #   installed CLIs were verified to support that axis; unsupported axes are omitted
 #   from that harness's launch rather than guessed. Ultra is the explicit
