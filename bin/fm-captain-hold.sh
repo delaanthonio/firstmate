@@ -1060,7 +1060,7 @@ finish_status_transfer() {  # <origin> <key> <hold-id> <status-file>
 
 command_preserve_question() {
   local origin=${1:-} key=${2:-} state='' question_file='' id status_file
-  local question digest reference summary verb meta
+  local question digest reference summary verb meta lookup_rc
   [ "$#" -ge 2 ] || { usage >&2; exit 2; }
   shift 2
   while [ "$#" -gt 0 ]; do
@@ -1097,7 +1097,9 @@ command_preserve_question() {
   fi
   status_file="$STATE/$origin.status"
 
-  id=$(question_hold_id "$origin" "$key" || true)
+  lookup_rc=0
+  id=$(question_hold_id "$origin" "$key") || lookup_rc=$?
+  [ "$lookup_rc" -eq 0 ] || [ "$lookup_rc" -eq 1 ] || return "$lookup_rc"
   if [ -n "$id" ]; then
     acquire_task_control_lock "$id"
     reference=$(activate_question_evidence "$origin" "$digest" "$question")
@@ -2127,7 +2129,7 @@ reconcile_note() {
 command_complete() {
   local origin=${1:-} meta previous='' supplied='' keys='' entry key status_file open has_meta=0 transfer_rc resolved
   local question_evidence question_digest question_reference owner owner_entry
-  local resolved_how attested_by_prefix=''
+  local resolved_how attested_by_prefix='' inventory_owners='' inventory_owner_count sole_inventory_owner
   [ "$#" -ge 2 ] || { usage >&2; exit 2; }
   validate_slug origin-id "$origin"
   shift
@@ -2161,12 +2163,16 @@ command_complete() {
       resolved=$(verify_entry_durable "$origin" "$entry") || exit $?
       resolved_how=${resolved##* }
       resolved=${resolved%% *}
+      inventory_owners="${inventory_owners}${inventory_owners:+$NL_SEP}${resolved}"
       if [ "$resolved_how" = migrated-prefix ]; then
         attested_by_prefix="${attested_by_prefix}${attested_by_prefix:+ }$entry=$resolved"
       fi
     done <<EOF
 $(printf '%s\n' "$keys" | tr ',' '\n')
 EOF
+    inventory_owners=$(printf '%s\n' "$inventory_owners" | sed '/^$/d' | LC_ALL=C sort -u)
+    inventory_owner_count=$(printf '%s\n' "$inventory_owners" | sed '/^$/d' | wc -l | tr -d ' ')
+    sole_inventory_owner=$(printf '%s\n' "$inventory_owners" | sed '/^$/d' | sed -n '1p')
   fi
 
   status_file="$STATE/$origin.status"
@@ -2205,8 +2211,11 @@ EOF
           done <<EOF
 $(printf '%s\n' "$keys" | tr ',' '\n')
 EOF
+          if [ -z "$owner" ] && [ "$inventory_owner_count" -eq 1 ]; then
+            owner=$sole_inventory_owner
+          fi
           [ -n "$owner" ] \
-            || fail "cannot transfer deferred-question evidence for $origin/$key to a matching captain-held task"
+            || fail "cannot transfer deferred-question evidence for $origin/$key among multiple captain-held tasks without a matching task identity"
           acquire_task_control_lock "$owner"
           while IFS=$'\t' read -r question_digest question_reference; do
             [ -n "$question_digest" ] && [ -n "$question_reference" ] || continue

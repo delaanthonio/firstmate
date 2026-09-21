@@ -17,8 +17,8 @@ Cross-harness provider and credential identity is owned by `references/common/mo
 | Autonomy | `--auto high`, labeled `Auto (High) · allow all commands`. |
 | Trust | No verified workspace-trust dialog. |
 | Marker | Exact `droid` process ancestry; Droid exposes no stable environment identity marker. |
-| Model | Per-task settings key `model.customModel`. |
-| Effort | Per-task settings key `reasoningEffort`; `dynamic` omits the key. |
+| Model | Per-task settings key `sessionDefaultSettings.model`; custom models use their registry id. |
+| Effort | Per-task settings key `sessionDefaultSettings.reasoningEffort`; `dynamic` is retained. |
 | Composer | Two-line bordered box; hints may appear on the right side of the first row. |
 
 ## Detection and control

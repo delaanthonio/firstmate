@@ -60,6 +60,14 @@ holds() {  # <home> <command args...>
     FM_DATA_OVERRIDE="$home/data" FM_CONFIG_OVERRIDE="$home/config" "$HOLD" "$@"
 }
 
+captain_holds() {  # <home> <command args...>
+  local home=$1
+  shift
+  PATH="$home/fakebin:$PATH" REAL_TASKS_AXI="$TASKS_AXI_BIN" FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" \
+    FM_DATA_OVERRIDE="$home/data" FM_CONFIG_OVERRIDE="$home/config" \
+    "$ROOT/bin/fm-captain-hold.sh" "$@"
+}
+
 run_return() {  # <home>
   local home=$1
   PATH="$home/fakebin:$PATH" FM_ROOT_OVERRIDE="$home" FM_HOME="$home" \
@@ -294,14 +302,15 @@ test_status_question_moves_to_hold_before_transfer_closes() {
 [option] North
 [option] South' || rc=$?
   [ "$rc" -eq 2 ] || fail "the status-owned question must be denied"
-  holds "$home" hold review route-choice --title 'Choose the route' --reason 'captain decision pending' >/dev/null \
+  captain_holds "$home" hold sample-route-call --origin review \
+    --title 'Choose the route' --reason 'captain decision pending' >/dev/null \
     || fail "could not seed the captain hold"
-  holds "$home" complete review route-choice >/dev/null \
+  captain_holds "$home" complete review sample-route-call >/dev/null \
     || fail "could not transfer the status decision to its hold"
 
   listing=$(holds "$home" open-questions --render)
-  assert_contains "$listing" '[key=route-choice] owner=hold' \
-    'the transferred decision did not become hold-owned'
+  assert_contains "$listing" '[key=route-choice] owner=hold - Choose the route' \
+    'the deferred question did not select the sole authoritative inventory owner'
   assert_contains "$listing" '1. [question] Route north or south?' \
     'the status-owned question disappeared during transfer'
   # shellcheck disable=SC1091
@@ -309,6 +318,36 @@ test_status_question_moves_to_hold_before_transfer_closes() {
   [ -z "$(status_open_decisions "$home/state/review.status")" ] \
     || fail "the status decision stayed open after its evidence reached the hold"
   pass "status question evidence reaches the hold before transfer closes its key"
+}
+
+test_status_question_refuses_ambiguous_inventory_transfer() {
+  local home rc=0 status_text
+  home=$(make_home transfer-evidence-ambiguous)
+  seed_task "$home" review 'needs-decision [key=route-choice]: north or south'
+  date +%s > "$home/state/.afk"
+
+  ask "$home" '1. [question] Route north or south?
+[firstmate-decision origin=review key=route-choice state=existing]
+[option] North
+[option] South' || rc=$?
+  [ "$rc" -eq 2 ] || fail "the status-owned question must be denied"
+  captain_holds "$home" hold sample-route-call --origin review \
+    --title 'Choose the route' --reason 'captain decision pending' >/dev/null \
+    || fail "could not seed the first captain hold"
+  captain_holds "$home" hold sample-access-call --origin review \
+    --title 'Choose the access policy' --reason 'captain decision pending' >/dev/null \
+    || fail "could not seed the second captain hold"
+
+  rc=0
+  captain_holds "$home" complete review sample-route-call sample-access-call \
+    > "$home/complete.out" 2> "$home/complete.err" || rc=$?
+  [ "$rc" -ne 0 ] || fail "ambiguous inventory silently received deferred-question evidence"
+  assert_contains "$(cat "$home/complete.err")" 'multiple captain-held tasks' \
+    'ambiguous inventory refusal did not name the ownership ambiguity'
+  status_text=$(cat "$home/state/review.status")
+  assert_not_contains "$status_text" 'captain-held [key=route-choice]' \
+    'ambiguous transfer closed the status owner without selecting a hold'
+  pass "status question evidence refuses a genuinely ambiguous inventory transfer"
 }
 
 test_open_questions_reports_incomplete_hold_enumeration() {
@@ -749,6 +788,7 @@ test_status_evidence_uses_the_authoritative_transition_key
 test_unseeded_binding_creates_an_ordinary_captain_hold
 test_transferred_hold_wins_and_status_is_never_reopened
 test_status_question_moves_to_hold_before_transfer_closes
+test_status_question_refuses_ambiguous_inventory_transfer
 test_open_questions_reports_incomplete_hold_enumeration
 test_open_questions_reports_unsafe_status_owners
 test_unbound_and_malformed_questions_are_rejected_without_mutation

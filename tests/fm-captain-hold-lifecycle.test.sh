@@ -635,6 +635,76 @@ SH
   pass "captain-hold mutations address the beads backend without a markdown override"
 }
 
+test_question_preservation_propagates_migration_scan_errors() {
+  local home fb log rc=0
+  home="$TMP_ROOT/question-migration-error"
+  mkdir -p "$home/data" "$home/config" "$home/projects" "$home/state"
+  cat > "$home/.tasks.toml" <<'EOF'
+backend = "beads"
+
+[beads]
+path = "graph/.beads"
+binary = "bd"
+prefix = "fm"
+EOF
+  fm_write_meta "$home/state/release.meta" \
+    "window=synthetic:release" \
+    "worktree=$home/projects/release" \
+    "project=$home/projects/sample" \
+    "harness=droid" \
+    "kind=ship"
+  printf 'working: release prep\n' > "$home/state/release.status"
+  printf 'Ship after checks pass?\n' > "$home/question.txt"
+  fb=$(fm_fakebin "$home")
+  log="$home/tasks-axi-calls"
+  cat > "$fb/tasks-axi" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "@LOG@"
+case "${1:-}" in
+  --version) printf '%s\n' '0.2.5' ;;
+  update)
+    [ "${2:-}" = --help ] || exit 1
+    printf '%s\n' '--archive-body'
+    ;;
+  mv)
+    [ "${2:-}" = --help ] || exit 1
+    printf '%s\n' 'usage: tasks-axi mv [<id>...]'
+    ;;
+  hold)
+    if [ "${2:-}" = --help ]; then
+      printf '%s\n' '  --kind captain'
+    else
+      printf 'held: %s\n' "${2:-}"
+    fi
+    ;;
+  show) exit 1 ;;
+  add) printf 'added: %s\n' "${2:-}" ;;
+  *) exit 1 ;;
+esac
+SH
+  sed -i.bak "s|@LOG@|$log|g" "$fb/tasks-axi"
+  rm -f "$fb/tasks-axi.bak"
+  cat > "$fb/bd" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' 'fixture graph read failed' >&2
+exit 1
+SH
+  chmod +x "$fb/tasks-axi" "$fb/bd"
+
+  PATH="$fb:$PATH" REAL_TASKS_AXI="$TASKS_AXI_BIN" \
+    FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" \
+    FM_DATA_OVERRIDE="$home/data" FM_CONFIG_OVERRIDE="$home/config" \
+    "$ROOT/bin/fm-captain-hold.sh" preserve-question release ship \
+      --state unseeded --question-file "$home/question.txt" \
+      > "$home/preserve.out" 2> "$home/preserve.err" || rc=$?
+  [ "$rc" -eq 2 ] || fail "migration scan failure was not preserved as status 2: rc=$rc"
+  assert_contains "$(cat "$home/preserve.err")" 'reading the beads graph' \
+    'question preservation hid the migration scan failure'
+  assert_no_grep '^add release-decision-ship ' "$log" \
+    'question preservation created a duplicate after migration resolution failed'
+  pass "question preservation propagates migration scan errors without creating a fallback hold"
+}
+
 # Reproduces the loss exactly with privacy-safe synthetic names: the investigation
 # and visual review have ended, the only genuine unresolved captain call is report
 # prose, no held backlog item or open status exists, and the authoritative
@@ -4051,3 +4121,4 @@ test_complete_accepts_a_migrated_inventory_on_beads
 test_verify_names_the_unresolvable_legacy_id_once
 test_verify_resolves_a_pre_collapse_key_through_its_derived_marker
 test_captain_hold_mutations_address_the_beads_backend
+test_question_preservation_propagates_migration_scan_errors
