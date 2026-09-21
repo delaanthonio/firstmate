@@ -1,6 +1,6 @@
 # Droid
 
-Verified for crewmate, scout, secondmate, and primary work with Droid CLI 0.38.0 on 2026-07-03.
+Verified for crewmate, scout, secondmate, and primary work; versioned evidence lives in [`docs/verification/droid-primary.md`](../../../../../docs/verification/droid-primary.md) and [`docs/verification/fork-sync-droid-2026-08-18.md`](../../../../../docs/verification/fork-sync-droid-2026-08-18.md).
 Cross-harness provider and credential identity is owned by `references/common/model-and-effort.md`.
 
 ## Operating facts
