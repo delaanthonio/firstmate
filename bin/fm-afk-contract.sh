@@ -222,8 +222,9 @@ fm_afk_contract_usage() {
   sed -n '/^# Usage:/,/^# Sourceable:/p' "${BASH_SOURCE[0]}" | sed '$d' | sed 's/^# \{0,1\}//'
 }
 
-fm_afk_contract_now_iso() {
-  date -u +%Y-%m-%dT%H:%M:%SZ
+fm_afk_contract_epoch_iso() {  # <epoch>
+  date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+    || date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ
 }
 
 fm_afk_contract_lower() {  # <text>
@@ -831,8 +832,8 @@ fm_afk_contract_parse_inputs() {  # <args...>; sets WORDS, the CLAUSE_* arrays, 
 fm_afk_contract_cmd_propose() {
   local entered entered_epoch proposal rc=0 refused
   fm_afk_contract_parse_inputs "$@" || return 2
-  entered=$(fm_afk_contract_now_iso)
   entered_epoch=$(date +%s)
+  entered=$(fm_afk_contract_epoch_iso "$entered_epoch") || return 1
   proposal=$(fm_afk_contract_proposal_path)
   fm_afk_contract_render_body "$entered" "$entered_epoch" | fm_afk_contract_write_atomic "$proposal" || {
     fm_afk_contract_log "failed to write the proposal at $proposal"
@@ -864,8 +865,8 @@ fm_afk_contract_cmd_confirm() {
   local record proposal body confirmed confirmed_epoch archived archived_tmp staged session_entered session_entered_epoch
   record=$(fm_afk_contract_path)
   proposal=$(fm_afk_contract_proposal_path)
-  confirmed=$(fm_afk_contract_now_iso)
   confirmed_epoch=$(date +%s)
+  confirmed=$(fm_afk_contract_epoch_iso "$confirmed_epoch") || return 1
   if [ -f "$proposal" ]; then
     fm_afk_contract_validate "$proposal" 0 || return 1
     body=$(cat "$proposal")

@@ -3530,7 +3530,6 @@ else
   fi
 fi
 
-TEARDOWN_ENDPOINT_CLOSE_CONFIRMED=0
 if [ "$BACKEND" = zellij ]; then
   fm_backend_kill "$BACKEND" "$T" "$(meta_value "$META" zellij_tab_id)" "fm-$ID" 2>/dev/null || true
   if ! declare -F fm_backend_zellij_endpoint_confirmed_gone >/dev/null 2>&1 \
@@ -3538,7 +3537,6 @@ if [ "$BACKEND" = zellij ]; then
     echo "error: zellij endpoint $T for $ID is not confirmed gone; retaining endpoint records, processes, worktree, and temporary runtime state" >&2
     exit 1
   fi
-  TEARDOWN_ENDPOINT_CLOSE_CONFIRMED=1
 elif [ "$BACKEND" = cmux ]; then
   fm_backend_kill "$BACKEND" "$T" "" "fm-$ID" 2>/dev/null || true
   if ! declare -F fm_backend_cmux_endpoint_confirmed_gone >/dev/null 2>&1 \
@@ -3546,7 +3544,6 @@ elif [ "$BACKEND" = cmux ]; then
     echo "error: cmux endpoint $T for $ID is not confirmed gone; retaining endpoint records, processes, worktree, and temporary runtime state" >&2
     exit 1
   fi
-  TEARDOWN_ENDPOINT_CLOSE_CONFIRMED=1
 fi
 
 if [ "$KIND" = secondmate ] && [ "$FORCE" = "--force" ]; then
