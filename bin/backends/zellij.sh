@@ -63,12 +63,15 @@
 #      zellij") and required a different implementation strategy - see
 #      fm_backend_zellij_current_path below and docs/zellij-backend.md
 #      "Worktree-path discovery: pane_cwd does not track a subshell".
-#   5. `new-tab` DOES steal focus from an attached client with NO flag to
-#      suppress it (unlike herdr's --no-focus and tmux's new-window -d).
-#      Mitigated (fm_backend_zellij_create_task): capture the previously
-#      active tab id before creating, restore it with go-to-tab-by-id
-#      afterward - verified to correctly restore an attached client's view
-#      and to be a safe no-op with no client attached.
+#   5. `new-tab` on the 0.44 compatibility floor steals focus from an attached
+#      client with no flag to suppress it (0.45 adds --no-focus).
+#      Mitigated (fm_backend_zellij_create_task): capture the previously active
+#      tab id before creating, restore it with go-to-tab-by-id afterward, and
+#      retain that floor-compatible behavior on newer clients.
+#   6. Zellij 0.45.1 can publish a zero-sized new tab with no terminal pane
+#      when the session has no attached client. The adapter retires that empty
+#      tab, briefly attaches a private sizing client, retries creation, verifies
+#      the pane, and detaches the helper before publishing the endpoint.
 #
 #   Additional un-anticipated findings, load-bearing for this adapter:
 #   - Every pane-targeting action (write-chars, send-keys, dump-screen, ...)
@@ -508,6 +511,41 @@ fm_backend_zellij_server_ensure() {  # <session>
   return 1
 }
 
+FM_BACKEND_ZELLIJ_SIZING_CLIENT_PID=
+
+fm_backend_zellij_sizing_client_stop() {
+  if [ -n "$FM_BACKEND_ZELLIJ_SIZING_CLIENT_PID" ]; then
+    kill "$FM_BACKEND_ZELLIJ_SIZING_CLIENT_PID" >/dev/null 2>&1 || true
+    wait "$FM_BACKEND_ZELLIJ_SIZING_CLIENT_PID" 2>/dev/null || true
+  fi
+  FM_BACKEND_ZELLIJ_SIZING_CLIENT_PID=
+}
+
+fm_backend_zellij_sizing_client_start() {  # <session>
+  local session=$1 command i tabs
+  command -v script >/dev/null 2>&1 || return 1
+  case "$(uname -s 2>/dev/null)" in
+    Darwin)
+      sleep 10 | script -q /dev/null zellij attach "$session" >/dev/null 2>&1 &
+      ;;
+    *)
+      printf -v command 'zellij attach %q' "$session"
+      sleep 10 | script -q -c "$command" /dev/null >/dev/null 2>&1 &
+      ;;
+  esac
+  FM_BACKEND_ZELLIJ_SIZING_CLIENT_PID=$!
+  for i in $(seq 1 40); do
+    tabs=$(fm_backend_zellij_cli "$session" action list-tabs --json 2>/dev/null)
+    if printf '%s' "$tabs" | jq -e 'any(.[]?; .active == true)' >/dev/null 2>&1; then
+      return 0
+    fi
+    kill -0 "$FM_BACKEND_ZELLIJ_SIZING_CLIENT_PID" 2>/dev/null || break
+    sleep 0.05
+  done
+  fm_backend_zellij_sizing_client_stop
+  return 1
+}
+
 # fm_backend_zellij_container_ensure: the full spawn-time container-ensure
 # sequence (version gate, session). Echoes the session name (no second
 # "workspace" component - zellij has no such concept, unlike herdr).
@@ -604,7 +642,7 @@ fm_backend_zellij_tab_matches_label() {  # <session> <tab_id> <label> [allow-mig
 #
 # Echoes "<tab_id> <pane_id>" on success.
 fm_backend_zellij_create_task() {  # <session> <label> <cwd>
-  local session=$1 label=$2 cwd=$3 title tabs dup prev_active tab_id pane_id
+  local session=$1 label=$2 cwd=$3 title tabs dup prev_active tab_id pane_id i retired
   fm_backend_zellij_session_exists "$session" || { echo "error: zellij session '$session' does not exist; run container_ensure first" >&2; return 1; }
   title=$(fm_backend_zellij_scoped_title "$label") || return 1
   tabs=$(fm_backend_zellij_cli "$session" action list-tabs --json 2>/dev/null)
@@ -623,6 +661,36 @@ fm_backend_zellij_create_task() {  # <session> <label> <cwd>
   esac
   pane_id=$(fm_backend_zellij_pane_for_tab "$session" "$tab_id")
   if [ -z "$pane_id" ]; then
+    # Zellij 0.45.1 leaves a detached new tab at zero size with no pane.
+    # Retire that unpublished tab before retrying under a short-lived private
+    # client, which supplies the viewport needed to create a usable terminal.
+    fm_backend_zellij_cli "$session" action close-tab-by-id "$tab_id" >/dev/null 2>&1 || true
+    retired=0
+    for i in $(seq 1 20); do
+      tabs=$(fm_backend_zellij_cli "$session" action list-tabs --json 2>/dev/null)
+      if ! printf '%s' "$tabs" | jq -e --argjson t "$tab_id" 'any(.[]?; .tab_id == $t)' >/dev/null 2>&1; then
+        retired=1
+        break
+      fi
+      sleep 0.05
+    done
+    if [ "$retired" = 1 ] && fm_backend_zellij_sizing_client_start "$session"; then
+      tab_id=$(fm_backend_zellij_cli "$session" action new-tab --cwd "$cwd" --name "$title" 2>/dev/null | tr -d '[:space:]')
+      case "$tab_id" in
+        ''|*[!0-9]*) tab_id= ;;
+      esac
+      if [ -n "$tab_id" ]; then
+        for i in $(seq 1 20); do
+          pane_id=$(fm_backend_zellij_pane_for_tab "$session" "$tab_id")
+          [ -z "$pane_id" ] || break
+          sleep 0.05
+        done
+      fi
+      fm_backend_zellij_sizing_client_stop
+    fi
+  fi
+  if [ -z "$pane_id" ]; then
+    [ -z "$tab_id" ] || fm_backend_zellij_cli "$session" action close-tab-by-id "$tab_id" >/dev/null 2>&1 || true
     echo "error: could not find a terminal pane for zellij tab $tab_id (session '$session')" >&2
     return 1
   fi

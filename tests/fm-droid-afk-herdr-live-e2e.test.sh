@@ -19,14 +19,7 @@ set -u
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-if [ "${FM_DROID_AFK_HERDR_E2E:-0}" != 1 ]; then
-  echo "skip: set FM_DROID_AFK_HERDR_E2E=1 to run the real Droid/Herdr away-delivery regression"
-  exit 0
-fi
-
-for tool in droid herdr jq git; do
-  command -v "$tool" >/dev/null 2>&1 || { echo "skip: $tool not found"; exit 0; }
-done
+fm_live_gate opt-in FM_DROID_AFK_HERDR_E2E droid herdr jq git
 
 LAB_HELPER=${HERDR_LAB_HELPER:-$ROOT/bin/fm-herdr-lab.sh}
 [ -x "$LAB_HELPER" ] || { echo "skip: Herdr lab helper not executable at $LAB_HELPER"; exit 0; }

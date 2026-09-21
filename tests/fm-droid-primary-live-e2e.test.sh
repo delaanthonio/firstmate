@@ -6,14 +6,7 @@ set -u
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-if [ "${FM_DROID_PRIMARY_LIVE_E2E:-0}" != 1 ]; then
-  echo "skip: set FM_DROID_PRIMARY_LIVE_E2E=1 to run the real Droid primary probe"
-  exit 0
-fi
-
-for tool in droid tmux jq git; do
-  command -v "$tool" >/dev/null 2>&1 || { echo "skip: $tool not found"; exit 0; }
-done
+fm_live_gate opt-in FM_DROID_PRIMARY_LIVE_E2E droid tmux jq git
 
 REAL_TMUX=$(command -v tmux)
 SOCKET="fm-droid-primary-live-$$"

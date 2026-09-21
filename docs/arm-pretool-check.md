@@ -24,7 +24,7 @@ It tokenizes the bytes and classifies lexical execution positions only.
 
 - Stdin JSON at `.tool_input.command` for Claude, Codex, and Droid.
 - Stdin JSON at `.toolInput.command` for Grok.
-- `--command <exact string>` for OpenCode, Pi, and pi-signed.
+- `--command <exact string>` for OpenCode, Pi, pi-signed, and omp.
 - `--background` as a compatibility-only field that never changes the decision.
 - `--claude` to preserve Claude's stderr-only deny requirement.
 - `--primary-only` to make a tracked project registration inert in linked crewmate worktrees and non-Firstmate repositories.
@@ -153,7 +153,7 @@ Prose may improve without changing adapter behavior.
 - Codex blocks on exit 2 and displays stderr.
 - Droid blocks on exit 2 and displays stderr; the default Grok-shaped stdout object does not prevent the denial.
 - OpenCode throws only when the checker exits 2.
-- Pi and pi-signed return `{block: true}` only when the checker exits 2.
+- Pi, pi-signed, and omp return `{block: true}` only when the checker exits 2.
 
 ## Harness wiring
 
@@ -164,6 +164,7 @@ Prose may improve without changing adapter behavior.
 | Grok | `.toolInput.command` | `.grok/hooks/fm-primary-pretool-check.json` forwards stdin and Grok consumes the stdout `decision=deny` object. |
 | OpenCode | `output.args.command` | `.opencode/plugins/fm-primary-pretool-check.js` passes one `--command` argument and throws only for exit 2. |
 | Pi / pi-signed | `event.input.command` | `.pi/extensions/fm-primary-turnend-guard.ts` passes one `--command` argument and returns `{block: true}` only for exit 2. |
+| omp | `event.input.command` | `.omp/extensions/fm-primary-turnend-guard.ts` passes one `--command` argument and returns `{block: true, reason}` only for exit 2; omp surfaces the reason verbatim to the model (verified 18.1.2). |
 | Cursor | `.tool_input.command` | `.cursor/hooks.json` matches `tool_name` `Shell` and forwards stdin with `--cursor`. Cursor reads the RETURNED object rather than the exit status, so `--cursor` prints `{"permission":"deny","user_message":"[code] reason"}` on stdout and exits 0; only that rendering is verified to block the command and surface the reason. |
 | Droid | `.tool_input.command` | `.factory/settings.json` matches the `Execute` tool and forwards stdin with `--primary-only`, so accumulated project settings stay inert in linked crewmate worktrees; Droid blocks on exit 2 plus stderr, including the checker's unchanged default output. |
 

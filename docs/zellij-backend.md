@@ -73,11 +73,13 @@ Every pane operation passes an explicit `--pane-id` because a new session can fo
 Worktree discovery therefore sends begin and end markers around `pwd`, captures the marked block, and joins wrapped path lines.
 This active probe is scoped to spawn-time worktree discovery and is not advertised as a general live-cwd API.
 
-`new-tab` has no no-focus flag and temporarily focuses the created tab in attached clients.
-The adapter records the previously active tab and immediately restores it with `go-to-tab-by-id`.
-There is a narrow visible race between those calls that no current Zellij flag can remove.
+The 0.44 compatibility floor has no `new-tab --no-focus` flag, so the adapter records the previously active tab and immediately restores it with `go-to-tab-by-id`.
+This retains one launch path across the floor and Zellij 0.45, although a narrow visible race remains on 0.44.
+Zellij 0.45.1 can publish a zero-sized detached new tab before creating its terminal pane.
+When that happens, the adapter retires the empty tab, briefly attaches a private sizing client, retries creation, verifies the usable pane, and detaches the helper before publishing the endpoint.
 
-Literal send uses bracketed paste followed by a separate explicit Enter.
+An ordinary metadata-routed `fm-send.sh` text steer becomes a durable steering-inbox record, and only its best-effort constant doorbell passes through Zellij's submit machinery.
+On the typed plane, literal send uses bracketed paste followed by a separate explicit Enter.
 Before sending Enter, the adapter proves that the selected composer's normalized content changed by exactly the pasted text; an unreadable composer, a paste that lands elsewhere, or unrelated pane output fails without submitting.
 The adapter supports `Enter`, `Esc`, and the one-argument key expression `Ctrl c` through the shared key vocabulary.
 Zellij exposes no cursor-row or native agent-state signal, but `dump-screen --ansi` (verified at 0.44.0) preserves styling, so the composer is read through the same fleet-wide classifier as tmux and herdr (`bin/fm-composer-lib.sh`), with ghost and placeholder text stripped before the verdict.

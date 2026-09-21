@@ -812,6 +812,31 @@ test_create_task_creates_and_parses_ids() {
   pass "fm_backend_zellij_create_task: creates a home-scoped tab and parses tab_id/pane_id from the response"
 }
 
+test_create_task_materializes_a_detached_tab() {
+  local dir fb out
+  dir="$TMP_ROOT/create-task-detached"; mkdir -p "$dir/responses"
+  printf '[]\n' > "$dir/responses/1.out"
+  printf '6\n' > "$dir/responses/2.out"
+  printf '[]\n' > "$dir/responses/3.out"
+  printf '[]\n' > "$dir/responses/5.out"
+  printf '[{"tab_id":0,"active":true}]\n' > "$dir/responses/6.out"
+  printf '7\n' > "$dir/responses/7.out"
+  printf '[{"id":13,"tab_id":7,"is_plugin":false}]\n' > "$dir/responses/8.out"
+  fb=$(make_zellij_fakebin "$dir")
+  cat > "$fb/script" <<'SH'
+#!/usr/bin/env bash
+sleep 30
+SH
+  chmod +x "$fb/script"
+  out=$( PATH="$fb:$PATH" FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" \
+    FM_ZELLIJ_SESSION_LIST="firstmate" \
+    bash -c '. "$0/bin/backends/zellij.sh"; fm_backend_zellij_create_task firstmate fm-detached /tmp/proj' "$ROOT" )
+  [ "$out" = "7 13" ] || fail "detached create_task should retry with a sizing client and return its terminal pane, got '$out'"
+  assert_contains "$(cat "$dir/log")" $'\x1f''close-tab-by-id'$'\x1f''6' \
+    "detached create_task did not retire the zero-sized unpublished tab"
+  pass "fm_backend_zellij_create_task: materializes the terminal pane for a detached Zellij 0.45 tab"
+}
+
 test_create_task_restores_previously_active_tab() {
   local dir fb out
   dir="$TMP_ROOT/focus-restore"; mkdir -p "$dir/responses"
@@ -1852,6 +1877,7 @@ test_dispatch_routes_zellij_backend
 test_dispatch_busy_state_unknown_for_zellij
 test_create_task_refuses_duplicate_label
 test_create_task_creates_and_parses_ids
+test_create_task_materializes_a_detached_tab
 test_create_task_restores_previously_active_tab
 test_create_task_no_restore_when_new_tab_was_already_active
 test_capture_small_reads_use_viewport_and_trim
