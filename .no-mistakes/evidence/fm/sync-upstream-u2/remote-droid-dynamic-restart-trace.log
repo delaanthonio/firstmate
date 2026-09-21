@@ -1,0 +1,6 @@
++ test_remote_droid_dynamic_restart_keeps_profile
++ relaunch_line='fm-remote-secondmate-control.sh relaunch sm2 droid custom-model dynamic'
++ '[' 'fm-remote-secondmate-control.sh relaunch sm2 droid custom-model dynamic' = 'fm-remote-secondmate-control.sh relaunch sm2 droid custom-model dynamic' ']'
++ pass 'Droid dynamic effort survives the remote secondmate update restart'
++ printf 'ok - %s\n' 'Droid dynamic effort survives the remote secondmate update restart'
+ok - Droid dynamic effort survives the remote secondmate update restart

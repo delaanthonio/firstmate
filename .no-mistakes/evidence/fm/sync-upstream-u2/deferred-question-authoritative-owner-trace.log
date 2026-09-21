@@ -1,0 +1,7 @@
++ test_status_question_moves_to_hold_before_transfer_closes
++ captain_holds /private/var/folders/63/v9mxgtb957zdylpw41cx6mj40000gn/T/fm-droid-afk-approval.tpBmy7/transfer-evidence hold sample-route-call --origin review --title 'Choose the route' --reason 'captain decision pending'
++ /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M30ZK841TY9YKQ90FTT1H56K/bin/fm-captain-hold.sh hold sample-route-call --origin review --title 'Choose the route' --reason 'captain decision pending'
++ captain_holds /private/var/folders/63/v9mxgtb957zdylpw41cx6mj40000gn/T/fm-droid-afk-approval.tpBmy7/transfer-evidence complete review sample-route-call
++ /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M30ZK841TY9YKQ90FTT1H56K/bin/fm-captain-hold.sh complete review sample-route-call
++ listing=$'outstanding decision 1: review [key=route-choice] owner=hold - Choose the route\noutstanding decision 1 deferred question 1:\n1. [question] Route north or south?\n[option] North\n[option] South'
++ assert_contains $'outstanding decision 1: review [key=route-choice] owner=hold - Choose the route\noutstanding decision 1 deferred question 1:\n1. [question] Route north or south?\n[option] North\n[option] South' '[key=route-choice] owner=hold - Choose the route' 'the deferred question did not select the sole authoritative inventory owner'
