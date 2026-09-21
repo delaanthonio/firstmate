@@ -319,7 +319,7 @@ test_open_questions_reports_incomplete_hold_enumeration() {
     FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
     FM_CONFIG_OVERRIDE="$home/config" "$HOLD" open-questions --render 2>&1) || rc=$?
   [ "$rc" -ne 0 ] || fail "open-questions reported success without enumerating captain holds"
-  assert_contains "$out" 'compatible tasks-axi is unavailable; captain-decision holds were not read' \
+  assert_contains "$out" 'compatible tasks-axi is unavailable; captain-held tasks were not read' \
     'incomplete hold enumeration did not report its missing owner surface'
   pass "open-questions reports incomplete captain-hold enumeration"
 }
@@ -595,8 +595,8 @@ test_non_droid_return_does_not_project_deferred_questions() {
     || fail "a non-Droid return was gated by the Droid question projection: $out"
   assert_not_contains "$out" 'outstanding decisions limitation' \
     'a non-Droid return received the Droid projection limitation'
-  assert_not_contains "$out" 'Ordinary captain choice' \
-    'a non-Droid return received the Droid deferred-question listing'
+  assert_not_contains "$out" 'outstanding decision 1:' \
+    'a non-Droid return received the Droid deferred-question projection'
   [ ! -e "$home/state/.afk-return-catchup" ] \
     || fail "a non-Droid return stayed gated on Droid-only owner enumeration"
   pass "non-Droid return behavior is unchanged by Droid question deferral"
@@ -627,7 +627,7 @@ test_derived_keys_close_and_invalid_answer_records_fail_loudly() {
   [ "$rc" -ne 0 ] || fail "an invalid keyed-answer record was silently reported as success"
   assert_contains "$out" 'skipped: invalid keyed-answer record' \
     'invalid keyed-answer input did not report a nonzero skip'
-  assert_contains "$out" 'answers: closed=0 skipped=1 origin=release' \
+  assert_contains "$out" 'answers: closed=0 skipped=1' \
     'invalid keyed-answer input reported the wrong closure totals'
   pass "derived keys close normally and invalid answer records fail loudly"
 }

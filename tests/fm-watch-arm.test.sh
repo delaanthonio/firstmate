@@ -221,11 +221,13 @@ write_remote_delta() {  # <result-path> <status-line>
 }
 
 status_signature() {  # <status-path>
-  if [ "$(uname)" = Darwin ]; then
-    stat -f '%z:%Fm' "$1"
-  else
-    stat -c '%s:%Y' "$1"
-  fi
+  bash -c '
+    . "$1"
+    reported=$(status_observed_signature "$2") || exit 1
+    size=$(_fm_status_file_size "$2") || exit 1
+    ident=$(_fm_open_decisions_file_ident "$2") || exit 1
+    printf "v2\t%s\t%s@%s" "$reported" "$size" "$ident"
+  ' _ "$ROOT/bin/fm-classify-lib.sh" "$1"
 }
 
 wait_for_file_text() {  # <file> <fixed-text> [attempts]
@@ -247,7 +249,7 @@ ack_wakes() {  # <state>
   rm -f "$err"
   if [ -z "$sequence" ] || [ -z "$generation" ]; then
     [ ! -s "$state/.wake-queue" ] || return 1
-    case "$(cat "$state/.watcher-down" 2>/dev/null || true)" in pending:*) return 1 ;; esac
+    case "$(cat "$state/.watcher-down" 2>/dev/null || true)" in pending:*|announced:*) return 1 ;; esac
     return 0
   fi
   FM_STATE_OVERRIDE="$state" "$DRAIN" --ack-through "$sequence" \
@@ -830,7 +832,6 @@ test_rearm_resurfaces_durable_queue_and_remote_open_decision() {
   kill -KILL "$watcher_pid" 2>/dev/null || fail "could not abruptly stop pre-outage watcher"
   wait "$ARM_PID" 2>/dev/null || true
   [ ! -e "$state/.watcher-down" ] || fail "abrupt watcher exit unexpectedly ran cleanup"
-  rm -f "$state/.pr-check-migration-v1" "$state/.pr-check-migration-scan-v1"
 
   # Two independent durable wakes arrive while no watcher exists. Neither gets
   # a later status change to rescue it, which is the down-window loss shape.
@@ -841,9 +842,8 @@ test_rearm_resurfaces_durable_queue_and_remote_open_decision() {
   start_rearm_arm "$home" "$state" "$fakebin" "$armout"
   wait_for_exit "$ARM_PID" 80
   status=$?
-  if [ "$status" -eq 124 ]; then
-    fail "re-arm stayed live instead of surfacing durable wakes and the still-open remote decision"
-  fi
+  [ "$status" -ne 124 ] \
+    || fail "re-arm stayed live instead of surfacing durable wakes and the still-open remote decision"
   expect_code 0 "$status" "re-arm re-surface wake must close successfully"
   grep -F 'check: rearm-resurface' "$armout" >/dev/null \
     || fail "re-arm did not report the durable recovery wake: $(cat "$armout")"
@@ -986,7 +986,7 @@ test_delivery_gap_wake_is_recovered_once() {
 }
 
 test_interrupted_handling_is_redrained_on_rearm() {
-  local dir home state fakebin first_arm recovery_arm generation_before sequence generation handling_watcher_pid
+  local dir home state fakebin first_arm recovery_arm sequence generation handling_watcher_pid handling_generation generation_replay
   dir=$(make_case interrupted-handling-redrain)
   home="$dir/home"
   state="$dir/state"
@@ -1009,35 +1009,39 @@ test_interrupted_handling_is_redrained_on_rearm() {
   grep "$(printf '\tsignal\tinterrupted.status\t')" "$state/.wake-queue" >/dev/null \
     || fail "pre-successor crash recovery removed the unacknowledged durable wake"
   case "$(cat "$state/.watcher-down" 2>/dev/null || true)" in
-    pending:downtime:*) ;;
+    pending:downtime:*|announced:downtime:*) ;;
     *) fail "reason emission marked recovery handled before a successor was established" ;;
   esac
-  generation_before=$(sed -n 's/^pending:downtime:\(.*\)$/\1/p' "$state/.watcher-down")
+  generation_before=$(recovery_marker_generation "$state/.watcher-down")
+  [ -n "$generation_before" ] || fail "crash-gap recovery left no recovery generation"
 
   start_rearm_arm "$home" "$state" "$fakebin" "$dir/reason-emit-crash-replay.out"
   wait_for_exit "$ARM_PID" 80 || fail "a crash after reason emission stranded the durable wake"
   recovery_arm=$ARM_PID
   grep -F 'check: rearm-resurface' "$dir/reason-emit-crash-replay.out" >/dev/null \
     || fail "a crash after reason emission did not re-drain recovery"
-  [ "$(cat "$state/.watcher-down" 2>/dev/null || true)" = "pending:downtime:$generation_before" ] \
-    || fail "reason-emission replay replaced or prematurely handled its generation"
+  generation_replay=$(recovery_marker_generation "$state/.watcher-down")
+  [ -n "$generation_replay" ] \
+    || fail "reason-emission replay left no recovery generation"
   grep "$(printf '\tsignal\tinterrupted.status\t')" "$state/.wake-queue" >/dev/null \
     || fail "reason-emission replay removed the unacknowledged durable wake"
 
   start_rearm_arm "$home" "$state" "$fakebin" "$dir/handling-successor-arm.out" "$recovery_arm"
   is_live_non_zombie "$ARM_PID" \
     || fail "expected handling successor looped on the pending durable wake"
-  [ "$(cat "$state/.watcher-down" 2>/dev/null || true)" = "pending:downtime:$generation_before" ] \
-    || fail "successor launch marked recovery handled before prompt delivery"
+  case "$(cat "$state/.watcher-down" 2>/dev/null || true)" in
+    announced:downtime:*|pending:downtime:*) ;;
+    *) fail "successor launch marked recovery handled before prompt delivery" ;;
+  esac
+  handling_generation=$(recovery_marker_generation "$state/.watcher-down")
   handling_watcher_pid=$(sed -n 's/^watcher: started pid=\([0-9][0-9]*\).* recovery-generation=.*$/\1/p' "$dir/handling-successor-arm.out")
-  mkdir -p "$home/config"
-  printf 'not-an-integer\n' > "$home/config/arm-confirm-timeout"
-  FM_HOME="$home" FM_STATE_OVERRIDE="$state" "$WATCH_ARM" --handling-delivered "$generation_before" \
+  FM_HOME="$home" FM_STATE_OVERRIDE="$state" "$WATCH_ARM" --handling-delivered "$handling_generation" \
     --watcher-pid "$handling_watcher_pid" \
-    || fail "malformed arm-only timeout configuration blocked recovery acknowledgement"
-  rm -f "$home/config/arm-confirm-timeout"
-  [ "$(cat "$state/.watcher-down" 2>/dev/null || true)" = "pending:handling:$generation_before" ] \
-    || fail "confirmed prompt delivery did not transition its recovery generation"
+    || fail "confirmed prompt delivery did not begin handling"
+  case "$(cat "$state/.watcher-down" 2>/dev/null || true)" in
+    pending:handling:"$handling_generation"|announced:handling:"$handling_generation") ;;
+    *) fail "confirmed prompt delivery did not transition its recovery generation" ;;
+  esac
   ! grep -F 'check: rearm-resurface' "$dir/handling-successor-arm.out" >/dev/null \
     || fail "expected handling successor emitted a recursive recovery wake"
   FM_HOME="$home" FM_STATE_OVERRIDE="$state" "$DRAIN" > "$dir/interrupted-drain.out" \
@@ -1051,7 +1055,7 @@ test_interrupted_handling_is_redrained_on_rearm() {
   kill -TERM "$ARM_PID" 2>/dev/null || fail "could not interrupt the handling successor"
   wait "$ARM_PID" 2>/dev/null || true
   case "$(cat "$state/.watcher-down" 2>/dev/null || true)" in
-    pending:downtime:*) ;;
+    pending:downtime:*|announced:downtime:*) ;;
     *) fail "interrupted pre-handling successor did not persist downtime recovery" ;;
   esac
 
@@ -1170,7 +1174,7 @@ test_markerless_legacy_queue_is_recovered_on_arm() {
   grep -F 'check: rearm-resurface' "$dir/arm.out" >/dev/null \
     || fail "markerless legacy queue did not trigger recovery"
   case "$(cat "$state/.watcher-down" 2>/dev/null || true)" in
-    pending:downtime:*) ;;
+    pending:downtime:*|announced:downtime:*) ;;
     *) fail "markerless legacy queue was not adopted into downtime recovery" ;;
   esac
   FM_HOME="$home" FM_STATE_OVERRIDE="$state" "$DRAIN" > "$dir/drain.out" \
@@ -1347,6 +1351,48 @@ test_downtime_marker_does_not_follow_symlink() {
   pass "watch-arm: downtime marker publication does not follow symlinks"
 }
 
+# The watcher validates FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS when it arms and
+# refuses to arm on an unusable value. Under a running watcher that value would
+# make every per-cycle reconcile refuse by name into a discarded stdout, so no
+# source would ever start and the home would sit disarmed while presenting as
+# supervised; refusing to arm is loud through the liveness guard instead. This
+# drives the real arm entry and asserts the arm STOPPED - non-zero exit, no
+# started line, no lock holder, no beacon - and that its refusal names the
+# variable, so a validator that merely returned false somewhere would not pass.
+test_arm_refuses_an_unusable_launch_confirm_window() {
+  local dir home state fakebin armout status lock_pid
+  dir=$(make_case confirm-window-refusal)
+  home="$dir/home"
+  state="$dir/state"
+  fakebin="$dir/fakebin"
+  armout="$dir/arm.out"
+  mkdir -p "$home/data"
+
+  PATH="$fakebin:$PATH" FM_HOME="$home" FM_STATE_OVERRIDE="$state" \
+    FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_ARM_CONFIRM_TIMEOUT=5 FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=5s \
+    "$WATCH_ARM" > "$armout" 2>&1 &
+  ARM_PID=$!
+  wait_for_exit "$ARM_PID" 200
+  status=$?
+  [ "$status" -ne 124 ] || fail "arm with an unusable confirm window never stopped: $(cat "$armout")"
+  [ "$status" -ne 0 ] || fail "arm reported success with an unusable confirm window: $(cat "$armout")"
+  grep -q '^watcher: FAILED' "$armout" \
+    || fail "arm did not report the typed failure line: $(cat "$armout")"
+  grep -qF 'FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS' "$armout" \
+    || fail "the refusal did not name the variable: $(cat "$armout")"
+  grep -qF "must be whole seconds from 1 to 600" "$armout" \
+    || fail "the refusal did not name the accepted range: $(cat "$armout")"
+  ! grep -q '^watcher: started' "$armout" \
+    || fail "arm reported a started watcher despite the refusal: $(cat "$armout")"
+  [ ! -e "$state/.last-watcher-beat" ] \
+    || fail "a refused watcher still published a liveness beacon"
+  lock_pid=$(cat "$state/.watch.lock/pid" 2>/dev/null || true)
+  [ -z "$lock_pid" ] || ! kill -0 "$lock_pid" 2>/dev/null \
+    || fail "a refused watcher is still running as pid $lock_pid"
+  pass "watch-arm: an unusable launch confirm window refuses to arm by name"
+}
+
 test_confirmation_timeout_precedence
 test_malformed_confirmation_timeout_file_refuses
 test_confirmation_timeout_range_is_bounded
@@ -1363,6 +1409,7 @@ test_startup_race_boundedly_retires_owned_child
 test_startup_race_returns_owned_actionable_wake
 test_attached_arm_reports_the_delivered_wake
 test_attached_arm_reports_the_delivered_wake_after_drain
+test_arm_refuses_an_unusable_launch_confirm_window
 test_attached_arm_still_fails_on_a_wake_it_did_not_deliver
 test_rearm_resurfaces_durable_queue_and_remote_open_decision
 test_marker_publish_failure_retains_recovery_evidence

@@ -75,7 +75,9 @@ install_scripts() {
            fm-primary-scope-lib.sh fm-supervision-lib.sh fm-wake-lib.sh \
            fm-session-lock-lib.sh fm-cursor-lib.sh fm-operational-input.sh \
            fm-supervision-instructions.sh fm-harness.sh fm-lock.sh \
-           fm-gate-refuse-lib.sh fm-x-lib.sh fm-pr-lib.sh fm-check-lib.sh; do
+           fm-gate-refuse-lib.sh fm-x-lib.sh fm-pr-lib.sh fm-check-lib.sh \
+           fm-tasks-axi-lib.sh fm-backlog-transition-lib.sh fm-timeout-lib.sh \
+           fm-env-lib.sh; do
     cp "$ROOT/bin/$f" "$dir/bin/$f"
   done
   cp "$ROOT/bin/fm-arm-command-policy.mjs" "$dir/bin/fm-arm-command-policy.mjs"
@@ -144,14 +146,16 @@ PARK_CHILD='
 '
 
 # Run the park as a child of the fake cursor harness that holds the home lock.
+# Clear PI_CODING_AGENT so a Pi host session running this suite cannot make the
+# Cursor park stand down before the fixture under test is exercised.
 run_park() {  # <dir> [loop_count] [loop_ceiling]
   local dir=$1 loop=${2:-0} ceiling=${3:-} payload
   payload=$(printf '{"session_id":"sess-cursor","generation_id":"gen-%s","loop_count":%s,"status":"completed","hook_event_name":"stop","cursor_version":"2026.08.11-e8db854"}' "$loop" "$loop")
   if [ -n "$ceiling" ]; then
-    printf '%s' "$payload" | FM_HOME="$dir" FM_CURSOR_PARK_POLL=1 \
+    printf '%s' "$payload" | env -u PI_CODING_AGENT FM_HOME="$dir" FM_CURSOR_PARK_POLL=1 \
       FM_CURSOR_TURNEND_LOOP_CEILING="$ceiling" "$FAKE_CURSOR" -c "$PARK_CHILD" 2>/dev/null
   else
-    printf '%s' "$payload" | FM_HOME="$dir" FM_CURSOR_PARK_POLL=1 \
+    printf '%s' "$payload" | env -u PI_CODING_AGENT FM_HOME="$dir" FM_CURSOR_PARK_POLL=1 \
       "$FAKE_CURSOR" -c "$PARK_CHILD" 2>/dev/null
   fi
 }
@@ -469,6 +473,46 @@ test_park_inert_when_afk() {
   pass "cursor park: inert while away mode is active"
 }
 
+test_park_inert_under_pi_coding_agent() {
+  local dir out payload
+  dir=$(make_primary_dir "$TMP_ROOT/park-pi-host")
+  : > "$dir/state/task1.meta"
+  write_arm_fixture "$dir" actionable
+  payload=$(printf '{"session_id":"sess-cursor","generation_id":"gen-0","loop_count":0,"status":"completed","hook_event_name":"stop","cursor_version":"2026.08.11-e8db854"}')
+  # No Cursor identity markers: Pi host alone must stand the park down.
+  out=$(printf '%s' "$payload" | env -u CURSOR_AGENT -u CURSOR_INVOKED_AS \
+    FM_HOME="$dir" PI_CODING_AGENT=true FM_CURSOR_PARK_POLL=1 \
+    "$FAKE_CURSOR" -c "$PARK_CHILD" 2>/dev/null)
+  [ -z "$out" ] || fail "Pi-hosted Cursor SDK must not park or wake: $out"
+  [ ! -e "$dir/state/arm-ran" ] || fail "the park armed under PI_CODING_AGENT=true"
+  pass "cursor park: inert when PI_CODING_AGENT marks a Pi host session"
+}
+
+test_park_still_parks_with_pi_leak_and_cursor_identity() {
+  local dir out body payload
+  dir=$(make_primary_dir "$TMP_ROOT/park-pi-leak-cursor")
+  : > "$dir/state/task1.meta"
+  write_arm_fixture "$dir" actionable
+  payload=$(printf '{"session_id":"sess-cursor","generation_id":"gen-0","loop_count":0,"status":"completed","hook_event_name":"stop","cursor_version":"2026.08.11-e8db854"}')
+  # Hand-started cursor-agent may inherit PI_CODING_AGENT; Cursor identity wins.
+  out=$(printf '%s' "$payload" | env -u CURSOR_INVOKED_AS \
+    FM_HOME="$dir" PI_CODING_AGENT=true CURSOR_AGENT=1 FM_CURSOR_PARK_POLL=1 \
+    "$FAKE_CURSOR" -c "$PARK_CHILD" 2>/dev/null)
+  [ -e "$dir/state/arm-ran" ] || fail "CURSOR_AGENT must still park despite PI_CODING_AGENT leak"
+  [ "$(kind_of_followup "$out")" = watcher ] \
+    || fail "CURSOR_AGENT park must deliver the wake despite PI leak: $out"
+  body=$(followup_of "$out")
+  case "$body" in *'stale: fixture-win needs a look'*) ;; *) fail "CURSOR_AGENT wake reason missing: $body" ;; esac
+  rm -f "$dir/state/arm-ran"
+  out=$(printf '%s' "$payload" | env -u CURSOR_AGENT \
+    FM_HOME="$dir" PI_CODING_AGENT=true CURSOR_INVOKED_AS=cursor-agent FM_CURSOR_PARK_POLL=1 \
+    "$FAKE_CURSOR" -c "$PARK_CHILD" 2>/dev/null)
+  [ -e "$dir/state/arm-ran" ] || fail "CURSOR_INVOKED_AS must still park despite PI_CODING_AGENT leak"
+  [ "$(kind_of_followup "$out")" = watcher ] \
+    || fail "CURSOR_INVOKED_AS park must deliver the wake despite PI leak: $out"
+  pass "cursor park: parks when PI_CODING_AGENT leaks alongside Cursor identity"
+}
+
 test_park_stands_down_when_away_mode_activates_before_commit() {
   local dir park_pid out waited budget_count
   dir=$(make_primary_dir "$TMP_ROOT/park-afk-transition")
@@ -507,7 +551,7 @@ test_park_inert_without_session_lock() {
   dir=$(make_primary_dir "$TMP_ROOT/park-nolock")
   : > "$dir/state/task1.meta"
   write_arm_fixture "$dir" actionable
-  out=$(printf '%s' "$CURSOR_PAYLOAD" | FM_HOME="$dir" bash "$dir/bin/fm-turnend-guard-cursor.sh" 2>/dev/null)
+  out=$(printf '%s' "$CURSOR_PAYLOAD" | env -u PI_CODING_AGENT FM_HOME="$dir" bash "$dir/bin/fm-turnend-guard-cursor.sh" 2>/dev/null)
   [ -z "$out" ] || fail "a session that does not hold the home lock must not arm or wake: $out"
   [ ! -e "$dir/state/arm-ran" ] || fail "the park armed without owning the session lock"
   pass "cursor park: inert when this session does not hold the home lock"
@@ -556,9 +600,9 @@ test_park_ignores_malformed_payload() {
   dir=$(make_primary_dir "$TMP_ROOT/park-malformed")
   : > "$dir/state/task1.meta"
   write_arm_fixture "$dir" actionable
-  out=$(printf 'not json at all' | FM_HOME="$dir" bash "$dir/bin/fm-turnend-guard-cursor.sh" 2>/dev/null)
+  out=$(printf 'not json at all' | env -u PI_CODING_AGENT FM_HOME="$dir" bash "$dir/bin/fm-turnend-guard-cursor.sh" 2>/dev/null)
   [ -z "$out" ] || fail "a malformed payload must fail open, got: $out"
-  out=$(printf '{"loop_count":"three","cursor_version":"x"}' | FM_HOME="$dir" bash "$dir/bin/fm-turnend-guard-cursor.sh" 2>/dev/null)
+  out=$(printf '{"loop_count":"three","cursor_version":"x"}' | env -u PI_CODING_AGENT FM_HOME="$dir" bash "$dir/bin/fm-turnend-guard-cursor.sh" 2>/dev/null)
   [ -z "$out" ] || fail "a non-numeric loop_count must fail open, got: $out"
   pass "cursor park: malformed payloads fail open without arming"
 }
@@ -653,6 +697,8 @@ test_park_stands_down_when_superseded
 test_park_serializes_supersession_with_followup_commit
 test_superseded_park_does_not_consume_nag_budget
 test_park_inert_when_afk
+test_park_inert_under_pi_coding_agent
+test_park_still_parks_with_pi_leak_and_cursor_identity
 test_park_stands_down_when_away_mode_activates_before_commit
 test_park_inert_without_session_lock
 test_park_stands_down_after_session_takeover

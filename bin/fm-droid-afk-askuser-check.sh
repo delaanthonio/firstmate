@@ -23,7 +23,7 @@
 # the ordered option texts, so an exact replay keeps one identity while a
 # substantively different question receives another.
 #
-# Filing itself belongs to bin/fm-decision-hold.sh, which owns the ordered
+# Filing itself belongs to bin/fm-captain-hold.sh, which owns the ordered
 # resolution across the captain-hold and status-decision owners and their
 # existing close paths.  This guard parses, validates, and denies; it creates no
 # question queue, no parallel ledger, and no closing mechanism.  It is inert in
