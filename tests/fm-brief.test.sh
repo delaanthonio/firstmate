@@ -357,6 +357,8 @@ test_ship_contracts_are_mode_specific() {
       "$id: brief does not require identifier redaction"
     assert_grep "never attach an unredacted image to a PR in a public repository" "$brief" \
       "$id: brief permits unredacted public PR attachments"
+    assert_grep "remove every task-created native screenshot file from the worktree so teardown stays clean" "$brief" \
+      "$id: brief does not require native screenshot cleanup after PR evidence upload"
     assert_no_grep "agenda-mobile" "$brief" \
       "$id: brief contains an unrequired project-specific screenshot path"
     if [ "$mode" = direct-PR ]; then
