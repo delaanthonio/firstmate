@@ -1,0 +1,5 @@
+window=fm-evidence-promoted-no-mistakes
+worktree=/tmp/evidence-worktree
+kind=ship
+mode=no-mistakes
+yolo=off
