@@ -6,12 +6,12 @@
 # data/<task-id>/ship-instructions.md, appends that same superseding contract to
 # data/<task-id>/brief.md for future relaunches, and prints the fm-send.sh command
 # that delivers it to the current worker. Those instructions carry the
-# scratch-state inventory, the clean
-# default-branch base, the fm/<task-id> branch, and - rendered from
-# bin/fm-dod-lib.sh, the single owner an ordinary ship brief also uses - the
-# mode-specific Definition of done, so a promoted worker receives exactly the same
-# delivery contract as a briefed one, including the no-mistakes mode's ask-user
-# escalation rule and --yes ban. The instructions also carry `# Task` with
+# scratch-state inventory, the clean default-branch base, the fm/<task-id> branch,
+# and the shared evidence and Definition-of-done blocks rendered from
+# bin/fm-dod-lib.sh, the single owner an ordinary ship brief also uses. A promoted
+# worker therefore receives exactly the same delivery contract as a briefed one,
+# including the no-mistakes mode's ask-user escalation rule and --yes ban. The
+# instructions also carry `# Task` with
 # `## Captain's intent` preserved from the scout brief and promotion's ship-time
 # instructions under `## Firstmate spec`; the scout-time spec remains context but
 # is not relabeled as the ship spec. Promotion refuses leftover `{TASK}` /
@@ -169,10 +169,10 @@ if [ -z "$(printf '%s' "$INTENT_BODY" | tr -d '[:space:]')" ]; then
 fi
 
 # The promoted worker must receive the same delivery contract an ordinary ship
-# brief carries, so the mode-specific Definition of done is rendered from its
-# single owner (bin/fm-dod-lib.sh) rather than summarised into a hint line. A
-# promoted no-mistakes worker that never received the ask-user escalation rule or
-# the --yes ban is the delivery hole this file used to leave open.
+# brief carries, so the shared evidence and Definition-of-done blocks are rendered
+# from their single owner (bin/fm-dod-lib.sh) rather than summarised into hint
+# lines. A promoted no-mistakes worker that never received the ask-user escalation
+# rule or the --yes ban is the delivery hole this file used to leave open.
 INSTRUCTIONS="$DATA/$ID/ship-instructions.md"
 PROMOTION_ASK_USER_BLOCK=
 if [ "$MODE" = no-mistakes ]; then

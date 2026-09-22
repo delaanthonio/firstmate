@@ -68,11 +68,8 @@
 # it carries the AGENTS.md authoring bar (widely useful knowledge only, pointers
 # over copied detail) and defers self-governance recognition and insertion to
 # fm-ensure-agents-md.sh's contract.
-# Ship tasks also carry review-evidence contracts near the definition of done:
-# PR-producing modes require a four-section plain-language PR description, and
-# every mode requires before/after evidence for user-visible UI changes or an
-# explicit screenshots-not-applicable note for non-UI work. Local-only evidence
-# stays in task data; PR modes attach it to the PR description.
+# Ship tasks render the shared review-evidence and definition-of-done contracts
+# owned by fm-dod-lib.sh.
 # Scaffolds carry no role scope: fm-spawn.sh supplies fm_brief_worker_role from
 # fm-dod-lib.sh to every ship/scout launch brief, so this file never becomes a
 # second owner of a contract that must stay current across relaunches.
@@ -434,8 +431,9 @@ exit 0
 fi
 
 # Ship task: shape Setup / Rule 1 by this task's explicit delivery mode, validated
-# above, and render the Definition of done from its single owner, bin/fm-dod-lib.sh,
-# which bin/fm-promote.sh renders too so a promoted scout receives the same contract.
+# above, and render the shared evidence and Definition-of-done blocks from their
+# single owner, bin/fm-dod-lib.sh. bin/fm-promote.sh uses the same blocks so a
+# promoted scout receives the same contract.
 # The block opens with the fixed "Delivery contract: mode=<mode>" line that
 # bin/fm-spawn.sh checks against its own explicit --mode before launching.
 RULE2="2. Stay inside this worktree; modify nothing outside it."

@@ -549,7 +549,7 @@ Keep additions task-specific rather than repeating lifecycle instructions, and a
 
 Every ship brief must retain the worktree-isolation assertion and stop if launched in the primary checkout.
 Every ship brief must also retain the generated code-quality pass: match surrounding style and naming, remove dead code, choose the right abstraction level, keep comments and docstrings evergreen, and run the project's formatter.
-Retain the generated ship-only review-evidence contracts; `bin/fm-dod-lib.sh` owns PR descriptions, UI screenshots, non-UI applicability notes, and local-only evidence handoff, while `bin/fm-brief.sh` renders them.
+Retain the generated ship-only review-evidence contracts; `bin/fm-dod-lib.sh` owns PR descriptions, UI screenshots, non-UI applicability notes, and local-only evidence handoff, while `bin/fm-brief.sh` and `bin/fm-promote.sh` render them.
 If a ship task touches firstmate's shared tracked material, explicitly require `firstmate-coding-guidelines` before editing.
 If a task will drive Herdr lifecycle behavior, scaffold with `--herdr-lab`; if that need appears after an unguarded scaffold, stop and regenerate rather than adding commands by hand.
 The generated Herdr contract must use a named non-`default` isolated lab and its guarded helper for every lifecycle action.
