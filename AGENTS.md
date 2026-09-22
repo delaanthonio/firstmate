@@ -351,9 +351,6 @@ The path's worker, automated gates, and captain approval remain authoritative:
 - **direct-PR** has the worker push and open a PR without the no-mistakes pipeline, then waits for the configured merge authority.
 - **local-only** has the worker stop with a clean ready branch, then waits for the configured merge authority before firstmate uses the guarded fast-forward merge path.
 
-Every generated ship brief carries its review-evidence contract: PR-producing modes require a review-ready description, UI changes require before/after evidence, local-only keeps that evidence in task data, and non-UI work explicitly marks screenshots not applicable.
-`bin/fm-brief.sh` owns the exact procedure; scout and secondmate briefs omit it.
-
 Delivery mode and `yolo` are orthogonal.
 `yolo` governs merge authority only: with it off, the captain approves every PR merge and every local-only landing; with it on, firstmate merges green, in-scope work itself.
 Never merge a red PR under either setting unless a current explicit captain instruction names the single GitHub check waived through `fm-pr-merge.sh --allow-red`; that attended-only waiver still requires every other check green.
@@ -391,7 +388,7 @@ The worker reports the PR when CI first becomes green rather than waiting for me
 
 ### PR ready, landing, and teardown
 
-For PR-based ship tasks, the ready signal depends on mode: `no-mistakes` reports `done: PR <url> checks green - <summary>` after CI is green, while `direct-PR` reports `done: PR <url> - <summary>` after opening the PR; non-UI work adds the generated screenshots-not-applicable suffix.
+For PR-based ship tasks, the ready signal depends on mode: `no-mistakes` reports `done: PR <url> checks green - <summary>` after CI is green, while `direct-PR` reports `done: PR <url> - <summary>` after opening the PR; include the generated brief's evidence-applicability suffix when required.
 Run `bin/fm-pr-check.sh <id> <PR url>` with the URL copied from that ready signal - it records `pr=` and the forge's `pr_head=` when available in the task's meta and arms the watcher's merge poll.
 Tell the captain the PR's full `https://...` URL copied from the worker's ready line or the task's `pr=` metadata, a concise outcome summary, and the no-mistakes risk level when applicable.
 A captain instruction to merge is explicit authority; `yolo` is the only standing routine merge authority.
@@ -552,8 +549,7 @@ Keep additions task-specific rather than repeating lifecycle instructions, and a
 
 Every ship brief must retain the worktree-isolation assertion and stop if launched in the primary checkout.
 Every ship brief must also retain the generated code-quality pass: match surrounding style and naming, remove dead code, choose the right abstraction level, keep comments and docstrings evergreen, and run the project's formatter.
-Every ship brief must retain its generated review-evidence contract.
-`bin/fm-brief.sh` owns the exact PR-description, screenshot capture, attachment, storage, and done-status procedure; scout and secondmate briefs intentionally omit it.
+Retain the generated ship-only review-evidence contracts; `bin/fm-brief.sh` owns PR descriptions, UI screenshots, non-UI applicability notes, and local-only evidence handoff.
 If a ship task touches firstmate's shared tracked material, explicitly require `firstmate-coding-guidelines` before editing.
 If a task will drive Herdr lifecycle behavior, scaffold with `--herdr-lab`; if that need appears after an unguarded scaffold, stop and regenerate rather than adding commands by hand.
 The generated Herdr contract must use a named non-`default` isolated lab and its guarded helper for every lifecycle action.

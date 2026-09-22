@@ -57,9 +57,7 @@ next=$(( $(cat "$COUNT_FILE" 2>/dev/null || echo 0) + 1 ))
   for a in "$@"; do printf '\x1f%s' "$a"; done
   printf '\n'
 } >> "$LOG"
-if [ "${1:-}" = status ] && [ "${2:-}" = --json ] \
-  && [ "${FM_HERDR_SCRIPT_STATUS:-0}" != 1 ] \
-  && [ "${FM_HERDR_STATEFUL_SERVER:-0}" != 1 ]; then
+if [ "${1:-}" = status ] && [ "${2:-}" = --json ] && [ "${FM_HERDR_SCRIPT_STATUS:-0}" != 1 ]; then
   printf '{"client":{"version":"0.7.1","protocol":14},"server":{"running":true}}\n'
   exit 0
 fi

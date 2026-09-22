@@ -207,11 +207,19 @@ test_ship_modes_generate_clean_briefs() {
     brief="$home/data/$id/brief.md"
     assert_present "$brief" "$id: brief was not scaffolded"
     assert_grep "# Definition of done" "$brief" "$id: brief missing Definition of done section"
-    grep -qx "Delivery contract: mode=$mode" "$brief" \
-      || fail "$id: brief did not record its machine-readable delivery contract line"
     assert_grep "# UI screenshot contract" "$brief" "$id: brief missing UI screenshot contract"
+    assert_grep "**Verify isolation before anything else.**" "$brief" \
+      "$id: review evidence displaced the worktree-isolation assertion"
+    assert_grep "blocked: launched in primary checkout, not an isolated worktree" "$brief" \
+      "$id: review evidence displaced the primary-checkout refusal"
+    assert_grep "Before reporting done, make the change beautiful:" "$brief" \
+      "$id: review evidence displaced the code-quality pass"
+    assert_grep "run the project's formatter." "$brief" \
+      "$id: review evidence displaced the formatting requirement"
     assert_grep "no user-visible change - screenshots not applicable" "$brief" \
       "$id: brief missing non-UI screenshot applicability wording"
+    grep -qx "Delivery contract: mode=$mode" "$brief" \
+      || fail "$id: brief did not record its machine-readable delivery contract line"
     assert_grep "{TASK}" "$brief" "$id: brief missing the {TASK} placeholder"
     assert_grep "{FIRSTMATE_SPEC}" "$brief" "$id: brief missing the {FIRSTMATE_SPEC} placeholder"
     assert_grep "## Captain's intent" "$brief" "$id: brief missing Captain's intent subsection"
