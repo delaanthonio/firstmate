@@ -357,8 +357,8 @@ test_ship_contracts_are_mode_specific() {
       "$id: brief does not require identifier redaction"
     assert_grep "never attach an unredacted image to a PR in a public repository" "$brief" \
       "$id: brief permits unredacted public PR attachments"
-    assert_grep "remove every task-created native screenshot file from the worktree so teardown stays clean" "$brief" \
-      "$id: brief does not require native screenshot cleanup after PR evidence upload"
+    assert_grep "remove every task-created screenshot file from the worktree so teardown stays clean" "$brief" \
+      "$id: brief does not require screenshot cleanup after PR evidence upload"
     assert_no_grep "agenda-mobile" "$brief" \
       "$id: brief contains an unrequired project-specific screenshot path"
     if [ "$mode" = direct-PR ]; then
@@ -387,8 +387,8 @@ test_ship_contracts_are_mode_specific() {
     "local-only brief still requires PR screenshot embedding"
   assert_grep "Save both files under \`$home/data/$id/shots/\`" "$brief" \
     "local-only brief does not save screenshots under the task shots directory"
-  assert_grep "screenshot evidence explicitly required below" "$brief" \
-    "local-only brief rules still forbid required screenshot evidence writes"
+  assert_grep "task-authorized exception to any earlier task-kind restriction on outside-worktree writes" "$brief" \
+    "local-only brief does not authorize its shared screenshot evidence destination"
   assert_grep "done: ready in branch fm/$id; screenshots: $home/data/$id/shots/" "$brief" \
     "local-only brief does not reference the task shots directory in its done status"
   assert_grep "done: ready in branch fm/$id; no user-visible change - screenshots not applicable" "$brief" \

@@ -440,12 +440,8 @@ fi
 # bin/fm-spawn.sh checks against its own explicit --mode before launching.
 RULE2="2. Stay inside this worktree; modify nothing outside it."
 case "$MODE" in
-  direct-PR)
+  direct-PR|local-only)
     SETUP2=""
-    ;;
-  local-only)
-    SETUP2=""
-    RULE2="2. Stay inside this worktree except for screenshot evidence explicitly required below, which may be saved only under \`$DATA/$ID/\`; modify nothing else outside the worktree."
     ;;
   *)  # no-mistakes
     SETUP2="

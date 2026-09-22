@@ -128,7 +128,7 @@ EOF
     *)
       cat <<'EOF'
 Attach each image by converting base64 to a File and dispatching a native drop event on the GitHub description textarea; file inputs and synthetic drags do not work.
-Verify the saved description renders the `user-attachments` image URLs, then remove every task-created native screenshot file from the worktree so teardown stays clean; never commit screenshot files to the repo.
+Verify the saved description renders the `user-attachments` image URLs, then remove every task-created screenshot file from the worktree so teardown stays clean; never commit screenshot files to the repo.
 For a non-UI change, skip screenshots and include the exact sentence `no user-visible change - screenshots not applicable` both in every done status line and in the PR description's explicitly titled "How it was tested" section.
 EOF
       ;;
