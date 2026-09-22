@@ -454,63 +454,7 @@ case "$MODE" in
 esac
 RULE1=$(fm_ship_rule_one "$MODE" "$ID") || exit 1
 DOD=$(fm_dod_block "$MODE" "$ID") || exit 1
-
-if [ "$MODE" = local-only ]; then
-  PR_DESCRIPTION_CONTRACT=""
-else
-  IFS= read -r -d '' PR_DESCRIPTION_CONTRACT <<'EOF' || true
-# PR description contract
-When this task opens or updates a PR, whether directly in direct-PR mode or through the no-mistakes pipeline, you own the quality of its description.
-Include explicitly titled sections named "Summary", "What changed", "Why", and "How it was tested".
-Make the Summary plain-language and understandable to a non-engineer.
-Write for a reader who has not seen the diff, with no filler or restated commit lists.
-EOF
-  PR_DESCRIPTION_CONTRACT=${PR_DESCRIPTION_CONTRACT%$'\n'}
-fi
-
-IFS= read -r -d '' UI_CAPTURE_POLICY <<'EOF' || true
-Use the shared automation browser, `chrome-devtools-axi`, for web UI.
-For native UI, use surface-specific capture: iOS simulator screenshots via `xcrun`, native desktop window capture, or programmatic evidence when no display is available.
-Capture only with seeded fixture or demo accounts.
-Redact any real identifier before uploading or otherwise sharing evidence, and never attach an unredacted image to a PR in a public repository.
-EOF
-UI_CAPTURE_POLICY=${UI_CAPTURE_POLICY%$'\n'}
-
-case "$MODE" in
-  local-only)
-    IFS= read -r -d '' UI_SCREENSHOT_CONTRACT <<EOF || true
-# UI screenshot contract
-If the change alters a user-visible web page, mobile screen, desktop window, or email template, capture before and after screenshots.
-Save both files under \`$DATA/$ID/shots/\`, never commit them to the repo, and append \`done: ready in branch fm/$ID; screenshots: $DATA/$ID/shots/\` so firstmate can relay them for review.
-This mode has no PR, so do not embed the screenshots in a PR description.
-$UI_CAPTURE_POLICY
-For a non-UI change, skip screenshots and append \`done: ready in branch fm/$ID; no user-visible change - screenshots not applicable\`.
-EOF
-    ;;
-  direct-PR)
-    IFS= read -r -d '' PR_UI_TIMING <<'EOF' || true
-If the change alters a user-visible web page, mobile screen, desktop window, or email template, capture before and after screenshots and embed them in the PR description before reporting done.
-EOF
-    ;;
-  *)
-    IFS= read -r -d '' PR_UI_TIMING <<'EOF' || true
-If the change alters a user-visible web page, mobile screen, desktop window, or email template, capture before and after screenshots before appending the implementation-ready `done: {summary}` status that starts the no-mistakes pipeline.
-Before appending the final PR-ready `done: PR {url} checks green - {summary}` status, refresh the after screenshot if any pipeline-authored change affected the rendered UI so the evidence represents the shipped result, then embed both current screenshots in the PR description.
-EOF
-    ;;
-esac
-if [ "$MODE" != local-only ]; then
-  PR_UI_TIMING=${PR_UI_TIMING%$'\n'}
-  IFS= read -r -d '' UI_SCREENSHOT_CONTRACT <<EOF || true
-# UI screenshot contract
-$PR_UI_TIMING
-$UI_CAPTURE_POLICY
-Attach each image by converting base64 to a File and dispatching a native drop event on the GitHub description textarea; file inputs and synthetic drags do not work.
-Verify the saved description renders the \`user-attachments\` image URLs, and never commit screenshot files to the repo.
-For a non-UI change, skip screenshots and include the exact sentence \`no user-visible change - screenshots not applicable\` both in every done status line and in the PR description's explicitly titled "How it was tested" section.
-EOF
-fi
-UI_SCREENSHOT_CONTRACT=${UI_SCREENSHOT_CONTRACT%$'\n'}
+SHIP_EVIDENCE=$(fm_ship_evidence_block "$MODE" "$DATA" "$ID") || exit 1
 
 cat > "$BRIEF" <<EOF
 You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
@@ -579,9 +523,7 @@ For anything the codebase already shows, prefer a pointer to the authoritative f
 If you touch a project \`AGENTS.md\`, follow \`$FM_ROOT/bin/fm-ensure-agents-md.sh\`'s self-governance contract in the same pass.
 Keep it proportionate: skip \`AGENTS.md\` edits for trivial tasks that produced no durable project knowledge.
 
-$PR_DESCRIPTION_CONTRACT
-
-$UI_SCREENSHOT_CONTRACT
+$SHIP_EVIDENCE
 
 $DOD
 EOF

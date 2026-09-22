@@ -205,6 +205,8 @@ EOF
     printf '%s\n' "$PROMOTION_ASK_USER_BLOCK"
   fi
   printf '\n'
+  fm_ship_evidence_block "$MODE" "$DATA" "$ID"
+  printf '\n'
   fm_dod_block "$MODE" "$ID"
 }
 mkdir -p "$DATA/$ID"

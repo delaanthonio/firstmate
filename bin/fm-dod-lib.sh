@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Single owner of a ship task's mode-specific "Definition of done" block.
+# Single owner of a ship task's shared delivery-contract blocks.
 # Sourced by bin/fm-brief.sh, which renders it into a generated ship brief, and by
 # bin/fm-promote.sh, which renders it into the ship instructions a promoted scout
 # receives. Both paths must hand the worker the same contract: a promoted
@@ -70,6 +70,67 @@ fm_ship_rule_one() {  # <no-mistakes|direct-PR|local-only> <task-id>
     *)
       echo "error: fm_ship_rule_one: unknown delivery mode '$mode'" >&2
       return 1
+      ;;
+  esac
+}
+
+fm_ship_evidence_block() {  # <no-mistakes|direct-PR|local-only> <data-dir> <task-id>
+  local mode=$1 data=$2 id=$3
+  case "$mode" in
+    no-mistakes|direct-PR)
+      cat <<'EOF'
+# PR description contract
+When this task opens or updates a PR, whether directly in direct-PR mode or through the no-mistakes pipeline, you own the quality of its description.
+Include explicitly titled sections named "Summary", "What changed", "Why", and "How it was tested".
+Make the Summary plain-language and understandable to a non-engineer.
+Write for a reader who has not seen the diff, with no filler or restated commit lists.
+
+# UI screenshot contract
+EOF
+      case "$mode" in
+        direct-PR)
+          cat <<'EOF'
+If the change alters a user-visible web page, mobile screen, desktop window, or email template, capture before and after screenshots and embed them in the PR description before reporting done.
+EOF
+          ;;
+        no-mistakes)
+          cat <<'EOF'
+If the change alters a user-visible web page, mobile screen, desktop window, or email template, capture before and after screenshots before appending the implementation-ready `done: {summary}` status that starts the no-mistakes pipeline.
+Before appending the final PR-ready `done: PR {url} checks green - {summary}` status, refresh the after screenshot if any pipeline-authored change affected the rendered UI so the evidence represents the shipped result, then embed both current screenshots in the PR description.
+EOF
+          ;;
+      esac
+      ;;
+    local-only)
+      cat <<EOF
+# UI screenshot contract
+If the change alters a user-visible web page, mobile screen, desktop window, or email template, capture before and after screenshots.
+Save both files under \`$data/$id/shots/\`, never commit them to the repo, and append \`done: ready in branch fm/$id; screenshots: $data/$id/shots/\` so firstmate can relay them for review.
+This mode has no PR, so do not embed the screenshots in a PR description.
+The screenshot destination above is the task-authorized exception to any earlier task-kind restriction on outside-worktree writes.
+EOF
+      ;;
+    *)
+      echo "error: fm_ship_evidence_block: unknown delivery mode '$mode'" >&2
+      return 1
+      ;;
+  esac
+  cat <<'EOF'
+Use the shared automation browser, `chrome-devtools-axi`, for web UI.
+For native UI, use surface-specific capture: iOS simulator screenshots via `xcrun`, native desktop window capture, or programmatic evidence when no display is available.
+Capture only with seeded fixture or demo accounts.
+Redact any real identifier before uploading or otherwise sharing evidence, and never attach an unredacted image to a PR in a public repository.
+EOF
+  case "$mode" in
+    local-only)
+      printf '%s\n' "For a non-UI change, skip screenshots and append \`done: ready in branch fm/$id; no user-visible change - screenshots not applicable\`."
+      ;;
+    *)
+      cat <<'EOF'
+Attach each image by converting base64 to a File and dispatching a native drop event on the GitHub description textarea; file inputs and synthetic drags do not work.
+Verify the saved description renders the `user-attachments` image URLs, and never commit screenshot files to the repo.
+For a non-UI change, skip screenshots and include the exact sentence `no user-visible change - screenshots not applicable` both in every done status line and in the PR description's explicitly titled "How it was tested" section.
+EOF
       ;;
   esac
 }
