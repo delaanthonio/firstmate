@@ -5,6 +5,9 @@
 # addressed through gh by the derived owner and repository; a GitLab merge
 # request is addressed through glab by the project URL rebuilt from the parsed
 # host and path, so any instance works and no host is hardcoded.
+# Use this helper for every task PR merge even when a repository has no PR CI and
+# therefore emits no review-evidence-suffixed checks-green status; recording the
+# PR and head here keeps squash-merge teardown bookkeeping complete.
 #
 # Merge method on GitHub defaults to --squash when the caller passes none of
 # --squash, --merge, --rebase, or --method after the optional -- separator.

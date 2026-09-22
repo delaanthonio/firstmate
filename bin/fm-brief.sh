@@ -68,6 +68,8 @@
 # it carries the AGENTS.md authoring bar (widely useful knowledge only, pointers
 # over copied detail) and defers self-governance recognition and insertion to
 # fm-ensure-agents-md.sh's contract.
+# Ship tasks render the shared review-evidence and definition-of-done contracts
+# owned by fm-dod-lib.sh.
 # Scaffolds carry no role scope: fm-spawn.sh supplies fm_brief_worker_role from
 # fm-dod-lib.sh to every ship/scout launch brief, so this file never becomes a
 # second owner of a contract that must stay current across relaunches.
@@ -429,15 +431,14 @@ exit 0
 fi
 
 # Ship task: shape Setup / Rule 1 by this task's explicit delivery mode, validated
-# above, and render the Definition of done from its single owner, bin/fm-dod-lib.sh,
-# which bin/fm-promote.sh renders too so a promoted scout receives the same contract.
+# above, and render the shared evidence and Definition-of-done blocks from their
+# single owner, bin/fm-dod-lib.sh. bin/fm-promote.sh uses the same blocks so a
+# promoted scout receives the same contract.
 # The block opens with the fixed "Delivery contract: mode=<mode>" line that
 # bin/fm-spawn.sh checks against its own explicit --mode before launching.
+RULE2="2. Stay inside this worktree; modify nothing outside it."
 case "$MODE" in
-  direct-PR)
-    SETUP2=""
-    ;;
-  local-only)
+  direct-PR|local-only)
     SETUP2=""
     ;;
   *)  # no-mistakes
@@ -447,6 +448,7 @@ case "$MODE" in
 esac
 RULE1=$(fm_ship_rule_one "$MODE" "$ID") || exit 1
 DOD=$(fm_dod_block "$MODE" "$ID") || exit 1
+SHIP_EVIDENCE=$(fm_ship_evidence_block "$MODE" "$DATA" "$ID") || exit 1
 
 cat > "$BRIEF" <<EOF
 You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
@@ -466,7 +468,7 @@ If the top-level path is the primary checkout or not the worktree you were launc
 
 # Rules
 $RULE1
-2. Stay inside this worktree; modify nothing outside it.
+$RULE2
 3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations.
 4. Report status by appending one line:
    \`echo "{state}: {one short line}" >> $STATUS_FILE\`
@@ -514,6 +516,8 @@ Record only project knowledge useful to almost every future session.
 For anything the codebase already shows, prefer a pointer to the authoritative file, command, or doc over copying the detail.
 If you touch a project \`AGENTS.md\`, follow \`$FM_ROOT/bin/fm-ensure-agents-md.sh\`'s self-governance contract in the same pass.
 Keep it proportionate: skip \`AGENTS.md\` edits for trivial tasks that produced no durable project knowledge.
+
+$SHIP_EVIDENCE
 
 $DOD
 EOF

@@ -307,7 +307,7 @@ test_promote_refuses_a_symlinked_task_record() {
 # prints against a capturing fm-send.sh, and asserts on the message the worker would
 # actually receive - for every supported mode.
 test_promotion_delivers_the_real_definition_of_done() {
-  local home meta out sendroot payload mode id brief_dod delivered_dod
+  local home meta out sendroot payload mode id brief_dod delivered_dod brief_evidence delivered_evidence
   home="$TMP_ROOT/promote-dod/home"
   sendroot="$TMP_ROOT/promote-dod/sendroot"
   mkdir -p "$home/state" "$sendroot/bin"
@@ -354,15 +354,28 @@ STUB
       "$mode: promoted worker did not receive the Captain's intent subsection"
     assert_grep "## Firstmate spec" "$payload" \
       "$mode: promoted worker did not receive the Firstmate spec subsection"
+    assert_grep "# UI screenshot contract" "$payload" \
+      "$mode: promoted worker did not receive the screenshot evidence contract"
+    assert_grep "Capture only with seeded fixture or demo accounts." "$payload" \
+      "$mode: promoted worker did not receive the fixture-data privacy contract"
+    assert_grep "Redact any real identifier before uploading or otherwise sharing evidence" "$payload" \
+      "$mode: promoted worker did not receive the redaction contract"
+    assert_grep "# UI screenshot contract" "$home/data/$id/brief.md" \
+      "$mode: promoted brief did not persist the screenshot evidence contract for relaunch"
 
-    # Compare the public outputs of both real generation paths. The promoted
-    # payload ends at its Definition of done, as does an ordinary generated
-    # brief, so identical suffixes prove both workers receive the same contract.
     rm "$home/data/$id/brief.md"
     FM_HOME="$home" "$BRIEF" "$id" fixture-project --mode "$mode" >/dev/null 2>&1 \
       || fail "$mode: ordinary ship brief generation should succeed"
+    brief_evidence="$TMP_ROOT/promote-dod/brief-evidence-$id"
+    delivered_evidence="$TMP_ROOT/promote-dod/delivered-evidence-$id"
     brief_dod="$TMP_ROOT/promote-dod/brief-dod-$id"
     delivered_dod="$TMP_ROOT/promote-dod/delivered-dod-$id"
+    awk '/^# (PR description|UI screenshot) contract$/ { if (!emit) emit=1 } /^# Definition of done$/ { exit } emit' \
+      "$home/data/$id/brief.md" > "$brief_evidence"
+    awk '/^# (PR description|UI screenshot) contract$/ { if (!emit) emit=1 } /^# Definition of done$/ { exit } emit' \
+      "$payload" > "$delivered_evidence"
+    cmp -s "$brief_evidence" "$delivered_evidence" \
+      || fail "$mode: promotion and ordinary brief generation delivered different review-evidence contracts"
     awk '/^# Definition of done$/ { emit=1 } emit' "$home/data/$id/brief.md" > "$brief_dod"
     awk '/^# Definition of done$/ { emit=1 } emit' "$payload" > "$delivered_dod"
     cmp -s "$brief_dod" "$delivered_dod" \
@@ -392,6 +405,9 @@ STUB
     "promoted direct-PR worker lost its no-pipeline contract"
   assert_grep "Do NOT push, do NOT open a PR, do NOT merge" "$TMP_ROOT/promote-dod/payload-promote-dod-local-only" \
     "promoted local-only worker lost its no-remote contract"
+  assert_grep "task-authorized exception to any earlier task-kind restriction on outside-worktree writes" \
+    "$TMP_ROOT/promote-dod/payload-promote-dod-local-only" \
+    "promoted local-only worker retained the scout outside-worktree evidence restriction"
   assert_no_grep "no-mistakes axi respond" "$TMP_ROOT/promote-dod/payload-promote-dod-direct-pr" \
     "promoted direct-PR worker received the pipeline gate contract"
   pass "fm-promote: a promoted worker receives the same mode-specific delivery contract a briefed one does"
