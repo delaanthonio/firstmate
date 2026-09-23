@@ -43,3 +43,28 @@ herdr_refuse_if_default() { # <session>
 herdr_safe_stop_and_delete() { # <session>
   fm_herdr_lab_teardown "$1"
 }
+
+# herdr_wait_for_shell_ready: wait until a newly created pane has finished its
+# interactive-shell startup and is stably able to accept a submitted command.
+# Shell initialization can briefly run helpers such as pyenv rehash in the
+# foreground, so require ten consecutive shell-only samples rather than
+# treating the pane's creation response as readiness.
+herdr_wait_for_shell_ready() { # <session> <pane> [attempts]
+  local session=$1 pane=$2 attempts=${3:-600} ready_samples=0 process_info
+  while [ "$attempts" -gt 0 ]; do
+    process_info=$(fm_herdr_lab_cli "$session" pane process-info --pane "$pane" 2>/dev/null || true)
+    if printf '%s' "$process_info" | jq -e '
+      .result.process_info as $process
+      | ($process.foreground_processes | length == 1)
+        and ($process.foreground_processes[0].pid == $process.shell_pid)
+    ' >/dev/null 2>&1; then
+      ready_samples=$((ready_samples + 1))
+      [ "$ready_samples" -ge 10 ] && return 0
+    else
+      ready_samples=0
+    fi
+    attempts=$((attempts - 1))
+    sleep 0.1
+  done
+  return 1
+}
