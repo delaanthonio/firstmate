@@ -4023,6 +4023,36 @@ test_composer_state_claude_dim_prompt_suggestion_ghost_is_empty() {
   pass "fm_backend_herdr_composer_state: claude's dim prompt-suggestion ghost (the overnight wedge shape) reads empty"
 }
 
+# Claude may dim the prompt glyph together with its rotating suggestion. In
+# that rendering the styled row strips to nothing, while the plain row is
+# still `❯ <suggestion>`. The shared classifier requests native identity and
+# Herdr may resolve the row only when the exact agent is idle/done.
+test_composer_state_claude_all_dim_prompt_suggestion_uses_idle_identity() {
+  local dir log resp fb out calls
+  dir="$TMP_ROOT/composer-claude-all-dim"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  printf '\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\n\x1b[2m\xe2\x9d\xaf what should we do next?\x1b[0m\n\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\n  Opus 5.5\n' > "$resp/1.out"
+  printf '{"result":{"agent":{"agent":"claude","agent_status":"idle"}}}\n' > "$resp/2.out"
+  fb=$(make_herdr_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_composer_state default:w1:p3' "$ROOT" )
+  [ "$out" = empty ] || fail "an all-dim Claude suggestion with native idle identity must read empty, got '$out'"
+  calls=$(grep -c $'\x1f''agent'$'\x1f''get' "$log")
+  [ "$calls" -eq 1 ] || fail "the all-dim Claude suggestion must request native identity exactly once, got $calls probes"
+  pass "fm_backend_herdr_composer_state: Claude's all-dim prompt suggestion resolves empty through native idle identity"
+}
+
+test_composer_state_claude_all_dim_prompt_suggestion_blocked_is_unknown() {
+  local dir log resp fb out
+  dir="$TMP_ROOT/composer-claude-all-dim-blocked"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  printf '\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\n\x1b[2m\xe2\x9d\xaf what should we do next?\x1b[0m\n\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\n  Opus 5.5\n' > "$resp/1.out"
+  printf '{"result":{"agent":{"agent":"claude","agent_status":"blocked"}}}\n' > "$resp/2.out"
+  fb=$(make_herdr_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_composer_state default:w1:p3' "$ROOT" )
+  [ "$out" = unknown ] || fail "an all-dim Claude row while native state is blocked must stay unknown, got '$out'"
+  pass "fm_backend_herdr_composer_state: Claude's all-dim row stays unknown while blocked"
+}
+
 # Same prompt row, but the text after "❯" is REAL (normal intensity, no dim) -
 # it must still read pending, so the ghost fix never weakens real-input
 # protection.
@@ -5365,6 +5395,8 @@ test_composer_state_claude_unbordered_prompt_is_empty
 test_composer_state_claude_unbordered_prompt_is_pending
 test_composer_state_bare_prompt_below_stale_bordered_banner_wins
 test_composer_state_claude_dim_prompt_suggestion_ghost_is_empty
+test_composer_state_claude_all_dim_prompt_suggestion_uses_idle_identity
+test_composer_state_claude_all_dim_prompt_suggestion_blocked_is_unknown
 test_composer_state_claude_dim_ghost_row_with_real_text_is_pending
 test_composer_state_grok_dark_truecolor_placeholder_is_empty
 test_composer_state_grok_bright_truecolor_real_text_is_pending

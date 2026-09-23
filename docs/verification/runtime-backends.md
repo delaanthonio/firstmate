@@ -979,6 +979,13 @@ Measured 2026-08-19 against Herdr 0.8.0 and Claude Code 2.1.236 in an isolated `
 `herdr agent get` reported `agent_status=idle` on every sample across a landed one-word turn and an 8-second `sleep` tool call, while the pane rendered `Pontificating…` then `Sock-hopping… (11s · ↓ 234 tokens)`.
 `fm_backend_herdr_send_text_submit` therefore cannot treat native idle as proof of a swallow.
 The portable regressions in `tests/fm-backend-herdr.test.sh` and `tests/fm-composer-lib.test.sh` pin the verdicts: native idle plus a cleared composer is delivery, proven pending plus idle is a swallow, and proven pending plus a generating busy signal is a queued Enter.
+
+Reverified 2026-09-23 against Herdr 0.9.0 and Claude Code 2.1.280 with Claude's prompt-suggestion setting left at its real default.
+`FM_HERDR_SUBMIT_CONFIRM_LIVE=1 ./tests/fm-herdr-submit-confirm-live-e2e.test.sh` reported `empty` and observed the requested response token in the isolated pane.
+The production-shaped regression adds Claude's fully de-emphasized `❯ <suggestion>` row: styling proves every row byte is ghost content, and Herdr's exact `claude` plus `idle|done` identity supplies the second signal required for `empty`.
+The same fixture stays `unknown` for blocked, working, missing, mismatched, and identity-less targets, while a dim glyph followed by normal-intensity draft text stays `pending`.
+A second guarded lab run proved the surrounding safety matrix with a real Claude pane: idle was `empty`, a literal unsubmitted draft was `pending`, `/config` was `unknown`, a busy-turn injection was refused, and the same away-mode injection rendered after the pane returned idle.
+Claude auto-updated to 2.1.281 before that second run; the required 2.1.280 submit proof had already completed in the first run.
 Refresh the live Claude proof with:
 
 ```sh

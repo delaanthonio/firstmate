@@ -189,6 +189,36 @@ test_matrix_claude_bare_nbsp_row() {
   pass "matrix: claude's ❯+NBSP row reads empty on every profile in both locales (#1988)"
 }
 
+test_matrix_claude_all_dim_suggestion_needs_idle_identity() {
+  # Claude can de-emphasize the ENTIRE idle suggestion row, prompt glyph
+  # included. Ghost stripping then removes every byte, while the plain row
+  # still carries `❯ <suggestion>`. Styling proves the row is furniture, but
+  # only a native idle/done Claude identity proves it is the live composer
+  # rather than a dimmed row behind an interactive overlay.
+  local screen typed
+  screen=$'transcript\n────────────────────────\n'"${ESC}[2m❯ what should we do next?${ESC}[0m"$'\n────────────────────────'
+  assert_screen "all-dim Claude suggestion requests identity" need-identity "$CAPS_STYLED" "$screen"
+  assert_screen "all-dim Claude suggestion with idle identity" empty \
+    "$CAPS_STYLED" "$screen" '' $'claude\tidle'
+  assert_screen "all-dim Claude suggestion with done identity" empty \
+    "$CAPS_STYLED" "$screen" '' $'claude\tdone'
+  assert_screen "all-dim Claude suggestion with blocked identity" unknown \
+    "$CAPS_STYLED" "$screen" '' $'claude\tblocked'
+  assert_screen "all-dim Claude suggestion with working identity" unknown \
+    "$CAPS_STYLED" "$screen" '' $'claude\tworking'
+  assert_screen "all-dim Claude suggestion without identity capability" unknown \
+    "$CAPS_STYLED_NOID" "$screen"
+  assert_screen "all-dim Claude suggestion with absent identity" unknown \
+    "$CAPS_STYLED" "$screen" '' probe-absent
+
+  # Nearby dangerous direction: real user text is normal intensity. It must
+  # stay pending even when the glyph itself is dim.
+  typed=$'────────────────────────\n'"${ESC}[2m❯${ESC}[22m land pr 416 now"$'\n────────────────────────'
+  assert_screen "dim Claude glyph with real text" pending \
+    "$CAPS_STYLED" "$typed" '' $'claude\tidle'
+  pass "matrix: Claude's all-dim suggestion is empty only with live idle identity; real text and interactive states stay safe"
+}
+
 test_matrix_codex_dim_hint_row() {
   # Real idle codex: bold `›`, reset, then an SGR-2 dim hint. Styled captures
   # strip the ghost and prove empty; plain captures must defer as unknown -
@@ -813,6 +843,7 @@ test_idle_placeholder_is_empty
 test_idle_placeholder_case_mode_is_explicit
 test_real_text_is_pending
 test_matrix_claude_bare_nbsp_row
+test_matrix_claude_all_dim_suggestion_needs_idle_identity
 test_matrix_codex_dim_hint_row
 test_matrix_muse_truecolor_glyph_survives_signal_loss
 test_matrix_cursor_reverse_video_placeholder_remnant
