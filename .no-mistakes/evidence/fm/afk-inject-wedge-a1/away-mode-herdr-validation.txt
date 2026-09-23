@@ -1,0 +1,23 @@
+Away-mode Herdr alert validation
+Date: 2026-09-23
+Target: 5d64700e2069a5a870bdde47750f50372c72bfad
+Environment: Claude Code 2.1.281, Herdr 0.9.0, macOS
+
+Regression counterfactual through fm_composer_classify_screen
+base idle Claude: unknown
+target before identity probe: need-identity
+target idle Claude: empty
+target blocked Claude: unknown
+target real typed input: pending
+
+Real Claude/Herdr round trip
+Command: FM_HERDR_SUBMIT_CONFIRM_LIVE=1 tests/fm-herdr-submit-confirm-live-e2e.test.sh
+Result: ok - live Herdr submit confirm: Claude Code (2.1.281 (Claude Code)) on herdr 0.9.0 reports empty and renders the requested reply in an isolated session
+
+Live Herdr away-daemon transport
+Command: tests/fm-afk-inject-herdr-e2e.test.sh
+Result: ok - real herdr Scenario A: partial input defers injection; digest arrives clean after idle
+Result: ok - real herdr Scenario B: swallowed Enter produces exactly one clean digest
+Result: ok - real herdr Scenario C: a normal status injects exactly one clean single-line sentinel digest
+Result: ok - real herdr Scenario D: a persistently pending composer raises the max-defer wedge alarm, preserves the buffer, and never crashes the daemon
+Result: all real-herdr afk injection e2e tests passed
