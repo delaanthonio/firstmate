@@ -23,7 +23,7 @@ LAB_HELPER=${HERDR_LAB_HELPER:-$ROOT/bin/fm-herdr-lab.sh}
 fail() { printf 'not ok - %s\n' "$1" >&2; exit 1; }
 pass() { printf 'ok - %s\n' "$1"; }
 
-fm_live_gate opt-in FM_HERDR_SUBMIT_CONFIRM_LIVE herdr jq claude
+fm_live_gate opt-in FM_HERDR_SUBMIT_CONFIRM_LIVE herdr jq claude node
 
 [ -x "$LAB_HELPER" ] || fail "FM_HERDR_SUBMIT_CONFIRM_LIVE=1 but the Herdr lab helper is not executable at $LAB_HELPER"
 
@@ -35,8 +35,48 @@ ORIGINAL_PATH=$PATH
 SESSION=$("$LAB_HELPER" name herdr-submit-confirm-live)
 TMP_ROOT=$(mktemp -d "$(cd "${TMPDIR:-/tmp}" && pwd -P)/fm-herdr-submit-confirm-live.XXXXXX")
 FAKEBIN="$TMP_ROOT/fakebin"
-mkdir -p "$FAKEBIN"
+CLAUDE_CONFIG_ROOT="$TMP_ROOT/claude-config"
+mkdir -p "$FAKEBIN" "$CLAUDE_CONFIG_ROOT"
 CHECKED=0
+
+# Keep workspace trust inside the disposable lab. Copy the operator's existing
+# non-secret account/config metadata when present, then add only this worktree's
+# trust bit to the copy. The real Claude process below consumes this store, so a
+# missing or ineffective registration still fails at the rendered surface.
+AMBIENT_CLAUDE_STORE="${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json"
+LAB_CLAUDE_STORE="$CLAUDE_CONFIG_ROOT/.claude.json"
+if [ -f "$AMBIENT_CLAUDE_STORE" ]; then
+  cp "$AMBIENT_CLAUDE_STORE" "$LAB_CLAUDE_STORE" || fail "could not seed the isolated Claude config"
+fi
+if [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
+  AMBIENT_CLAUDE_CREDENTIALS="$CLAUDE_CONFIG_DIR/.credentials.json"
+else
+  AMBIENT_CLAUDE_CREDENTIALS="$HOME/.claude/.credentials.json"
+fi
+if [ -f "$AMBIENT_CLAUDE_CREDENTIALS" ]; then
+  cp "$AMBIENT_CLAUDE_CREDENTIALS" "$CLAUDE_CONFIG_ROOT/.credentials.json" \
+    || fail "could not seed isolated Claude credentials"
+  chmod 600 "$CLAUDE_CONFIG_ROOT/.credentials.json"
+fi
+node - "$LAB_CLAUDE_STORE" "$ROOT" <<'NODE' || fail "could not register isolated Claude workspace trust"
+const fs = require("node:fs");
+const [store, project] = process.argv.slice(2);
+let root = {};
+try {
+  root = JSON.parse(fs.readFileSync(store, "utf8"));
+} catch (error) {
+  if (error.code !== "ENOENT") throw error;
+}
+if (!root.projects || typeof root.projects !== "object" || Array.isArray(root.projects)) {
+  root.projects = {};
+}
+const entry = root.projects[project];
+root.projects[project] = {
+  ...(entry && typeof entry === "object" && !Array.isArray(entry) ? entry : {}),
+  hasTrustDialogAccepted: true,
+};
+fs.writeFileSync(store, `${JSON.stringify(root)}\n`, { mode: 0o600 });
+NODE
 
 cleanup() {
   local rc=$?
@@ -80,18 +120,26 @@ TARGET="$SESSION:$PANE"
 VERSION=$(PATH="$ORIGINAL_PATH" claude --version 2>/dev/null | head -1 || printf 'version-unknown')
 HERDR_VER=$(PATH="$ORIGINAL_PATH" herdr --version 2>/dev/null | head -1 || printf 'herdr-unknown')
 
-lab pane run "$PANE" "CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude --dangerously-skip-permissions --settings '{\"feedbackDrafts\":\"off\"}'" >/dev/null \
+# Keep Claude's real prompt-suggestion default. This live guard used to force
+# suggestions off, masking the idle rendering that the away-mode injector must
+# classify in production.
+herdr_wait_for_shell_ready "$SESSION" "$PANE" \
+  || fail "the Claude pane's shell did not become ready"
+lab pane run "$PANE" "CLAUDE_CONFIG_DIR='$CLAUDE_CONFIG_ROOT' CLAUDE_CODE_SEND_FEEDBACK=0 claude --permission-mode auto --settings '{\"feedbackDrafts\":\"off\"}'" >/dev/null \
   || fail "could not launch Claude Code ($VERSION) in the isolated Herdr pane"
 
 idle=0
 i=0
 while [ "$i" -lt 45 ]; do
   st=$(lab agent get "$PANE" 2>/dev/null | jq -r '.result.agent.agent_status // empty')
-  case "$st" in idle|done|blocked) idle=1; break ;; esac
+  case "$st" in idle|done) idle=1; break ;; esac
   i=$((i + 1))
   sleep 1
 done
-[ "$idle" = 1 ] || fail "Claude Code ($VERSION) on $HERDR_VER never registered an idle agent in the lab pane"
+if [ "$idle" != 1 ]; then
+  lab pane read "$PANE" --source recent --lines 200 2>/dev/null | tail -40 | sed 's/^/    /' >&2
+  fail "Claude Code ($VERSION) on $HERDR_VER never registered an idle agent in the lab pane"
+fi
 
 TOKEN="FMHERDRPONG$$_$RANDOM"
 verdict=$(fm_backend_herdr_send_text_submit "$TARGET" "Reply with exactly $TOKEN and nothing else." 3 0.4 0.4) \
@@ -115,8 +163,10 @@ while [ "$i" -lt 45 ]; do
   i=$((i + 1))
   sleep 1
 done
-[ "$landed" = 1 ] \
-  || fail "Claude Code ($VERSION) on $HERDR_VER: submit reported '$verdict' but the expected reply never rendered"
+if [ "$landed" != 1 ]; then
+  printf '%s\n' "$screen" | tail -40 | sed 's/^/    /' >&2
+  fail "Claude Code ($VERSION) on $HERDR_VER: submit reported '$verdict' but the expected reply never rendered"
+fi
 pass "live Herdr submit confirm: Claude Code ($VERSION) on $HERDR_VER reports empty and renders the requested reply in isolated session $SESSION"
 
 [ "$CHECKED" -gt 0 ] || fail "FM_HERDR_SUBMIT_CONFIRM_LIVE=1 checked no harness"

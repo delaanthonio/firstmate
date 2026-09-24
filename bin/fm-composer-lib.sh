@@ -33,8 +33,10 @@
 #               composer. Without it, the bottom-most shape wins.
 #   identity=1  a native agent identity/state probe exists (herdr `agent get`;
 #               the tmux pi foreground-process probe). Identity is what makes
-#               Pi's blank separated composer provable; with identity=0 that
-#               shape stays `unknown`.
+#               Pi's blank separated composer provable and lets Herdr resolve
+#               Claude's fully de-emphasized prompt-suggestion row without
+#               mistaking a blocked overlay for an empty composer. With
+#               identity=0 those ambiguous shapes stay `unknown`.
 #   rows=<n>    the capture's bounded row count (informational).
 #
 # THE STRICT BLANK-ROW RULE (captain decision blank-row-injection-posture,
@@ -93,7 +95,10 @@
 # fm_composer_strip_ghost is the ONE ANSI-aware extractor of "real typed
 # content": it drops every de-emphasized run - dim/faint (SGR 2) AND a
 # dark/muted TRUECOLOR foreground - and keeps only normal-intensity,
-# normally-coloured text.
+# normally-coloured text. Claude normally leaves its `❯` glyph bright, but can
+# dim the WHOLE suggestion row, glyph included. That all-ghost shape needs the
+# exact live idle/done Claude identity as a second signal; style alone never
+# promotes a blocked or identity-less pane to empty.
 # Ghost stripping is a STYLE test, so it cannot see furniture a harness draws
 # at normal intensity: codex-cli 0.154.0 animates a braille "starfield" around
 # its idle composer in greys on both sides of the ghost luminance ceiling, so
@@ -677,8 +682,8 @@ fm_composer_classify_content() {  # <bordered> <content> [idle_re] [idle_case] [
 # identity result was supplied, and the verdict depends on it. Adapters answer
 # `need-identity` by running their identity probe once and re-calling with
 # either its result or `probe-absent`; the sentinel never escapes an adapter.
-# Identity stays a lazy second pass so the common non-pi read never pays for
-# the probe.
+# Identity stays a lazy second pass so ordinary unambiguous reads never pay
+# for the probe.
 #
 # Consumers that can overwrite input or confirm delivery must accept only the
 # exact positive proof they require (`empty`), so unrecognized future verdicts
@@ -1047,17 +1052,63 @@ _fm_composer_classify_rows() {  # <screen> <styled> <ambiguous> <first-row> <las
   fi
 }
 
+# _fm_composer_classify_all_ghost_claude_row: resolve the one styled bare-row
+# ambiguity ghost stripping cannot settle alone. Claude can dim its `❯` glyph
+# together with the rotating suggestion, so the styled content disappears
+# completely while the plain row still reads `❯ <suggestion>`. A live
+# idle/done Claude identity plus that exact shape proves empty. Working,
+# blocked, absent, mismatched, and identity-less cases remain unknown.
+_fm_composer_classify_all_ghost_claude_row() {  # <styled> <content> <plain> <has-identity> <identity>
+  local styled=$1 content=$2 plain=$3 has_identity=$4 identity=$5
+  local glyph='' body agent agent_status
+  [ "$styled" = 1 ] || return 1
+  fm_composer_normalize_trim_var content
+  fm_composer_normalize_trim_var plain
+  [ -z "$content" ] || return 1
+  fm_composer_leading_agent_glyph_var glyph "$plain" || return 1
+  [ "$glyph" = '❯' ] || return 1
+  body=${plain#*"$glyph"}
+  fm_composer_normalize_trim_var body
+  [ -n "$body" ] || return 1
+  if [ "$has_identity" != 1 ]; then
+    printf 'unknown'
+    return 0
+  fi
+  if [ -z "$identity" ]; then
+    printf 'need-identity'
+    return 0
+  fi
+  if [ "$identity" = probe-absent ]; then
+    printf 'unknown'
+    return 0
+  fi
+  agent=${identity%%$'\t'*}
+  agent_status=${identity#*$'\t'}
+  if [ "$agent" = claude ]; then
+    case "$agent_status" in
+      idle|done) printf 'empty'; return 0 ;;
+    esac
+  fi
+  printf 'unknown'
+}
+
 # _fm_composer_classify_bare_row: the bare agent-glyph row verdict, including
 # the styled=0 degradation: without styling, trailing text after the glyph may
 # be the harness's own idle suggestion (claude's rotating dim hint, codex's
 # `Use /skills ...`), so it must read `unknown` rather than a false `pending`.
-_fm_composer_classify_bare_row() {  # <screen> <styled> <row>
-  local screen=$1 styled=$2 row=$3 raw content plain state
+_fm_composer_classify_bare_row() {  # <screen> <styled> <row> [has-identity] [identity]
+  local screen=$1 styled=$2 row=$3 has_identity=${4:-0} identity=${5:-}
+  local raw content plain state
   raw=$(_fm_composer_screen_row "$row" "$screen")
   content=$(_fm_composer_row_content "$raw" "$styled")
   plain=$(_fm_composer_row_content "$raw" 0)
   _fm_composer_bare_row_strip_furniture_var content
   _fm_composer_bare_row_strip_furniture_var plain
+  if state=$(_fm_composer_classify_all_ghost_claude_row \
+      "$styled" "$content" "$plain" "$has_identity" "$identity"); then
+    printf '%s' "$state"
+    return 0
+  fi
   state=$(fm_composer_classify_content 0 "$content" \
     "${FM_COMPOSER_IDLE_RE:-$FM_COMPOSER_IDLE_RE_DEFAULT}" insensitive "$plain" 0 "$styled")
   if [ "$styled" != 1 ] && [ "$state" = pending ]; then
@@ -1413,7 +1464,7 @@ EOF
          && [ "$cy" -lt "$FM_COMPOSER_SCAN_PI_CLOSE" ]; then
         _fm_composer_classify_bare_pi_overlap "$screen" "$styled" "$has_identity" "$identity" "$cy"
       else
-        _fm_composer_classify_bare_row "$screen" "$styled" "$cy"
+        _fm_composer_classify_bare_row "$screen" "$styled" "$cy" "$has_identity" "$identity"
       fi
       return 0
     fi
@@ -1469,7 +1520,8 @@ EOF
         _fm_composer_classify_bare_pi_overlap "$screen" "$styled" "$has_identity" "$identity" \
           "$FM_COMPOSER_SCAN_BARE_ROW"
       else
-        _fm_composer_classify_bare_row "$screen" "$styled" "$FM_COMPOSER_SCAN_BARE_ROW"
+        _fm_composer_classify_bare_row "$screen" "$styled" "$FM_COMPOSER_SCAN_BARE_ROW" \
+          "$has_identity" "$identity"
       fi
       ;;
     leftbar)
@@ -1545,7 +1597,7 @@ _fm_composer_classify_pi_rows() {  # <screen> <styled>
 _fm_composer_classify_bare_pi_overlap() {  # <screen> <styled> <has-identity> <identity> <bare-row>
   local screen=$1 styled=$2 has_identity=$3 identity=$4 row=$5 agent
   if [ "$has_identity" != 1 ]; then
-    _fm_composer_classify_bare_row "$screen" "$styled" "$row"
+    _fm_composer_classify_bare_row "$screen" "$styled" "$row" "$has_identity" "$identity"
     return 0
   fi
   if [ -z "$identity" ]; then
@@ -1553,14 +1605,14 @@ _fm_composer_classify_bare_pi_overlap() {  # <screen> <styled> <has-identity> <i
     return 0
   fi
   if [ "$identity" = probe-absent ]; then
-    _fm_composer_classify_bare_row "$screen" "$styled" "$row"
+    _fm_composer_classify_bare_row "$screen" "$styled" "$row" "$has_identity" "$identity"
     return 0
   fi
   agent=${identity%%$'\t'*}
   if [ "$agent" = pi ]; then
     _fm_composer_pi_verdict "$screen" "$styled" "$has_identity" "$identity"
   else
-    _fm_composer_classify_bare_row "$screen" "$styled" "$row"
+    _fm_composer_classify_bare_row "$screen" "$styled" "$row" "$has_identity" "$identity"
   fi
 }
 
