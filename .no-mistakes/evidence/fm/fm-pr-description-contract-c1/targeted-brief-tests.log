@@ -1,0 +1,2 @@
+ok - fm-brief.sh: ship contracts match PR-producing and local-only delivery modes
+ok - fm-brief.sh: ship-only PR and screenshot contracts do not leak to scout or secondmate briefs

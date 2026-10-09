@@ -1,0 +1,105 @@
+$ tmux new-session -d -s contract-test -x 120 -y 40 -n idle 'exec /bin/cat'
+[exit 0]
+
+$ /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4H0T2CWNYMY4AGZ9RGK4SSZ/bin/fm-brief.sh live-ship-no-mistakes fixture --mode no-mistakes
+scaffolded: /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4H0T2CWNYMY4AGZ9RGK4SSZ/.test-pr-contract/home/data/live-ship-no-mistakes/brief.md (ship, mode=no-mistakes; replace {TASK} and {FIRSTMATE_SPEC})
+[exit 0]
+
+$ /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4H0T2CWNYMY4AGZ9RGK4SSZ/bin/fm-brief.sh live-promote-no-mistakes fixture --scout
+scaffolded: /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4H0T2CWNYMY4AGZ9RGK4SSZ/.test-pr-contract/home/data/live-promote-no-mistakes/brief.md (scout; replace {TASK} and {FIRSTMATE_SPEC})
+[exit 0]
+
+$ tmux new-window -dP -F '#{window_id}' -t contract-test: -n fm-live-promote-no-mistakes 'exec /bin/cat'
+@1
+[exit 0]
+
+$ tmux set-window-option -t @1 automatic-rename off
+[exit 0]
+
+$ tmux display-message -p -t @1 '#{pane_width}x#{pane_height}'
+120x40
+[exit 0]
+
+$ /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4H0T2CWNYMY4AGZ9RGK4SSZ/bin/fm-promote.sh live-promote-no-mistakes --mode no-mistakes --yolo off
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+promoted live-promote-no-mistakes to ship mode=no-mistakes yolo=off (teardown protection restored)
+wrote ship instructions for mode=no-mistakes: /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4H0T2CWNYMY4AGZ9RGK4SSZ/.test-pr-contract/home/data/live-promote-no-mistakes/ship-instructions.md
+next: FM_HOME=/Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4H0T2CWNYMY4AGZ9RGK4SSZ/.test-pr-contract/home bin/fm-send.sh fm-live-promote-no-mistakes "$(cat /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4H0T2CWNYMY4AGZ9RGK4SSZ/.test-pr-contract/home/data/live-promote-no-mistakes/ship-instructions.md)"
+[exit 0]
+
+$ bash -c 'FM_HOME=/Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4H0T2CWNYMY4AGZ9RGK4SSZ/.test-pr-contract/home bin/fm-send.sh fm-live-promote-no-mistakes "$(cat /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4H0T2CWNYMY4AGZ9RGK4SSZ/.test-pr-contract/home/data/live-promote-no-mistakes/ship-instructions.md)"'
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+[exit 0]
+
+$ /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4H0T2CWNYMY4AGZ9RGK4SSZ/bin/fm-brief.sh live-ship-direct-pr fixture --mode direct-PR
+scaffolded: /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4H0T2CWNYMY4AGZ9RGK4SSZ/.test-pr-contract/home/data/live-ship-direct-pr/brief.md (ship, mode=direct-PR; replace {TASK} and {FIRSTMATE_SPEC})
+[exit 0]
+
+$ /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4H0T2CWNYMY4AGZ9RGK4SSZ/bin/fm-brief.sh live-promote-direct-pr fixture --scout
+scaffolded: /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4H0T2CWNYMY4AGZ9RGK4SSZ/.test-pr-contract/home/data/live-promote-direct-pr/brief.md (scout; replace {TASK} and {FIRSTMATE_SPEC})
+[exit 0]
+
+$ tmux new-window -dP -F '#{window_id}' -t contract-test: -n fm-live-promote-direct-pr 'exec /bin/cat'
+@2
+[exit 0]
+
+$ tmux set-window-option -t @2 automatic-rename off
+[exit 0]
+
+$ tmux display-message -p -t @2 '#{pane_width}x#{pane_height}'
+120x40
+[exit 0]
+
+$ /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4H0T2CWNYMY4AGZ9RGK4SSZ/bin/fm-promote.sh live-promote-direct-pr --mode direct-PR --yolo off
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+promoted live-promote-direct-pr to ship mode=direct-PR yolo=off (teardown protection restored)
+wrote ship instructions for mode=direct-PR: /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4H0T2CWNYMY4AGZ9RGK4SSZ/.test-pr-contract/home/data/live-promote-direct-pr/ship-instructions.md
+next: FM_HOME=/Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4H0T2CWNYMY4AGZ9RGK4SSZ/.test-pr-contract/home bin/fm-send.sh fm-live-promote-direct-pr "$(cat /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4H0T2CWNYMY4AGZ9RGK4SSZ/.test-pr-contract/home/data/live-promote-direct-pr/ship-instructions.md)"
+[exit 0]
+
+$ bash -c 'FM_HOME=/Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4H0T2CWNYMY4AGZ9RGK4SSZ/.test-pr-contract/home bin/fm-send.sh fm-live-promote-direct-pr "$(cat /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4H0T2CWNYMY4AGZ9RGK4SSZ/.test-pr-contract/home/data/live-promote-direct-pr/ship-instructions.md)"'
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+[exit 0]
+
+$ /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4H0T2CWNYMY4AGZ9RGK4SSZ/bin/fm-brief.sh live-ship-local-only fixture --mode local-only
+scaffolded: /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4H0T2CWNYMY4AGZ9RGK4SSZ/.test-pr-contract/home/data/live-ship-local-only/brief.md (ship, mode=local-only; replace {TASK} and {FIRSTMATE_SPEC})
+[exit 0]
+
+$ /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4H0T2CWNYMY4AGZ9RGK4SSZ/bin/fm-brief.sh live-promote-local-only fixture --scout
+scaffolded: /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4H0T2CWNYMY4AGZ9RGK4SSZ/.test-pr-contract/home/data/live-promote-local-only/brief.md (scout; replace {TASK} and {FIRSTMATE_SPEC})
+[exit 0]
+
+$ tmux new-window -dP -F '#{window_id}' -t contract-test: -n fm-live-promote-local-only 'exec /bin/cat'
+@3
+[exit 0]
+
+$ tmux set-window-option -t @3 automatic-rename off
+[exit 0]
+
+$ tmux display-message -p -t @3 '#{pane_width}x#{pane_height}'
+120x40
+[exit 0]
+
+$ /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4H0T2CWNYMY4AGZ9RGK4SSZ/bin/fm-promote.sh live-promote-local-only --mode local-only --yolo off
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+promoted live-promote-local-only to ship mode=local-only yolo=off (teardown protection restored)
+wrote ship instructions for mode=local-only: /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4H0T2CWNYMY4AGZ9RGK4SSZ/.test-pr-contract/home/data/live-promote-local-only/ship-instructions.md
+next: FM_HOME=/Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4H0T2CWNYMY4AGZ9RGK4SSZ/.test-pr-contract/home bin/fm-send.sh fm-live-promote-local-only "$(cat /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4H0T2CWNYMY4AGZ9RGK4SSZ/.test-pr-contract/home/data/live-promote-local-only/ship-instructions.md)"
+[exit 0]
+
+$ bash -c 'FM_HOME=/Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4H0T2CWNYMY4AGZ9RGK4SSZ/.test-pr-contract/home bin/fm-send.sh fm-live-promote-local-only "$(cat /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4H0T2CWNYMY4AGZ9RGK4SSZ/.test-pr-contract/home/data/live-promote-local-only/ship-instructions.md)"'
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+[exit 0]
+
+$ /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4H0T2CWNYMY4AGZ9RGK4SSZ/bin/fm-brief.sh live-secondmate --secondmate --no-projects
+scaffolded: /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4H0T2CWNYMY4AGZ9RGK4SSZ/.test-pr-contract/home/data/live-secondmate/brief.md (secondmate charter; replace {TASK})
+[exit 0]
+
+$ tmux kill-server
+[exit 0]

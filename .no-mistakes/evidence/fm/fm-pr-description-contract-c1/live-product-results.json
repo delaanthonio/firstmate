@@ -1,0 +1,45 @@
+[
+  {
+    "path": "ordinary brief",
+    "mode": "no-mistakes",
+    "result": "pass"
+  },
+  {
+    "path": "real promotion and fm-send durable inbox",
+    "mode": "no-mistakes",
+    "result": "pass",
+    "terminal_grid": "120x40",
+    "message_matches_instructions": true,
+    "persisted_for_relaunch": true
+  },
+  {
+    "path": "ordinary brief",
+    "mode": "direct-PR",
+    "result": "pass"
+  },
+  {
+    "path": "real promotion and fm-send durable inbox",
+    "mode": "direct-PR",
+    "result": "pass",
+    "terminal_grid": "120x40",
+    "message_matches_instructions": true,
+    "persisted_for_relaunch": true
+  },
+  {
+    "path": "ordinary brief",
+    "mode": "local-only",
+    "result": "pass"
+  },
+  {
+    "path": "real promotion and fm-send durable inbox",
+    "mode": "local-only",
+    "result": "pass",
+    "terminal_grid": "120x40",
+    "message_matches_instructions": true,
+    "persisted_for_relaunch": true
+  },
+  {
+    "path": "secondmate charter boundary",
+    "result": "pass"
+  }
+]
