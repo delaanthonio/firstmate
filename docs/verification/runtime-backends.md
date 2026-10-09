@@ -2494,3 +2494,42 @@ Without Firstmate's hooks, Herdr reported the question panel as `blocked`, which
 This live proof covers the watcher and queue boundary; it does not establish live daemon-consumer delivery.
 `bin/fm-test-run.sh tests/fm-daemon.test.sh` exercises that consumer routing separately with portable regressions for busy escalation and busy-bookkeeping failures in away and quiet mode.
 Repeat the hooked-worker check above before publication if watcher or task-inbox busy code changes; `bin/fm-test-run.sh tests/fm-task-inbox.test.sh` refreshes the portable ladder regressions.
+
+## Droid
+
+Verified on 2026-10-09 with Droid 0.237.0 and tmux 3.7c on macOS in an isolated tmux server, linked task worktree, and private HOME.
+The [Droid adapter reference](../../.agents/skills/harness-adapters/references/harness/droid.md) owns current operations and restrictions.
+This evidence covers crewmate and scout support; primary and secondmate integration are unsupported.
+
+Refresh the credentialed guard with:
+
+```sh
+FM_DROID_SIGNALS_LIVE=1 bin/fm-test-run.sh tests/fm-droid-signals-live-e2e.test.sh
+```
+
+Exact observed guard output:
+
+```text
+ok - Droid 0.237.0 independent working signals match the scoped busy guard
+ok - Droid 0.237.0 trusted worktree brief runs, exact ancestry detects Droid, and Stop fires
+ok - Droid 0.237.0 idle composer permits delivery
+ok - Droid 0.237.0 process-local dynamic effort and requested model apply in native settings
+ok - Droid 0.237.0 single Escape interrupts a running turn
+ok - Droid 0.237.0 /quit exits the agent
+DROID_LIVE_RESULT version=0.237.0 detection=pass launch=pass busy=pass stop=pass composer=pass profile=pass interrupt=pass exit=pass
+```
+
+Droid stores folder trust in the persistent `trustedFolders` object in `~/.factory/settings.json`; adding that field to a process-only `--settings` file did not suppress the fresh-folder dialog on 0.233.0.
+The live guard proves that exact-worktree registration through `bin/fm-droid-trust.sh` suppresses the gate on 0.237.0 and that the launched worker actually executes its brief.
+The working spinner row and interrupt hint each classify busy when the other is deliberately removed from the native capture.
+It also proves `Auto (High)` survives inherited medium-autonomy user session defaults when the process settings pin the template's autonomy.
+The native `/settings` surface confirms the requested model and `Dynamic` reasoning level are overridden by the runtime settings file.
+The guard retains the configured session model unless `FM_DROID_LIVE_MODEL` selects another authenticated model.
+The portable guards refresh with:
+
+```sh
+bin/fm-test-run.sh tests/fm-droid-harness.test.sh tests/fm-harness-precedence.test.sh tests/fm-spawn-dispatch-profile.test.sh tests/fm-control-relaunch.test.sh
+```
+
+The portable cases cover exact-name process detection, foreign-marker precedence, adapter-scoped busy classification including cmux, timer-footer composer safety, scoped trust registration and malformed-store refusal, model/effort settings, hook quoting, collisions, failed-spawn cleanup, and dynamic-effort relaunch.
+Herdr, Zellij, cmux, and Orca have no new credentialed Droid placement evidence in this record; they retain their existing backend delivery and control limitations.
