@@ -362,6 +362,26 @@ STUB
       "$mode: promoted worker did not receive the redaction contract"
     assert_grep "# UI screenshot contract" "$home/data/$id/brief.md" \
       "$mode: promoted brief did not persist the screenshot evidence contract for relaunch"
+    if [ "$mode" != local-only ]; then
+      assert_grep 'targeting fewer than about 120 lines' "$payload" \
+        "$mode: promoted worker did not receive the concise PR description contract"
+      assert_grep 'no first-person narration and no direct address of anyone' "$payload" \
+        "$mode: promoted worker did not receive the neutral PR voice contract"
+      # shellcheck disable=SC2016 # Preserve the exact render command in worker instructions.
+      assert_grep '`gh api markdown -F text=@body.md -f mode=gfm`' "$payload" \
+        "$mode: promoted worker did not receive the PR rendering check"
+      assert_grep 'If supplemental evidence is included' "$payload" \
+        "$mode: promoted worker did not receive the conditional validation block contract"
+      assert_grep 'Omit the block when there is no supplemental evidence.' "$payload" \
+        "$mode: promoted worker was told to include an empty validation block"
+      assert_grep 'any included details block must collapse' "$payload" \
+        "$mode: promoted rendering check requires an absent validation block"
+      assert_grep 'targeting fewer than about 120 lines' "$home/data/$id/brief.md" \
+        "$mode: promoted brief did not persist the PR description contract for relaunch"
+    else
+      assert_no_grep '# PR description contract' "$payload" \
+        "$mode: promoted local-only worker received a PR description contract"
+    fi
 
     rm "$home/data/$id/brief.md"
     FM_HOME="$home" "$BRIEF" "$id" fixture-project --mode "$mode" >/dev/null 2>&1 \
