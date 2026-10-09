@@ -345,7 +345,7 @@ test_ship_contracts_are_mode_specific() {
     FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode "$mode" >/dev/null 2>&1
     brief="$home/data/$id/brief.md"
     assert_grep "# PR description contract" "$brief" "$id: brief missing PR description contract"
-    assert_grep 'use explicitly titled sections in this order: "Summary", "Screenshots" (for UI changes), "What changed", "How to review", "Testing", "Risk", and "Follow-ups", followed by one collapsed "Validation details" block.' "$brief" \
+    assert_grep 'use explicitly titled sections in this order: "Summary", "Screenshots" (for UI changes), "What changed", "How to review", "Testing", "Risk", and "Follow-ups".' "$brief" \
       "$id: PR description contract does not require ordered review sections"
     # shellcheck disable=SC2016 # Generated Markdown must preserve literal backticks.
     assert_grep 'If `.github/PULL_REQUEST_TEMPLATE.md` exists, follow its section layout instead of the default below while keeping all brevity, content, voice, evidence, and rendering constraints' "$brief" \
@@ -363,8 +363,10 @@ test_ship_contracts_are_mode_specific() {
     assert_grep 'targeting fewer than about 120 lines' "$brief" \
       "$id: visible PR content has no length target"
     # shellcheck disable=SC2016 # Generated Markdown must preserve literal HTML tags.
-    assert_grep 'Put all raw logs, JSON, transcripts, and pipeline output inside the single collapsed `<details>` block with `<summary>Validation details</summary>`, after the visible sections; never paste them outside that block.' "$brief" \
+    assert_grep 'If supplemental evidence is included, put it (including any raw logs, JSON, transcripts, and pipeline output) inside a single collapsed `<details>` block with `<summary>Validation details</summary>`, after the visible sections; never paste it outside that block.' "$brief" \
       "$id: verbose validation output is not confined to one collapsed block"
+    assert_grep 'Omit the block when there is no supplemental evidence.' "$brief" \
+      "$id: PR description requires an empty validation block"
     assert_grep 'Use a neutral voice: no first-person narration and no direct address of anyone.' "$brief" \
       "$id: PR description permits first-person narration or direct address"
     # shellcheck disable=SC2016 # Literal rendering instructions, not shell expansions.
@@ -373,10 +375,10 @@ test_ship_contracts_are_mode_specific() {
     assert_grep 'Use plain characters rather than HTML entities.' "$brief" \
       "$id: PR description permits HTML entities"
     # shellcheck disable=SC2016 # The worker must receive the exact render command.
-    assert_grep 'Before saving a new or updated description, render the exact proposed body with `gh api markdown -f text=@body.md -f mode=gfm`' "$brief" \
+    assert_grep 'Before saving a new or updated description, render the exact proposed body with `gh api markdown -F text=@body.md -f mode=gfm`' "$brief" \
       "$id: PR description is not rendered before saving"
     # shellcheck disable=SC2016 # Literal tag names in the rendering check.
-    assert_grep 'the details block must collapse, and no literal `<details>` / `<summary>` tags or HTML entity text may appear as visible text' "$brief" \
+    assert_grep 'any included details block must collapse, and no literal `<details>` / `<summary>` tags or HTML entity text may appear as visible text' "$brief" \
       "$id: rendering check does not catch raw details tags or entity text"
     assert_no_grep 'Include explicitly titled sections named "Summary", "What changed", "Why", and "How it was tested".' "$brief" \
       "$id: obsolete PR section requirements conflict with the new contract"

@@ -368,8 +368,14 @@ STUB
       assert_grep 'no first-person narration and no direct address of anyone' "$payload" \
         "$mode: promoted worker did not receive the neutral PR voice contract"
       # shellcheck disable=SC2016 # Preserve the exact render command in worker instructions.
-      assert_grep '`gh api markdown -f text=@body.md -f mode=gfm`' "$payload" \
+      assert_grep '`gh api markdown -F text=@body.md -f mode=gfm`' "$payload" \
         "$mode: promoted worker did not receive the PR rendering check"
+      assert_grep 'If supplemental evidence is included' "$payload" \
+        "$mode: promoted worker did not receive the conditional validation block contract"
+      assert_grep 'Omit the block when there is no supplemental evidence.' "$payload" \
+        "$mode: promoted worker was told to include an empty validation block"
+      assert_grep 'any included details block must collapse' "$payload" \
+        "$mode: promoted rendering check requires an absent validation block"
       assert_grep 'targeting fewer than about 120 lines' "$home/data/$id/brief.md" \
         "$mode: promoted brief did not persist the PR description contract for relaunch"
     else
