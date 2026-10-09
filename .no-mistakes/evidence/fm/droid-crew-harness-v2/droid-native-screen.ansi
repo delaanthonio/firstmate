@@ -1,0 +1,45 @@
+
+
+                                           [1m[38;2;238;238;238m█████████    █████████     ████████    ███   █████████[0m
+                                           [1m[38;2;238;238;238m███    ███   ███    ███   ███    ███   ███   ███    ███[0m
+                                           [1m[38;2;238;238;238m███    ███   ███    ███   ███    ███   ███   ███    ███[0m
+                                           [1m[38;2;238;238;238m███    ███   █████████    ███    ███   ███   ███    ███[0m
+                                           [1m[38;2;238;238;238m███    ███   ███    ███   ███    ███   ███   ███    ███[0m
+                                           [1m[38;2;238;238;238m███    ███   ███    ███   ███    ███   ███   ███    ███[0m
+                                           [1m[38;2;238;238;238m█████████    ███    ███    ████████    ███   █████████[0m
+
+                                                                  [1m[38;2;168;168;168mv0.237.0[0m
+
+                                   [1m[38;2;238;238;238mTIP: Run /readiness-report to evaluate this repo for agent readiness.[0m
+
+                                             [38;2;168;168;168mshift+tab to cycle modes · ctrl+N to cycle models[39m
+                                                  [38;2;168;168;168mctrl+L for autonomy · tab for reasoning[39m
+
+                                                    [1m[38;2;168;168;168mSkills (…)[0m  [1m[38;2;168;168;168mMCPs (0)[0m[38;2;215;95;95m ✗[39m  [1m[38;2;168;168;168mAGENTS.md[0m[38;2;0;255;0m ✓[39m
+
+
+[1m[38;2;118;118;118m●[0m  [38;2;238;238;238mTip: Enable Shift+Enter for new lines in tmux. Run /terminal-setup to configure it.[39m
+
+[48;2;215;95;0m [48;2;38;38;38m  [38;2;216;212;210mUse Execute to run bash '/Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/bin/fm-harness.sh' > [39m
+[48;2;215;95;0m [48;2;38;38;38m  [38;2;216;212;210m'/Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/fm-droid-signals.xjjmmU/state/identity'; run sleep
+[39m[48;2;215;95;0m [48;2;38;38;38m  [38;2;216;212;210m8 after that command succeeds. Add 12345 and 67890 and reply only with the sum. [39m
+
+[49m   [1m[38;2;183;183;183mE[38;2;195;195;195mx[38;2;162;162;162me[38;2;118;118;118mcute[0m [38;2;95;175;215mbash[39m [38;2;0;215;95m'/Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/bin/fm-harness.sh'[39m [38;2;175;175;255m>[39m '/Users/dela/.no-...
+
+ [38;2;215;95;0m⠋ Executing... [2m[38;2;118;118;118m (Press ESC to stop)[0m
+
+ [38;2;215;135;0mAuto (High)[38;2;118;118;118m · [38;2;215;135;0mallow all commands[39m                                                                               [38;2;238;238;238mGPT-5.6 Sol [BYOK] (Medium)[39m
+[38;2;135;135;135m╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│[39m [38;2;215;95;0m> [7m[39mE[0;2mnter to steer · Ctrl+Enter to queue[0m                                                                                                   [38;2;135;135;135m│
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+[38;2;118;118;118m[⏱ 11s, context: <1%] ? for help[39m                                                                                                      [38;2;175;175;95mTMUX ⧉
+[2m[39m/U/d/.n/w/e/0/.t/f/task   guard[0m
+
+
+
+
+
+
+
+
+

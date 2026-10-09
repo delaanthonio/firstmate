@@ -1,0 +1,164 @@
+/Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/fleet
+register: /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/pool/.treehouse/project-test/1/project
+error: refusing to change Droid trust: '/Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/project' is a primary checkout, not an isolated worktree
+error: refusing to change Droid trust: '/Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl' is not a worktree root (its root is '/Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4')
+error: refusing to change Droid trust: '/Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/user' is the home directory, not a task worktree
+EXACT_SCOPE_STATE
+{
+  "otherSetting": "preserve",
+  "trustedFolders": {
+    "/unrelated": {
+      "trustedAt": "existing"
+    },
+    "/Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/alias": {
+      "trustedAt": "2026-10-09T21:39:26.956Z"
+    },
+    "/Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/pool/.treehouse/project-test/1/project": {
+      "trustedAt": "2026-10-09T21:39:26.957Z"
+    }
+  }
+}
+rollback: /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/fleet/state/owner.droid-trust
+true
+register: /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/pool/.treehouse/project-test/1/project
+register: /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/pool/.treehouse/project-test/1/project
+rollback: /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/fleet/state/owner.droid-trust
+PREEXISTING_ROLLBACK_STATE
+{
+  "otherSetting": "preserve",
+  "trustedFolders": {
+    "/unrelated": {
+      "trustedAt": "existing"
+    },
+    "/Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/alias": {
+      "trustedAt": "2026-10-09T21:39:27.369Z"
+    },
+    "/Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/pool/.treehouse/project-test/1/project": {
+      "trustedAt": "2026-10-09T21:39:27.370Z"
+    }
+  }
+}
+remove: /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/pool/.treehouse/project-test/1/project
+register: /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/concurrent-2
+register: /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/concurrent-3
+register: /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/concurrent-4
+register: /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/concurrent-1
+true
+remove: /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/concurrent-2
+remove: /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/concurrent-3
+remove: /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/concurrent-4
+remove: /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/concurrent-1
+true
+register: /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/concurrent-2
+register: /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/concurrent-4
+register: /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/concurrent-1
+register: /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/concurrent-3
+true
+remove: /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/concurrent-4
+remove: /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/concurrent-1
+remove: /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/concurrent-3
+remove: /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/concurrent-2
+true
+register: /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/concurrent-2
+register: /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/concurrent-4
+register: /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/concurrent-1
+register: /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/concurrent-3
+true
+remove: /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/concurrent-2
+remove: /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/concurrent-4
+remove: /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/concurrent-1
+remove: /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/concurrent-3
+true
+CONCURRENT_FINAL_STATE
+{
+  "otherSetting": "preserve",
+  "trustedFolders": {
+    "/unrelated": {
+      "trustedAt": "existing"
+    }
+  }
+}
+complete: owner captain-call inventory reviewed
+complete: successor captain-call inventory reviewed
+register: /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/pool/.treehouse/project-test/1/project
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/fleet
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  2 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+teardown owner complete (window firstmate:fm-owner, worktree /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/pool/.treehouse/project-test/1/project)
+Backlog: owner just finished (config/backlog-backend selects manual editing). Update /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/fleet/data/backlog.md - move owner to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+TRANSFERRED_RECEIPT
+{
+  "schema": "fm-droid-trust.v1",
+  "store": "/Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/user/.factory/settings.json",
+  "paths": [
+    "/Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/alias",
+    "/Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/pool/.treehouse/project-test/1/project"
+  ],
+  "acquired": {
+    "/Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/alias": {
+      "trustedAt": "2026-10-09T21:39:36.221Z"
+    },
+    "/Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/pool/.treehouse/project-test/1/project": {
+      "trustedAt": "2026-10-09T21:39:36.222Z"
+    }
+  }
+}
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/fleet
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+teardown successor complete (window firstmate:fm-successor, worktree /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/pool/.treehouse/project-test/1/project)
+Backlog: successor just finished (config/backlog-backend selects manual editing). Update /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/fleet/data/backlog.md - move successor to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+true
+SUCCESSOR_FINAL_STATE
+{
+  "otherSetting": "preserve",
+  "trustedFolders": {
+    "/unrelated": {
+      "trustedAt": "existing"
+    }
+  }
+}
+complete: retired captain-call inventory reviewed
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/fleet
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+teardown retired complete (window firstmate:fm-retired, worktree /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/pool/.treehouse/project-test/1/project)
+Backlog: retired just finished (config/backlog-backend selects manual editing). Update /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/fleet/data/backlog.md - move retired to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+true
+RECEIPT_FREE_FINAL_STATE
+{
+  "otherSetting": "preserve",
+  "trustedFolders": {
+    "/unrelated": {
+      "trustedAt": "existing"
+    }
+  }
+}
+complete: owner captain-call inventory reviewed
+complete: successor captain-call inventory reviewed
+register: /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/pool/.treehouse/project-test/1/project
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/fleet
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: refusing to change Droid trust: successor metadata is busy: /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/fleet/state/.meta-successor.lock
+CONTENTION_STATE owner_record=retained owner_receipt=retained successor_receipt=absent owner_exit=1
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/fleet
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+teardown successor complete (window firstmate:fm-successor, worktree /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/pool/.treehouse/project-test/1/project)
+Backlog: successor just finished (config/backlog-backend selects manual editing). Update /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/fleet/data/backlog.md - move successor to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/fleet
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+teardown owner complete (window firstmate:fm-owner, worktree /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/pool/.treehouse/project-test/1/project)
+Backlog: owner just finished (config/backlog-backend selects manual editing). Update /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-public-trust.w87kwl/fleet/data/backlog.md - move owner to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+true
+CONCURRENT_RETIREMENT_FINAL_STATE no_metadata=true no_orphan_receipts=true
+{
+  "otherSetting": "preserve",
+  "trustedFolders": {
+    "/unrelated": {
+      "trustedAt": "existing"
+    }
+  }
+}

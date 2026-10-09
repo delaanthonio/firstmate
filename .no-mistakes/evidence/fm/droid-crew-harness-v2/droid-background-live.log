@@ -1,0 +1,8 @@
+/Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/fm-lab-background.pv5GOy/fleet
+19285 19285 19285 fish
+19330 19285 19285 bash
+19338 19338 19285 /Users/dela/.local/bin/droid
+BACKGROUND_COMPOSER verdict=unknown exact-vendor-background=true
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/fm-lab-background.pv5GOy/fleet
+already-stopped background harness=droid backend=tmux endpoint=firstmate:fm-background worktree=/Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/fm-lab-background.pv5GOy/project
+BACKGROUND_CONTROL exit=0 no-control-input=true

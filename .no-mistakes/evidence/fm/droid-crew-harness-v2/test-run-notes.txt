@@ -1,0 +1,10 @@
+Current head: b8d5646cb99a3404a4abacc3c8e7be27cd1bd957
+Canonical credentialed Droid guard: exit 0; no capability skips.
+Targeted Droid helper, bootstrap, dispatch and harness precedence runner: exit 0; no capability skips.
+Public settings lifecycle: final driver exit 0 after selecting Bash for the disposable driver shell to avoid a Fish cache cleanup race.
+Native model, primary-lock exclusion, draft refusal, dynamic relaunch, scoped busy classification, public interrupt, exit and teardown: observed in droid-native-product-live.log. An immediate exit after closing /settings was refused while its next frame was unproven; the revised driver waits for an empty composer and successfully exits.
+The appended background experiment initially lacked a controlling tty. It was re-driven separately with explicit /dev/tty redirection; droid-background-live.log proves the real vendor process is in a background group and public control sends no input.
+Public secondmate relaunch initially used an incomplete disposable record; the corrected project-bound record is refused before stop with metadata unchanged.
+Trust race, changed-grant rollback, bootstrap/secondmate boundaries and background driver: final exit 0.
+No production fleet or Herdr endpoint was driven. All disposable homes and test endpoints were removed. One orphaned copied Bash process from the portable background fixture was stopped by its exact PID before cleanup.
+Terminal PNG is a browser rendering of ANSI captures from real tmux panes; no product UI was mocked.

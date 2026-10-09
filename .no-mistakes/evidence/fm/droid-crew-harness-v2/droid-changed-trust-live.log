@@ -1,0 +1,14 @@
+register: /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-changed-trust.jnL9Il/task
+rollback: /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-changed-trust.jnL9Il/state/task.droid-trust
+CHANGED_GRANT_ROLLBACK retained-user-change=true receipt-retired=true
+{
+  "otherSetting": "preserve",
+  "trustedFolders": {
+    "/unrelated": {
+      "trustedAt": "existing"
+    },
+    "/Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-changed-trust.jnL9Il/task": {
+      "trustedAt": "changed-by-user"
+    }
+  }
+}

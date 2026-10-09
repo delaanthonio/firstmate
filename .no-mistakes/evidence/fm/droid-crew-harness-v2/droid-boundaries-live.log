@@ -1,0 +1,8 @@
+/Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-boundaries.7YYBOM/fleet
+NON_DROID_BOOTSTRAP no-jq-diagnostic=true
+MISSING: jq (install: brew install jq  # or the platform's package manager)
+MISSING: jq (install: brew install jq  # or the platform's package manager)
+DROID_PROFILE_BOOTSTRAP literal-custom-id=accepted dynamic=accepted
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/droid-boundaries.7YYBOM/fleet
+error: droid is a verified crewmate/scout adapter only and cannot run a secondmate; it has no primary supervision protocol. Select a harness verified for secondmates.
+SECOND_MATE_BOUNDARY refused-before-launch=true exit=1

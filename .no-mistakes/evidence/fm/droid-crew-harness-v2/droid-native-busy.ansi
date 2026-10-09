@@ -1,0 +1,45 @@
+[48;2;215;95;0m [48;2;38;38;38m  [38;2;216;212;210mFirst, check your instruction inbox: list [39m
+[48;2;215;95;0m [48;2;38;38;38m  [38;2;216;212;210m/Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/fm-lab-native.Cd9j35/fleet/state/native.inbox/*.msg,
+[39m[48;2;215;95;0m [48;2;38;38;38m  [38;2;216;212;210m act on[39m
+[48;2;215;95;0m [48;2;38;38;38m  [38;2;216;212;210meach message in numeric order, then mv each handled file into[39m
+[48;2;215;95;0m [48;2;38;38;38m  [38;2;216;212;210m/Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/fm-lab-native.Cd9j35/fleet/state/native.inbox/handle
+[39m[48;2;215;95;0m [48;2;38;38;38m  [38;2;216;212;210md/. A steer sent before the relaunch survives there.[39m
+[48;2;215;95;0m [48;2;38;38;38m
+[48;2;215;95;0m [48;2;38;38;38m  [38;2;216;212;210mRepeat the original arithmetic report; do not do other work. [39m
+
+[49m   [1m[38;2;215;135;95mGlob[0m[38;2;178;178;178m 1 pattern[39m
+    [38;2;118;118;118m↳ *.msg[38;2;215;95;95m (error)[39m
+    [38;2;215;95;95m1 pattern failed[39m
+
+   [1m[38;2;215;135;95mExecute[0m [38;2;95;175;215mprintf[39m [38;2;0;215;95m'80235'[39m [38;2;175;175;255m>[39m "/Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/fm-lab-native.Cd...
+    [38;2;118;118;118m↳ Command completed successfully[39m
+
+[1m[38;2;215;95;0m⛬[0m  [38;2;218;218;218m80235[39m
+
+   [1m[38;2;175;135;255mHooks[0m [38;2;178;178;178mStop[39m
+    [2m└─ [0m[38;2;95;175;215mtouch[39m '/Users/dela/.no-mistakes/worktrees/ec79763cce27/01M4H9BQAD97ANPCJV94NT4EX4/.test-tmp/fm-lab-...[38;2;175;175;95m : Exit code 0[39m
+
+[48;2;215;95;0m [48;2;38;38;38m  [38;2;216;212;210mUse Execute to run sleep 60. Afterwards reply finished. Do not do other work. [39m
+
+[49m [38;2;215;95;0m⡄ Thinking... [2m[38;2;118;118;118m (Press ESC to stop)
+
+[0m [38;2;215;135;0mAuto (High)[38;2;118;118;118m · [38;2;215;135;0mallow all commands[39m                                                                                      [38;2;238;238;238mGPT-6.1 Sol (Medium)[39m
+[38;2;135;135;135m╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│[39m [38;2;215;95;0m> [7m[39mE[0;2mnter to steer · Ctrl+Enter to queue[0m                                                                                                   [38;2;135;135;135m│
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+[38;2;118;118;118m[⏱ 12s, context: <1%] ? for help[39m                                                                                                      [38;2;175;175;95mTMUX ⧉
+[2m[39m/U/d/.n/w/e/0/.t/f/p/.t/p/1/project   2780af2[0m
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,98 @@
+FM_TEST_BEGIN 2026-10-09T21:38:52Z tests/fm-droid-harness.test.sh family=pure-contract-unit expected_gate_skip=none
+FM_TEST_BEGIN 2026-10-09T21:38:52Z tests/fm-harness-precedence.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - a markerless harness keeps its identity under an inherited foreign marker
+ok - a harness that publishes a marker inside its own process tree is unchanged
+ok - with ancestry silent, the marker layer and its cursor-first ordering still decide
+ok - a retained cursor marker does not rename a nested claude worker
+ok - an agreeing marker keeps Pi's finer identity that ancestry cannot prove
+ok - an interpreter script-path match answers alone but never outranks a marker
+ok - a native harness binary under an interpreter shim decides at comm strength
+ok - a harness that is pid 1 of its own namespace is examined, not skipped
+ok - the descent probe reaches comm strength where the top-of-session probe sees only args
+ok - the descent probe reports no verdict from a sibling branch detection cannot reach
+ok - a foreign args-only verdict at the deepest vantage leaves the comm-strength identity intact
+ok - equal-depth descent ties prefer the comm-strength leaf regardless of spawn order
+ok - a supervision branch resolves own, crew, and secondmate to the primary's pinned harness
+ok - a supervision branch refuses to resolve a harness from a pin that names none
+ok - session start renders the Codex protocol for a Codex primary holding a retained CLAUDECODE
+FM_TEST_END 2026-10-09T21:39:05Z tests/fm-harness-precedence.test.sh exit=0 duration_ms=12929 gate_skip=false
+ok - Droid control supports crews/scouts, refuses secondmates, and retires task settings
+ok - Droid process identity is anchored to the executable name
+ok - Droid independent busy signals and idle are adapter-scoped, including cmux
+ok - Droid capture failure remains unknown and unverified prefixes are refused
+ok - Droid elapsed-time footer preserves box delivery without hiding shell or activity
+ok - Droid parked cursor uses composer structure without relaxing other process or input guards
+ok - Droid trust is exact-worktree scoped, idempotent, and preserves user settings
+ok - Droid trust cleanup removes only task paths and is idempotent
+ok - Droid crew detection does not enable primary-session lock ownership
+ok - Droid receipts roll back only unchanged newly acquired grants
+ok - Droid cleanup transfers to a non-Droid successor and retires aliases after worktree removal
+ok - Droid concurrent settings transactions serialize across symlinked stores
+FM_TEST_END 2026-10-09T21:39:07Z tests/fm-droid-harness.test.sh exit=0 duration_ms=14675 gate_skip=false
+FM_TEST_BEGIN 2026-10-09T21:39:07Z tests/fm-bootstrap.test.sh family=session-bootstrap expected_gate_skip=none
+ok - bootstrap reports treehouse lease + tasks-axi/quota-axi bootstrap contracts
+ok - bootstrap enforces no-mistakes minimum version
+ok - bootstrap enforces gh-axi minimum version
+ok - bootstrap preserves legacy Lavish boards while recommending synchronous reply support
+ok - bootstrap enforces tasks-axi minimum version
+ok - bootstrap enforces quota-axi minimum version
+ok - bootstrap requires git with an install instruction
+ok - bootstrap: backend=orca gates the Orca CLI without requiring it on the default backend
+ok - bootstrap: session-provider backends require their own CLI + jq + treehouse, never tmux
+ok - bootstrap: a session-provider backend gates its own CLI, never a false tmux requirement
+ok - bootstrap: Herdr manual-install guidance is never executed as a shell command
+ok - bootstrap: the bundled cmux CLI satisfies the active backend dependency
+ok - bootstrap: unknown resolved backends fail closed with an actionable diagnostic
+ok - bootstrap: JSON-emitting backends require jq (their genuine dep), never tmux
+ok - bootstrap requires jq for the static Droid crew harness
+ok - non-Droid bootstrap has no adapter probe or new jq dependency
+ok - bootstrap: the treehouse lease check follows the resolved backend's worktree provider
+ok - bootstrap computes a fleet-size-aware default timeout and preserves partial fleet-sync output
+ok - bootstrap keeps the quick 20s default for small fleets
+ok - bootstrap preserves FM_FLEET_SYNC_BOOTSTRAP_TIMEOUT as an explicit override
+ok - bootstrap treats a blank timeout override as unset
+ok - bootstrap computes the timeout before launching fleet sync
+ok - bootstrap keeps routine tasks-axi, harness, dispatch, and already-live liveness confirmations silent
+ok - bootstrap routine contract runs under system /bin/bash
+ok - bootstrap: FM_BOOTSTRAP_NETWORK partitions one run into local and network halves
+ok - bootstrap: every deferred mutating sweep rechecks fleet-lock ownership
+ok - bootstrap: each deferred network phase, secondmate, and clone records its own elapsed time
+ok - bootstrap: the tasks-axi compatibility verdict travels exactly one process hop
+ok - bootstrap surfaces active crew-dispatch rules only as verbose BOOTSTRAP_INFO
+ok - bootstrap gates resolver fields and additive harnesses on the typed key
+FM_TEST_END 2026-10-09T21:42:07Z tests/fm-bootstrap.test.sh exit=0 duration_ms=179899 gate_skip=false
+FM_TEST_BEGIN 2026-10-09T21:42:07Z tests/fm-dispatch-resolve.test.sh family=standalone expected_gate_skip=none
+ok - absent key is off: one stderr line, exit 0, no network call
+ok - TYPESAFE_API_KEY= in .env activates the tool; environment and config overrides work
+ok - clear: one rule Choice request, key on the fd header only, spendPriority argmax over every candidate
+ok - never-send list withholds the request on a match or a bad list, and never prints the value
+ok - rules snapshots and shell quoting preserve the profile protocol
+ok - no-rule fallback, Agy, Gemini, Droid, and documented configurations resolve
+ok - ambiguous: confidence below the fixed floor hands the decision back
+ok - per-rule confidence floors fall to the most probable runner-up that clears its own floor
+ok - only the brief's task sections and scout tag reach the model, with a whole-brief fallback
+ok - escalate: a rule declared approval: captain never yields a profile
+ok - rule floor: known shortfall falls through while unavailable evidence escalates
+ok - declared provider and profile floor evidence are applied in code
+ok - nonnumeric spendPriority evidence is never ranked
+ok - partial and missing quota evidence remain eligible but unranked
+ok - provider-wide and exact quota rows combine into one limiting candidate
+ok - default: no rule matched resolves among the default profiles
+ok - tie: equal spendPriority never breaks by array order
+ok - no rankable candidate: the tool escalates instead of guessing
+ok - native Codex binds to codex-home before default, independently of Pi accounts and row order
+ok - Pi native adapters bind to codex-home with existing fallbacks and schema 5 compatibility
+ok - schema 6: each candidate binds to its account row; schema 5 is unchanged
+ok - quota evidence comes from one quota-axi --json read, and its failure is an error outcome
+ok - API, transport, and response failures are error outcomes with exit 0
+ok - configuration errors exit 2 before any network call
+# all fm-dispatch-resolve tests passed
+FM_TEST_END 2026-10-09T21:42:30Z tests/fm-dispatch-resolve.test.sh exit=0 duration_ms=22795 gate_skip=false
+FM_TEST_SUMMARY total=4 failed=0 skipped_gate=0 duration_ms=218320
+FM_TEST_SUMMARY_FAMILY family=pure-contract-unit count=2 duration_ms=27604 failed=0
+FM_TEST_SUMMARY_FAMILY family=session-bootstrap count=1 duration_ms=179899 failed=0
+FM_TEST_SUMMARY_FAMILY family=standalone count=1 duration_ms=22795 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-bootstrap.test.sh duration_ms=179899
+FM_TEST_SLOWEST rank=2 script=tests/fm-dispatch-resolve.test.sh duration_ms=22795
+FM_TEST_SLOWEST rank=3 script=tests/fm-droid-harness.test.sh duration_ms=14675
+FM_TEST_SLOWEST rank=4 script=tests/fm-harness-precedence.test.sh duration_ms=12929
