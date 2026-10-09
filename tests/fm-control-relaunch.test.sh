@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # fm-control.sh relaunch: the transactional replace-the-agent verb.
 #
-# FM_TEST_ONLY=<test_function> selects one case for targeted validation.
 #
 # Relaunch is the only control verb that changes durable records, so these
 # tests pin the transaction itself, hermetically (stubbed session provider, no
@@ -2515,11 +2514,6 @@ SH
     || fail "the dialog file must be gone when the control lock is released, got: $(cat "$trace" 2>/dev/null)"
   pass "fm-control exit removes the dialog file before it releases the control lock"
 }
-
-if [ -n "${FM_TEST_ONLY:-}" ]; then
-  "$FM_TEST_ONLY"
-  exit 0
-fi
 
 test_exit_and_relaunch_remove_the_dialog_file
 test_exit_removes_the_dialog_file_before_releasing_the_lock
