@@ -345,7 +345,7 @@ test_ship_contracts_are_mode_specific() {
     FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode "$mode" >/dev/null 2>&1
     brief="$home/data/$id/brief.md"
     assert_grep "# PR description contract" "$brief" "$id: brief missing PR description contract"
-    assert_grep 'use explicitly titled sections in this order: "Summary", "Screenshots" (for UI changes), "What changed", "How to review", "Testing", "Risk", and "Follow-ups".' "$brief" \
+    assert_grep 'use explicitly titled sections in this order: "Summary", "What changed", "Screenshots" (for UI changes), "How to review", "Testing", "Risk", and "Follow-ups".' "$brief" \
       "$id: PR description contract does not require ordered review sections"
     # shellcheck disable=SC2016 # Generated Markdown must preserve literal backticks.
     assert_grep 'If `.github/PULL_REQUEST_TEMPLATE.md` exists, follow its section layout instead of the default below while keeping all brevity, content, voice, evidence, and rendering constraints' "$brief" \
@@ -354,8 +354,8 @@ test_ship_contracts_are_mode_specific() {
       "$id: PR title does not follow repository conventions"
     assert_grep 'Summary as 3-4 plain-language sentences understandable to a non-engineer, explaining the problem and resulting behavior' "$brief" \
       "$id: summary does not explain the change in plain language"
-    assert_grep 'place Screenshots near the top with the before and after evidence required below, including when following a repository template' "$brief" \
-      "$id: UI evidence is not prominent when a template is present"
+    assert_grep 'place Screenshots after What changed with the before and after evidence required below, including when following a repository template' "$brief" \
+      "$id: UI evidence does not follow What changed when a template is present"
     assert_grep 'What changed to short grouped bullets, How to review to 3-5 concrete checks, and Testing to one short list of checks and results' "$brief" \
       "$id: reviewer guidance and testing are not concrete and concise"
     assert_grep 'Keep Risk and Follow-ups brief and explicit; state when there are none rather than inventing concerns or work' "$brief" \

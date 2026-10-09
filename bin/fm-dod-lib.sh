@@ -83,9 +83,9 @@ fm_ship_evidence_block() {  # <no-mistakes|direct-PR|local-only> <data-dir> <tas
 When this task opens or updates a PR, whether directly in direct-PR mode or through the no-mistakes pipeline, you own the quality of its description.
 Use a conventional-commit PR title with the repository's scope convention.
 If `.github/PULL_REQUEST_TEMPLATE.md` exists, follow its section layout instead of the default below while keeping all brevity, content, voice, evidence, and rendering constraints in this contract.
-Otherwise, use explicitly titled sections in this order: "Summary", "Screenshots" (for UI changes), "What changed", "How to review", "Testing", "Risk", and "Follow-ups".
+Otherwise, use explicitly titled sections in this order: "Summary", "What changed", "Screenshots" (for UI changes), "How to review", "Testing", "Risk", and "Follow-ups".
 Write the Summary as 3-4 plain-language sentences understandable to a non-engineer, explaining the problem and resulting behavior.
-For UI changes, place Screenshots near the top with the before and after evidence required below, including when following a repository template.
+For UI changes, place Screenshots after What changed with the before and after evidence required below, including when following a repository template.
 Keep What changed to short grouped bullets, How to review to 3-5 concrete checks, and Testing to one short list of checks and results.
 Keep Risk and Follow-ups brief and explicit; state when there are none rather than inventing concerns or work.
 Write for a reader who has not seen the diff, with no filler or restated commit lists.
