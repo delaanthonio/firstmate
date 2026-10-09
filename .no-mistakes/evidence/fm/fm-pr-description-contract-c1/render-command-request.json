@@ -1,0 +1,25 @@
+{
+  "scope": "Real gh CLI against disposable HTTP request capture; this does not validate GitHub Markdown rendering.",
+  "runs": [
+    {
+      "label": "previous literal-file argument",
+      "command": "gh api markdown -f text=@body.md -f mode=gfm",
+      "exit_code": 0,
+      "stderr": ""
+    },
+    {
+      "label": "emitted file-reading argument",
+      "command": "gh api markdown -F text=@body.md -f mode=gfm",
+      "exit_code": 0,
+      "stderr": ""
+    }
+  ],
+  "previous_request": {
+    "mode": "gfm",
+    "text": "@body.md"
+  },
+  "emitted_request": {
+    "mode": "gfm",
+    "text": "## Summary\n\nA fixture's description uses plain characters.\n\n![After](fixture.png)\n\n<details>\n\n<summary>Validation details</summary>\n\n```text\nfixture evidence\n```\n\n</details>\n"
+  }
+}

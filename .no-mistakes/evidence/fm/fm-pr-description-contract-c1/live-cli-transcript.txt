@@ -1,0 +1,59 @@
+$ FM_HOME=<disposable-home> bin/fm-brief.sh verify-pipeline fixture-project --mode no-mistakes
+scaffolded: /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4FNKN7PFEGXMT8J21KMYYAQ/.nm-test-pr-contract/home-pipeline/data/verify-pipeline/brief.md (ship, mode=no-mistakes; replace {TASK} and {FIRSTMATE_SPEC})
+
+$ FM_HOME=<disposable-home> bin/fm-brief.sh promote-pipeline fixture-project --scout
+scaffolded: /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4FNKN7PFEGXMT8J21KMYYAQ/.nm-test-pr-contract/home-pipeline/data/promote-pipeline/brief.md (scout; replace {TASK} and {FIRSTMATE_SPEC})
+
+$ FM_HOME=<disposable-home> bin/fm-promote.sh promote-pipeline --mode no-mistakes --yolo off
+promoted promote-pipeline to ship mode=no-mistakes yolo=off (teardown protection restored)
+wrote ship instructions for mode=no-mistakes: /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4FNKN7PFEGXMT8J21KMYYAQ/.nm-test-pr-contract/home-pipeline/data/promote-pipeline/ship-instructions.md
+next: FM_HOME=/Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4FNKN7PFEGXMT8J21KMYYAQ/.nm-test-pr-contract/home-pipeline bin/fm-send.sh fm-promote-pipeline "$(cat /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4FNKN7PFEGXMT8J21KMYYAQ/.nm-test-pr-contract/home-pipeline/data/promote-pipeline/ship-instructions.md)"
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Observed no-mistakes: ordinary and promoted contracts agree; relaunch brief persists current contract; task kind is ship.
+
+$ FM_HOME=<disposable-home> bin/fm-brief.sh verify-direct fixture-project --mode direct-PR
+scaffolded: /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4FNKN7PFEGXMT8J21KMYYAQ/.nm-test-pr-contract/home-direct/data/verify-direct/brief.md (ship, mode=direct-PR; replace {TASK} and {FIRSTMATE_SPEC})
+
+$ FM_HOME=<disposable-home> bin/fm-brief.sh promote-direct fixture-project --scout
+scaffolded: /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4FNKN7PFEGXMT8J21KMYYAQ/.nm-test-pr-contract/home-direct/data/promote-direct/brief.md (scout; replace {TASK} and {FIRSTMATE_SPEC})
+
+$ FM_HOME=<disposable-home> bin/fm-promote.sh promote-direct --mode direct-PR --yolo off
+promoted promote-direct to ship mode=direct-PR yolo=off (teardown protection restored)
+wrote ship instructions for mode=direct-PR: /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4FNKN7PFEGXMT8J21KMYYAQ/.nm-test-pr-contract/home-direct/data/promote-direct/ship-instructions.md
+next: FM_HOME=/Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4FNKN7PFEGXMT8J21KMYYAQ/.nm-test-pr-contract/home-direct bin/fm-send.sh fm-promote-direct "$(cat /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4FNKN7PFEGXMT8J21KMYYAQ/.nm-test-pr-contract/home-direct/data/promote-direct/ship-instructions.md)"
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Observed direct-PR: ordinary and promoted contracts agree; relaunch brief persists current contract; task kind is ship.
+
+$ FM_HOME=<disposable-home> bin/fm-brief.sh verify-local fixture-project --mode local-only
+scaffolded: /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4FNKN7PFEGXMT8J21KMYYAQ/.nm-test-pr-contract/home-local/data/verify-local/brief.md (ship, mode=local-only; replace {TASK} and {FIRSTMATE_SPEC})
+
+$ FM_HOME=<disposable-home> bin/fm-brief.sh promote-local fixture-project --scout
+scaffolded: /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4FNKN7PFEGXMT8J21KMYYAQ/.nm-test-pr-contract/home-local/data/promote-local/brief.md (scout; replace {TASK} and {FIRSTMATE_SPEC})
+
+$ FM_HOME=<disposable-home> bin/fm-promote.sh promote-local --mode local-only --yolo off
+promoted promote-local to ship mode=local-only yolo=off (teardown protection restored)
+wrote ship instructions for mode=local-only: /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4FNKN7PFEGXMT8J21KMYYAQ/.nm-test-pr-contract/home-local/data/promote-local/ship-instructions.md
+next: FM_HOME=/Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4FNKN7PFEGXMT8J21KMYYAQ/.nm-test-pr-contract/home-local bin/fm-send.sh fm-promote-local "$(cat /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4FNKN7PFEGXMT8J21KMYYAQ/.nm-test-pr-contract/home-local/data/promote-local/ship-instructions.md)"
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Observed local-only: ordinary and promoted contracts agree; relaunch brief persists current contract; task kind is ship.
