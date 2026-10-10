@@ -17,7 +17,7 @@ Pi 0.81.1 was installed when Calm was first built, and Pi 0.82.0 was the later r
 The inspected Pi CHANGELOG shows no relevant presentation API introduced at either version, so those versions remain verification evidence rather than compatibility bounds.
 The exported classes used by the adapters (`AssistantMessageComponent` and `InteractiveMode`) are undocumented internals with no stated version guarantee.
 `tests/fm-calm-pi-extension.test.sh` records the installed Pi version as evidence without gating on it and covers both newer synthetic versions and an unavailable adapter seam.
-This host tracks Pi latest, so the version the evidence is pinned to moves; the [2026-09-07 record](#2026-09-07-pi-0851-renderer-and-export-dom-verification) owns the currently pinned version and the renderer comparison behind it.
+This host tracks Pi latest, so the version the evidence is pinned to moves; the [stock rendering compatibility refresh](verification/runtime-backends.md#2026-10-10-pi-stock-rendering-compatibility-refresh) owns the current renderer and typecheck evidence.
 
 ### Built-in tool override constraints
 
@@ -285,6 +285,7 @@ Pi's Calm implementation changed only to consume the shared sprite core, while t
 `tests/fm-pi-branch-extension.test.sh` verifies both supervision tool call headers against pre-0.99 and 0.99+ Pi stock rendering, `fm_branch_outcomes` Calm toggling, capability-probed all-line versus collapsed stock output, exact expanded output, and export rendering.
 Together they exercise redraw of already-rendered tool, thinking, current operational-user, and legacy synthetic rows, and cover every policy class.
 It covers persisted preference restoration across every session-start reason and a real restart, proves the working-ship presentation and Calm-off stock `Working...` row through a delayed deterministic provider, asserts no Calm status row, verifies operational messages remain exact ordinary user-role session entries and complete exports, and drives genuine 100 by 44, 160 by 36, and 180 by 44 terminal fixtures.
+The Calm suite selects `--tui-mode regular` when the installed CLI advertises it so tmux can capture transcript scrollback; its geometry assertions do not verify fullscreen mode's application-owned scrollback.
 A native deterministic `/skill:ahoy` turn produces thinking, tool-call, and tool-result blocks, asserts that the collapsed skill-to-final gap equals the two-row visible-only baseline, expands and re-collapses original thinking, restores Calm-off rendering, verifies persisted hidden history, and repeats the geometry assertion after restart with `terminal.clearOnShrink` explicitly off.
 The operational provider path covers Calm loaded on, loaded off, default preference, extension absent, exact watcher delivery, narrow bare-marker legacy input, persisted restart replay, a genuine captain prompt, and adjacent notifications coalesced into one intended processing turn.
 It asserts one persisted and rendered captain answer, exact user-role operational envelopes in order, no replacement custom messages, one processing result, zero operational transcript rows, and the two-row neighboring-assistant geometry for live, adjacent, and restart paths.
