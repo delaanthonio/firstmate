@@ -1,0 +1,31 @@
+105398 bytes written to file /Users/dela/.no-mistakes/evidence/01M4KH5FZRRFSMMY78W2PE62ZX/pi-1.1.0-after-export.png
+[10167:100903444:1010/143639.589430:ERROR:content/browser/network_service_instance_impl.cc:597] Network service crashed, restarting service.
+[10167:100903444:1010/143639.590162:ERROR:content/browser/gpu/gpu_process_host.cc:959] GPU process exited unexpectedly: exit_code=15
+[10636:100904324:1010/143640.403998:ERROR:content/browser/network_service_instance_impl.cc:597] Network service crashed, restarting service.
+[10636:100904324:1010/143640.404354:ERROR:content/browser/gpu/gpu_process_host.cc:959] GPU process exited unexpectedly: exit_code=15
+[43320:100958031:1010/143730.315212:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:497] SharedImageManager::ProduceMemory: Trying to Produce a Memory representation from a non-existent mailbox.
+[43320:100958031:1010/143730.316006:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:497] SharedImageManager::ProduceMemory: Trying to Produce a Memory representation from a non-existent mailbox.
+164656 bytes written to file /Users/dela/.no-mistakes/evidence/01M4KH5FZRRFSMMY78W2PE62ZX/pi-1.1.0-after-export.png
+[42977:100957293:1010/143730.458889:ERROR:content/browser/network_service_instance_impl.cc:597] Network service crashed, restarting service.
+[42977:100957293:1010/143730.460357:ERROR:content/browser/gpu/gpu_process_host.cc:959] GPU process exited unexpectedly: exit_code=15
+[43993:100959113:1010/143731.525265:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:497] SharedImageManager::ProduceMemory: Trying to Produce a Memory representation from a non-existent mailbox.
+[43993:100959113:1010/143731.526169:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:497] SharedImageManager::ProduceMemory: Trying to Produce a Memory representation from a non-existent mailbox.
+[43993:100959113:1010/143731.526212:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:497] SharedImageManager::ProduceMemory: Trying to Produce a Memory representation from a non-existent mailbox.
+[43993:100959113:1010/143731.526234:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:497] SharedImageManager::ProduceMemory: Trying to Produce a Memory representation from a non-existent mailbox.
+[43993:100959113:1010/143731.526267:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:497] SharedImageManager::ProduceMemory: Trying to Produce a Memory representation from a non-existent mailbox.
+[43993:100959113:1010/143731.526293:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:497] SharedImageManager::ProduceMemory: Trying to Produce a Memory representation from a non-existent mailbox.
+[43993:100959113:1010/143731.526318:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:497] SharedImageManager::ProduceMemory: Trying to Produce a Memory representation from a non-existent mailbox.
+[43993:100959113:1010/143731.526344:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:497] SharedImageManager::ProduceMemory: Trying to Produce a Memory representation from a non-existent mailbox.
+[43993:100959113:1010/143731.526370:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:497] SharedImageManager::ProduceMemory: Trying to Produce a Memory representation from a non-existent mailbox.
+[43993:100959113:1010/143731.526395:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:497] SharedImageManager::ProduceMemory: Trying to Produce a Memory representation from a non-existent mailbox.
+[43993:100959113:1010/143731.526423:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:497] SharedImageManager::ProduceMemory: Trying to Produce a Memory representation from a non-existent mailbox.
+[43993:100959113:1010/143731.526443:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:497] SharedImageManager::ProduceMemory: Trying to Produce a Memory representation from a non-existent mailbox.
+[43935:100958860:1010/143731.645971:ERROR:content/browser/network_service_instance_impl.cc:597] Network service crashed, restarting service.
+[43935:100958860:1010/143731.646882:ERROR:content/browser/gpu/gpu_process_host.cc:959] GPU process exited unexpectedly: exit_code=15
+189856 bytes written to file /Users/dela/.no-mistakes/evidence/01M4KH5FZRRFSMMY78W2PE62ZX/pi-1.1.0-after-export.png
+[48392:100970684:1010/143803.953063:ERROR:content/browser/gpu/gpu_process_host.cc:959] GPU process exited unexpectedly: exit_code=15
+[48392:100970684:1010/143803.954771:ERROR:content/browser/network_service_instance_impl.cc:597] Network service crashed, restarting service.
+[48543:100971201:1010/143804.170015:ERROR:base/apple/mach_port_rendezvous_mac.cc:255] bootstrap_look_up com.google.Chrome.MachPortRendezvousServer.1: Unknown service name (1102)
+[48543:100971201:1010/143804.170774:ERROR:base/memory/shared_memory_switch.cc:266] No rendezvous client, terminating process (parent died?)
+[48574:100971323:1010/143805.682216:ERROR:content/browser/network_service_instance_impl.cc:597] Network service crashed, restarting service.
+[48574:100971323:1010/143805.682700:ERROR:content/browser/gpu/gpu_process_host.cc:959] GPU process exited unexpectedly: exit_code=15

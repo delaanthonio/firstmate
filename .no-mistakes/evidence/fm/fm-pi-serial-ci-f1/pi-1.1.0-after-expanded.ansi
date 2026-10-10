@@ -1,0 +1,42 @@
+
+[38;2;205;154;34m[Extensions][39m
+  [38;2;167;152;215mproject[39m
+[38;2;126;136;142m    ~/.no-mistakes/worktrees/51f31747dab7/01M4KH5FZRRFSMMY78W2PE62ZX/.no-mistakes/pi-1.1.0-after/project/.pi/extensions/fm-branch-supervision.ts[39m
+[38;2;126;136;142m    ~/.no-mistakes/worktrees/51f31747dab7/01M4KH5FZRRFSMMY78W2PE62ZX/.no-mistakes/pi-1.1.0-after/project/.pi/extensions/fm-calm.ts[39m
+
+[48;2;33;59;73m
+ [38;2;222;224;225mRead two supervision outcomes and acknowledge the first.[39m
+
+
+[48;2;37;65;49m
+ [1m[38;2;222;224;225mfm_branch_outcomes[0m[48;2;37;65;49m
+ [38;2;157;165;169m  recent: 2[39m
+ [38;2;157;165;169mOutcome one: build completed.[39m
+ [38;2;157;165;169mOutcome two: review ready.[39m
+
+
+
+ [1m[38;2;222;224;225mfm_branch_processed[0m[48;2;37;65;49m
+ [38;2;157;165;169m  through: 1[39m
+ [38;2;157;165;169mAcknowledged through 1.[39m
+
+
+[49m The supervision rendering probe is complete.
+
+ [38;2;205;154;34mWarning: No models available. Use /login to log into a provider via OAuth or API key. See:
+[39m [38;2;205;154;34m
+[39m [38;2;205;154;34m/Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4KH5FZRRFSMMY78W2PE62ZX/.no-mistakes/test-runtime/pi-new-nested/node_modules/@earendil-works/pi-c
+[39m [38;2;205;154;34moding-agent/docs/providers.md
+[39m [38;2;205;154;34m
+[39m [38;2;205;154;34m/Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4KH5FZRRFSMMY78W2PE62ZX/.no-mistakes/test-runtime/pi-new-nested/node_modules/@earendil-works/pi-c
+[39m [38;2;205;154;34moding-agent/docs/models.md[39m
+
+ [38;2;205;154;34mWarning: tmux extended-keys is off. Modified Enter keys may not work. Add `set -g extended-keys on` to ~/.tmux.conf and restart tmux.[39m
+
+ [38;2;126;136;142mTool output: expanded[39m
+
+[38;2;108;118;123m──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[7m[39m [0m
+[38;2;108;118;123m──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;2;126;136;142m~/.no-mistakes/worktrees/51f31747dab7/01M4KH5FZRRFSMMY78W2PE62ZX/.no-mistakes/pi-1.1.0-after/project (detached)[39m
+[38;2;126;136;142m↑3 ↓3 0.0%/0 (auto)                                                                                                                            unknown

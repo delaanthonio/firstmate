@@ -1,0 +1,17 @@
+Traceback (most recent call last):
+  File "/Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4KH5FZRRFSMMY78W2PE62ZX/.no-mistakes/capture-visual.py", line 42, in <module>
+    completed=subprocess.run(command,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=30)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py", line 557, in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+                     ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py", line 1221, in communicate
+    stdout, stderr = self._communicate(input, endtime, timeout)
+                     ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py", line 2154, in _communicate
+    self._check_timeout(endtime, orig_timeout, stdout, stderr)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py", line 1268, in _check_timeout
+    raise TimeoutExpired(
+    ...<2 lines>...
+            stderr=b''.join(stderr_seq) if stderr_seq else None)
+subprocess.TimeoutExpired: Command '['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '--headless=new', '--disable-gpu', '--no-sandbox', '--disable-dev-shm-usage', '--disable-background-networking', '--user-data-dir=/Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4KH5FZRRFSMMY78W2PE62ZX/.no-mistakes/chrome-visual/pi-1.1.0-before-collapsed', '--virtual-time-budget=2000', '--window-size=1360,930', '--screenshot=/Users/dela/.no-mistakes/evidence/01M4KH5FZRRFSMMY78W2PE62ZX/pi-1.1.0-before-collapsed.png', 'file:///Users/dela/.no-mistakes/evidence/01M4KH5FZRRFSMMY78W2PE62ZX/pi-1.1.0-before-collapsed.html']' timed out after 30 seconds

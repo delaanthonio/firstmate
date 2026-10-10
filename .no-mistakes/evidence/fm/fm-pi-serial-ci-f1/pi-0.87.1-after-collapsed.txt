@@ -1,0 +1,42 @@
+
+ pi v0.87.1
+ escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more
+ Press ctrl+o to show full startup help and loaded resources.
+
+ Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.
+
+[Extensions]
+  fm-branch-supervision.ts, fm-calm.ts
+
+
+ Read two supervision outcomes and acknowledge the first.
+
+
+
+ fm_branch_outcomes
+ Outcome one: build completed.
+ Outcome two: review ready.
+
+
+
+ fm_branch_processed
+ Acknowledged through 1.
+
+
+ The supervision rendering probe is complete.
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+~/.no-mistakes/worktrees/51f31747dab7/01M4KH5FZRRFSMMY78W2PE62ZX/.no-mistakes/pi-0.87.1-after/project (detached)
+↑3 ↓3 0.0%/0 (auto)                                                                                                                            unknown
+
+
+
+
+
+
+
+
+
+

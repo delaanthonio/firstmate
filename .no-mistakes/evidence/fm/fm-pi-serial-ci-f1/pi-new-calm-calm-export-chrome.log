@@ -1,0 +1,7 @@
+281040 bytes written to file /Users/dela/.no-mistakes/evidence/01M4KH5FZRRFSMMY78W2PE62ZX/pi-new-calm-calm-export.png
+[52266:100980331:1010/143829.839974:ERROR:base/process/process_mac.cc:53] task_policy_set TASK_CATEGORY_POLICY: (os/kern) invalid argument (4)
+[52266:100980331:1010/143829.839999:ERROR:base/process/process_mac.cc:98] task_policy_set TASK_SUPPRESSION_POLICY: (os/kern) invalid argument (4)
+[52266:100980243:1010/143829.987308:ERROR:content/browser/network_service_instance_impl.cc:597] Network service crashed, restarting service.
+[52266:100980243:1010/143829.987715:ERROR:content/browser/gpu/gpu_process_host.cc:959] GPU process exited unexpectedly: exit_code=15
+[52717:100981385:1010/143831.094148:ERROR:content/browser/gpu/gpu_process_host.cc:959] GPU process exited unexpectedly: exit_code=15
+[52717:100981385:1010/143831.130257:ERROR:content/browser/network_service_instance_impl.cc:597] Network service crashed, restarting service.

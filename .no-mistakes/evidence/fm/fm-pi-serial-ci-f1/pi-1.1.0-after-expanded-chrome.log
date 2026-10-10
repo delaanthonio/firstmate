@@ -1,0 +1,11 @@
+[7479:100898315:1010/143634.642783:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:497] SharedImageManager::ProduceMemory: Trying to Produce a Memory representation from a non-existent mailbox.
+[7479:100898315:1010/143634.643367:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:497] SharedImageManager::ProduceMemory: Trying to Produce a Memory representation from a non-existent mailbox.
+[7479:100898315:1010/143634.643437:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:497] SharedImageManager::ProduceMemory: Trying to Produce a Memory representation from a non-existent mailbox.
+[7479:100898315:1010/143634.643465:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:497] SharedImageManager::ProduceMemory: Trying to Produce a Memory representation from a non-existent mailbox.
+114341 bytes written to file /Users/dela/.no-mistakes/evidence/01M4KH5FZRRFSMMY78W2PE62ZX/pi-1.1.0-after-expanded.png
+[7384:100898195:1010/143634.659948:ERROR:base/process/process_mac.cc:53] task_policy_set TASK_CATEGORY_POLICY: (ipc/send) invalid destination port (0x10000003)
+[7384:100898195:1010/143634.664462:ERROR:base/process/process_mac.cc:98] task_policy_set TASK_SUPPRESSION_POLICY: (ipc/send) invalid destination port (0x10000003)
+[7384:100898033:1010/143634.893583:ERROR:content/browser/gpu/gpu_process_host.cc:959] GPU process exited unexpectedly: exit_code=15
+[7384:100898033:1010/143634.895079:ERROR:content/browser/network_service_instance_impl.cc:597] Network service crashed, restarting service.
+[7853:100898942:1010/143635.719647:ERROR:content/browser/network_service_instance_impl.cc:597] Network service crashed, restarting service.
+[7853:100898942:1010/143635.720326:ERROR:content/browser/gpu/gpu_process_host.cc:959] GPU process exited unexpectedly: exit_code=15

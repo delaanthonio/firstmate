@@ -1,0 +1,7 @@
+150314 bytes written to file /Users/dela/.no-mistakes/evidence/01M4KH5FZRRFSMMY78W2PE62ZX/pi-0.87.1-after-export.png
+[44087:100959482:1010/143732.823631:ERROR:base/process/process_mac.cc:53] task_policy_set TASK_CATEGORY_POLICY: (os/kern) invalid argument (4)
+[44087:100959482:1010/143732.823684:ERROR:base/process/process_mac.cc:98] task_policy_set TASK_SUPPRESSION_POLICY: (os/kern) invalid argument (4)
+[44087:100959412:1010/143732.960880:ERROR:content/browser/network_service_instance_impl.cc:597] Network service crashed, restarting service.
+[44087:100959412:1010/143732.962627:ERROR:content/browser/gpu/gpu_process_host.cc:959] GPU process exited unexpectedly: exit_code=15
+[44208:100959925:1010/143734.159748:ERROR:content/browser/network_service_instance_impl.cc:597] Network service crashed, restarting service.
+[44208:100959925:1010/143734.160496:ERROR:content/browser/gpu/gpu_process_host.cc:959] GPU process exited unexpectedly: exit_code=15

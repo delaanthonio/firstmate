@@ -1,0 +1,42 @@
+
+ Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.
+
+[Extensions]
+  project
+    ~/.no-mistakes/worktrees/51f31747dab7/01M4KH5FZRRFSMMY78W2PE62ZX/.no-mistakes/pi-1.1.0-before/project/.pi/extensions/fm-branch-supervision.ts
+    ~/.no-mistakes/worktrees/51f31747dab7/01M4KH5FZRRFSMMY78W2PE62ZX/.no-mistakes/pi-1.1.0-before/project/.pi/extensions/fm-calm.ts
+
+
+ Read two supervision outcomes and acknowledge the first.
+
+
+ The supervision rendering probe is complete.
+
+ Warning: No models available. Use /login to log into a provider via OAuth or API key. See:
+
+ /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4KH5FZRRFSMMY78W2PE62ZX/.no-mistakes/test-runtime/pi-new-nested/node_modules/@earendil-works/pi-c
+ oding-agent/docs/providers.md
+
+ /Users/dela/.no-mistakes/worktrees/51f31747dab7/01M4KH5FZRRFSMMY78W2PE62ZX/.no-mistakes/test-runtime/pi-new-nested/node_modules/@earendil-works/pi-c
+ oding-agent/docs/models.md
+
+ Tool output: expanded
+
+ Warning: tmux extended-keys is off. Modified Enter keys may not work. Add `set -g extended-keys on` to ~/.tmux.conf and restart tmux.
+
+ Tool output: expanded
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+~/.no-mistakes/worktrees/51f31747dab7/01M4KH5FZRRFSMMY78W2PE62ZX/.no-mistakes/pi-1.1.0-before/project (detached)
+↑3 ↓3 0.0%/0 (auto)                                                                                                                            unknown
+
+
+
+
+
+
+
+
+

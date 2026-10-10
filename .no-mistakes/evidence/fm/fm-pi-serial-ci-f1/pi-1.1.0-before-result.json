@@ -1,0 +1,12 @@
+{
+  "version": "1.1.0",
+  "stage": "before",
+  "result": "pass",
+  "checks": [
+    "collapsed headers: recent=2 and through=1 absent",
+    "expanded headers: recent: 2 and through: 1 absent",
+    "Calm on hides both tool rows and preserves the genuine reply",
+    "real /export created /Users/dela/.no-mistakes/evidence/01M4KH5FZRRFSMMY78W2PE62ZX/pi-1.1.0-before-export.html",
+    "Calm off restores both tool rows"
+  ]
+}
