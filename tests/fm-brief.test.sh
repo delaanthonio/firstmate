@@ -345,9 +345,44 @@ test_ship_contracts_are_mode_specific() {
     FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode "$mode" >/dev/null 2>&1
     brief="$home/data/$id/brief.md"
     assert_grep "# PR description contract" "$brief" "$id: brief missing PR description contract"
-    assert_grep 'Include explicitly titled sections named "Summary", "What changed", "Why", and "How it was tested".' "$brief" \
-      "$id: PR description contract does not require all four headings"
-    assert_grep "both in every done status line and in the PR description's explicitly titled \"How it was tested\" section." "$brief" \
+    assert_grep 'use explicitly titled sections in this order: "Summary", "What changed", "Screenshots" (for UI changes), "How to review", "Testing", "Risk", and "Follow-ups".' "$brief" \
+      "$id: PR description contract does not require ordered review sections"
+    # shellcheck disable=SC2016 # Generated Markdown must preserve literal backticks.
+    assert_grep 'If `.github/PULL_REQUEST_TEMPLATE.md` exists, follow its section layout instead of the default below while keeping all brevity, content, voice, evidence, and rendering constraints' "$brief" \
+      "$id: repository template must take precedence without relaxing the quality contract"
+    assert_grep "Use a conventional-commit PR title with the repository's scope convention." "$brief" \
+      "$id: PR title does not follow repository conventions"
+    assert_grep 'Summary as 3-4 plain-language sentences understandable to a non-engineer, explaining the problem and resulting behavior' "$brief" \
+      "$id: summary does not explain the change in plain language"
+    assert_grep 'place Screenshots after What changed with the before and after evidence required below, including when following a repository template' "$brief" \
+      "$id: UI evidence does not follow What changed when a template is present"
+    assert_grep 'What changed to short grouped bullets, How to review to 3-5 concrete checks, and Testing to one short list of checks and results' "$brief" \
+      "$id: reviewer guidance and testing are not concrete and concise"
+    assert_grep 'Keep Risk and Follow-ups brief and explicit; state when there are none rather than inventing concerns or work' "$brief" \
+      "$id: risk and follow-up sections lack concise guidance"
+    assert_grep 'targeting fewer than about 120 lines' "$brief" \
+      "$id: visible PR content has no length target"
+    # shellcheck disable=SC2016 # Generated Markdown must preserve literal HTML tags.
+    assert_grep 'If supplemental evidence is included, put it (including any raw logs, JSON, transcripts, and pipeline output) inside a single collapsed `<details>` block with `<summary>Validation details</summary>`, after the visible sections; never paste it outside that block.' "$brief" \
+      "$id: verbose validation output is not confined to one collapsed block"
+    assert_grep 'Omit the block when there is no supplemental evidence.' "$brief" \
+      "$id: PR description requires an empty validation block"
+    assert_grep 'Use a neutral voice: no first-person narration and no direct address of anyone.' "$brief" \
+      "$id: PR description permits first-person narration or direct address"
+    # shellcheck disable=SC2016 # Literal rendering instructions, not shell expansions.
+    assert_grep 'Leave a blank line before and after every `<details>`, `</details>`, and `<summary>Validation details</summary>` line and every opening or closing fenced code block, including after an image line.' "$brief" \
+      "$id: details and code fences lack Markdown spacing guidance"
+    assert_grep 'Use plain characters rather than HTML entities.' "$brief" \
+      "$id: PR description permits HTML entities"
+    # shellcheck disable=SC2016 # The worker must receive the exact render command.
+    assert_grep 'Before saving a new or updated description, render the exact proposed body with `gh api markdown -F text=@body.md -f mode=gfm`' "$brief" \
+      "$id: PR description is not rendered before saving"
+    # shellcheck disable=SC2016 # Literal tag names in the rendering check.
+    assert_grep 'any included details block must collapse, and no literal `<details>` / `<summary>` tags or HTML entity text may appear as visible text' "$brief" \
+      "$id: rendering check does not catch raw details tags or entity text"
+    assert_no_grep 'Include explicitly titled sections named "Summary", "What changed", "Why", and "How it was tested".' "$brief" \
+      "$id: obsolete PR section requirements conflict with the new contract"
+    assert_grep "both in every done status line and in the PR description's explicitly titled \"Testing\" section (or the repository template's equivalent testing section)." "$brief" \
       "$id: non-UI evidence is not required in both status and PR description"
     assert_grep "For native UI, use surface-specific capture: iOS simulator screenshots via \`xcrun\`, native desktop window capture, or programmatic evidence when no display is available." "$brief" \
       "$id: brief does not support surface-specific native UI evidence"
