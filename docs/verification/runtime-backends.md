@@ -2020,6 +2020,29 @@ The same guard against the pre-change extension in the same lab measured a 676.9
 Measured through the same real `fm_branch_report` tool and real `bin/` scripts with a 1 ms interval timer, the largest single block of the JavaScript thread fell from 273 ms to 2.0 ms for a routine outcome, from 286 ms to 2.0 ms for a captain outcome, and from 134 ms to 1.9 ms for main's acknowledgement, against a 1.3-2.2 ms idle-loop floor.
 Those absolute figures are specific to this host and Pi version; the guards assert the relationship (delivery must stay in the class of the same machine's own floor) rather than a remembered millisecond number.
 
+### 2026-10-10 Pi stock rendering compatibility refresh
+
+Verified on macOS 27.0.1 arm64 with Node v24.20.0 and the npm `@earendil-works/pi-coding-agent` 1.1.0 package selected through `FM_PI_PACKAGE_DIR`, with its matching Pi CLI and TypeScript on `PATH`.
+The branch renderer suite, strict typecheck, and complete Calm suite ran through `bin/fm-test-run.sh`; the Calm suite exercised real Pi in isolated tmux sessions and rendered its exported session in Chrome.
+No provider credential or external model call was needed.
+Refresh the rendering and type evidence with these subjects:
+
+```sh
+bin/fm-test-run.sh tests/fm-pi-branch-extension.test.sh tests/fm-calm-pi-extension.test.sh tests/fm-pi-primary-types.test.sh --jobs 1
+```
+
+The successful subjects printed:
+
+```text
+ok - fm_branch_outcomes and fm_branch_processed call headers match stock on Pi before and from 0.99
+ok - fm_branch_outcomes hides through ToolExecutionComponent while Calm-off and HTML export stay stock
+ok - Pi calm centralizes transcript visibility, preserves execution/export data, keeps Pi's stock working row visible while no run is active, and persists its choice across session starts
+ok - tracked Pi extensions pass strict no-emit typecheck against Pi 1.1.0
+```
+
+The real stock-component comparison and strict typecheck also passed with the npm Pi 0.87.1 package.
+The [Pi tool audit](../calm-mode-feasibility.md#firstmate-pi-tool-audit) owns the rendering behavior; the executable tests remain the refresh authority for vendor changes.
+
 ## Native Codex through Pi
 
 Verified on 2026-09-08 with Pi 0.85.1 and the installed `pi-codex-native` 0.2.1 adapter.
