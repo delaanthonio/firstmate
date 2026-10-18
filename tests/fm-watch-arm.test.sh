@@ -55,7 +55,7 @@ make_confirmation_fixture() {  # <name>
   dir="$TMP_ROOT/$name"
   mkdir -p "$dir/bin" "$dir/config" "$dir/fakebin" "$dir/state"
   cp "$WATCH_ARM" "$dir/bin/fm-watch-arm.sh"
-  cp "$ROOT/bin/fm-wake-lib.sh" "$dir/bin/fm-wake-lib.sh"
+  cp "$ROOT/bin/fm-wake-lib.sh" "$ROOT/bin/fm-path-lib.sh" "$dir/bin/"
   cat > "$dir/bin/fm-watch.sh" <<'SH'
 #!/usr/bin/env bash
 set -u

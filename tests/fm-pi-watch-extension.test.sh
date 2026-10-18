@@ -5663,6 +5663,7 @@ test_opencode_delayed_start_preserves_arm_bound() {
   boundary="$TMP_ROOT/opencode-selected-arm-bound.boundary"
   mkdir -p "$repo/bin" "$home/state" "$home/config"
   printf '1\n' > "$home/config/arm-confirm-timeout"
+  cp "$ROOT/bin/fm-supervision-lib.sh" "$repo/bin/fm-supervision-lib.sh"
   git init -q "$repo"
   : > "$repo/AGENTS.md"
   : > "$home/state/task.meta"

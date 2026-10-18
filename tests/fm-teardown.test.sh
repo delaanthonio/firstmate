@@ -5160,7 +5160,7 @@ SH
   rm -f "$case_dir/test-root/bin/fm-backend-hometag-lib.sh"
   rc=0
   run_copied_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
-  assert_source_refusal_preserved_state "$case_dir" "missing-own-source" "required zellij source"
+  assert_source_refusal_preserved_state "$case_dir" "missing-own-source" "required source fm-backend-hometag-lib.sh"
   [ -e "$home/state/child-tmux.meta" ] || fail "missing-own-source: the refusal erased the child record"
   [ -e "$home/state/child-tmux.status" ] || fail "missing-own-source: the refusal erased the child status"
   [ -d "$home" ] || fail "missing-own-source: the refusal removed the secondmate home"

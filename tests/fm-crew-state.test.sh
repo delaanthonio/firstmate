@@ -340,7 +340,7 @@ make_no_timeout_toolbin() {  # <dir> -> echoes toolbin path
 # Run the helper for one case dir. FM_FAKE_* env (run output, busy flag) are read
 # from the caller's environment by the fakes above.
 run_crew_state() {  # <case-dir> <id>
-  PATH="$1/fakebin:$PATH" NM_HOME="$1/nmhome" FM_STATE_OVERRIDE="$1/state" "$CREW_STATE" "$2"
+  PATH="$1/fakebin:$PATH" NM_HOME="${NM_HOME:-$1/nmhome}" FM_STATE_OVERRIDE="$1/state" "$CREW_STATE" "$2"
 }
 
 new_case() {  # <name> -> echoes case dir with an empty state/
@@ -358,6 +358,8 @@ arm_idle_record() {  # <state-dir> <id>
 
 record_run_times() {  # <case-dir> <terminal-at> <updated-at>
   local dir=$1 terminal_at=$2 updated_at=$3 db="$1/nmhome/state.sqlite"
+  NM_HOME="$dir/nmhome"
+  export NM_HOME
   mkdir -p "$dir/nmhome"
   sqlite3 "$db" 'CREATE TABLE runs (id TEXT PRIMARY KEY, terminal_head_verified_at INTEGER, updated_at INTEGER NOT NULL);'
   sqlite3 "$db" 'CREATE TABLE step_results (run_id TEXT, status TEXT, completed_at INTEGER);'

@@ -569,7 +569,7 @@ attach_and_wait() {
 
 # shellcheck disable=SC2329 # Invoked indirectly by the signal traps below.
 handle_attached_signal() {
-  local signal=$1 rc=$2
+  local signal=$1 rc=$2 cleanup_ready_polls=0
   trap - HUP TERM INT
   cycle_log_append "$rc" "$signal" arm-interrupted none
   exit "$rc"
@@ -786,15 +786,17 @@ cleanup_child() {
 
 # shellcheck disable=SC2329 # Invoked indirectly by the signal traps below.
 handle_arm_signal() {
-  local signal=$1 rc=$2
+  local signal=$1 rc=$2 cleanup_ready_polls=0
   trap - HUP TERM INT
   # Do not interrupt stale-lock acquisition before the watcher has installed
-  # its cleanup traps and published this home's identity-bound lock.
-  while [ -n "$child" ] && fm_pid_alive "$child"; do
+  # its cleanup traps and published this home's identity-bound lock. Keep this
+  # handoff independently bounded when confirmation is configured for a long run.
+  while [ -n "$child" ] && [ "$cleanup_ready_polls" -lt 50 ] && fm_pid_alive "$child"; do
     if fm_watcher_lock_matches_pid "$STATE" "$WATCH" "$child" "$FM_HOME" \
       || [ "$(date +%s)" -ge "$deadline" ]; then
       break
     fi
+    cleanup_ready_polls=$((cleanup_ready_polls + 1))
     sleep 0.02
   done
   stop_owned_child_bounded || true

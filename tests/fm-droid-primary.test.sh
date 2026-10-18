@@ -157,7 +157,8 @@ test_askuser_registration_executes_away_deferral() {
   for script in fm-droid-afk-askuser-check.sh fm-primary-scope-lib.sh \
     fm-decision-hold.sh fm-captain-hold.sh fm-classify-lib.sh \
     fm-tasks-axi-lib.sh fm-backlog-transition-lib.sh fm-wake-lib.sh \
-    fm-parent-channel-lib.sh fm-secondmate-parent-lib.sh fm-timeout-lib.sh; do
+    fm-parent-channel-lib.sh fm-secondmate-parent-lib.sh fm-timeout-lib.sh \
+    fm-path-lib.sh fm-hold-reason-lib.sh fm-pr-lib.sh; do
     cp "$ROOT/bin/$script" "$root/bin/"
   done
   printf '# fixture\n' > "$root/AGENTS.md"

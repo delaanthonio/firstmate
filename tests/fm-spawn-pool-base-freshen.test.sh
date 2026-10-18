@@ -890,11 +890,12 @@ SH
 # retry may already be reusing, while still closing the window and returning
 # the slot.
 test_refused_launch_spares_per_id_paths_under_a_contended_spawn_lock() {
-  local rec id out status slot_root world holder_pid
+  local rec id out status slot_root world holder_pid task_tmp
   id='pool-refused-contended-r1'
-  rm -rf "/tmp/fm-$id"
   rec=$(make_case refused-contended "$id")
   read_case_record "$rec"
+  task_tmp=$(FM_HOME="$HOME_DIR" FM_ROOT="$HOME_DIR" bash -c '. "$1"; printf "/tmp/fm-%s/%s" "$(fm_backend_hometag)" "$2"' _ "$ROOT/bin/fm-backend-hometag-lib.sh" "$id")
+  rm -rf "$task_tmp"
   mkdir -p "$CASE_DIR/publisher/.polytoken"
   printf '[]\n' > "$CASE_DIR/publisher/.polytoken/hooks.json"
   git -C "$CASE_DIR/publisher" add .polytoken/hooks.json
@@ -938,10 +939,10 @@ SH
   [ -e "$CASE_DIR/holder.ready" ] || fail "the stand-in retry never took the per-id spawn lock"$'\n'"$out"
   assert_contains "$out" "another spawn of $id holds its spawn lock" \
     "the abort did not report skipping its per-id cleanup"$'\n'"$out"
-  [ -d "/tmp/fm-$id" ] || fail "the abort removed the task temp root while another spawn held the per-id lock"
+  [ -d "$task_tmp" ] || fail "the abort removed the task temp root while another spawn held the per-id lock"
   [ ! -e "$world/fm-$id.id" ] || fail "the contended abort left its window open"
   [ ! -e "$slot_root/1/.fm-slot-owner" ] || fail "the contended abort left its slot claim behind"
-  rm -rf "/tmp/fm-$id"
+  rm -rf "$task_tmp"
   pass "a refused polytoken launch leaves its per-id paths alone while another spawn holds the per-id lock"
 }
 

@@ -617,7 +617,7 @@ SH
   expect_code 0 "$status" "raw droid launch should not require template settings support"
   assert_contains "$out" "spawned $id harness=droid" "spawn did not report raw droid command harness"
   launch=$(cat "$LAUNCH_LOG")
-  [ "$launch" = "env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI droid --experimental" ] \
+  [ "$(fm_test_launch_command "$launch")" = "env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI droid --experimental" ] \
     || fail "raw droid launch changed beyond the shared foreign-marker sanitization"$'\n'"actual: $launch"
   assert_absent "$HOME_DIR/state/$id.droid-settings.json" \
     "raw droid launch unexpectedly generated template settings"

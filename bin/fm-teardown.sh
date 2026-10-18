@@ -352,6 +352,7 @@ teardown_require_backend_prerequisites() {  # <backend> <task-id>
   fi
 }
 for _teardown_source in \
+  fm-backend-hometag-lib.sh \
   fm-tasks-axi-lib.sh \
   fm-backlog-transition-lib.sh \
   fm-timeout-lib.sh \
