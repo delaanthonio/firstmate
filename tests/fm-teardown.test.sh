@@ -1640,7 +1640,7 @@ SH
 }
 
 test_forced_secondmate_child_scout_nested_clone_returns_clean() {
-  local case_dir home child_wt rc
+  local case_dir home child_wt rc exclude
   case_dir=$(make_case secondmate-child-nested-clean)
   write_meta "$case_dir" local-only secondmate
   home="$case_dir/secondmate-home"
@@ -1656,15 +1656,27 @@ test_forced_secondmate_child_scout_nested_clone_returns_clean() {
     "project=$case_dir/project" \
     "kind=scout" \
     "mode=local-only"
+  printf 'harness=polytoken\n' >> "$home/state/child-scout.meta"
+  mkdir -p "$child_wt/.polytoken/facets"
+  printf 'project hook\n' > "$child_wt/.polytoken/hooks.tracked.json"
+  git -C "$child_wt" add .polytoken/hooks.tracked.json
+  git -C "$child_wt" commit -qm 'Seed project-owned wiring'
+  exclude=$(git -C "$child_wt" rev-parse --git-path info/exclude)
+  printf '\n.polytoken/hooks.json\n.polytoken/facets/firstmate-worker.md\n' >> "$exclude"
+  printf '{"stop":{"command":"%s/state/child-scout.polytoken-busy.sh"}}\n' "$home" > "$child_wt/.polytoken/hooks.json"
+  printf 'inbox: %s/state/child-scout.inbox\n' "$home" > "$child_wt/.polytoken/facets/firstmate-worker.md"
   seed_nested_clone_and_scratch "$case_dir" "$child_wt"
   add_treehouse_clean_fd "$case_dir"
 
   rc=0
   run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
 
-  expect_code 0 "$rc" "secondmate-child-nested-clean: forced secondmate teardown should succeed"
+  expect_code 0 "$rc" "secondmate-child-nested-clean: forced secondmate teardown should succeed: $(cat "$case_dir/stderr")"
   [ -z "$(git -C "$child_wt" status --porcelain --untracked-files=all)" ] \
     || fail "secondmate-child-nested-clean: untracked entries remain: $(git -C "$child_wt" status --porcelain --untracked-files=all)"
+  assert_absent "$child_wt/.polytoken/hooks.json" "the descendant generated hook survived return"
+  assert_absent "$child_wt/.polytoken/facets/firstmate-worker.md" "the descendant generated facet survived return"
+  assert_present "$child_wt/.polytoken/hooks.tracked.json" "project-owned wiring must survive return"
   assert_absent "$child_wt/scratch-clone" "secondmate-child-nested-clean: nested clone survived return"
   assert_absent "$child_wt/scratch.txt" "secondmate-child-nested-clean: scratch file survived return"
   assert_no_grep "lost this slot" "$case_dir/stderr" \

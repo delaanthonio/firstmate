@@ -3450,14 +3450,14 @@ test_secondmate_liveness_tick_skips_mate_whose_lock_is_held() {
   # per-mate lock; this tick must skip the mate entirely rather than probe a
   # moving target.
   ( STATE="$state" bash -c '. "$1" && fm_lock_acquire_wait "$2" && sleep 30' \
-      _ "$ROOT/bin/fm-wake-lib.sh" "$state/.secondmate-liveness-sm1.lock" ) &
+      _ "$ROOT/bin/fm-wake-lib.sh" "$state/.control-sm1.lock" ) &
   holder=$!
   local i=0
-  while [ ! -d "$state/.secondmate-liveness-sm1.lock" ] && [ "$i" -lt 100 ]; do
+  while [ ! -d "$state/.control-sm1.lock" ] && [ "$i" -lt 100 ]; do
     sleep 0.05
     i=$((i + 1))
   done
-  [ -d "$state/.secondmate-liveness-sm1.lock" ] || fail "the fixture never acquired the liveness lock"
+  [ -d "$state/.control-sm1.lock" ] || fail "the fixture never acquired the liveness lock"
 
   run_liveness_leg "$dir" locked FM_FAKE_TMUX_CURRENT_COMMAND=zsh; pid=$LIVENESS_PID
   sleep 4

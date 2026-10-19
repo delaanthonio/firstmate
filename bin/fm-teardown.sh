@@ -478,7 +478,6 @@ if [ -f "$META" ] && [ ! -L "$META" ]; then
 fi
 CONTROL_LOCK="$STATE/.control-$ID.lock"
 CONTROL_LOCK_HELD=0
-SM_LIVENESS_LOCK=
 META_LOCK=
 META_LOCK_HELD=0
 DESCENDANT_LOCK_PATHS=()
@@ -511,10 +510,6 @@ teardown_release_locks() {
   if [ "$META_LOCK_HELD" = 1 ]; then
     fm_lock_release "$META_LOCK" || true
     META_LOCK_HELD=0
-  fi
-  if [ -n "${SM_LIVENESS_LOCK:-}" ]; then
-    fm_lock_release "$SM_LIVENESS_LOCK" || true
-    SM_LIVENESS_LOCK=
   fi
   if [ "$CONTROL_LOCK_HELD" = 1 ]; then
     fm_lock_release "$CONTROL_LOCK" || true
@@ -554,17 +549,6 @@ TEARDOWN_META_KIND=$(fm_meta_get "$META" kind)
 # Retiring a persistent secondmate is main's alone in both postures; the kind
 # is read under the metadata lock (role partition: bin/fm-lease-lib.sh).
 [ "$TEARDOWN_META_KIND" != secondmate ] || fm_lease_forbid_branch "secondmate retirement (fm-teardown)"
-# A secondmate's endpoint-liveness episodes (bin/fm-secondmate-liveness-lib.sh)
-# serialize on this lock; retirement holds it to the end so no probe or relaunch
-# can act on the route mid-teardown, and its relaunch ledger and park marker are
-# removed with the route instead of surviving for a reused id.
-if [ "$TEARDOWN_META_KIND" = secondmate ]; then
-  fm_lock_try_acquire "$STATE/.secondmate-liveness-$ID.lock" || {
-    echo "error: a secondmate liveness check is in progress for $ID; nothing was changed - retry teardown" >&2
-    exit 1
-  }
-  SM_LIVENESS_LOCK="$STATE/.secondmate-liveness-$ID.lock"
-fi
 TEARDOWN_CLEANUP_RECOVERY=$(fm_meta_get "$META" cleanup_recovery)
 TEARDOWN_META_SPAWN_GEN=
 TEARDOWN_LEGACY_PENDING=0
@@ -1399,14 +1383,14 @@ meta_value() {
 # fm_control_harness_wiring_paths. Its tracked hook and facet layers belong to
 # the project. Other harnesses retain their existing worktree-return cleanup.
 remove_harness_worktree_wiring() {  # <worktree>
-  local wt=$1 path
-  [ "$(meta_value "$META" harness)" = polytoken ] || return 0
+  local wt=$1 meta=${2:-$META} state=${3:-$STATE} id=${4:-$ID} path
+  [ "$(meta_value "$meta" harness)" = polytoken ] || return 0
   while IFS= read -r path; do
     case "$path" in "$wt"/*) ;; *) continue ;; esac
     git -C "$wt" ls-files --error-unmatch -- "$path" >/dev/null 2>&1 && continue
     rm -f "$path"
   done <<EOF
-$(fm_control_harness_wiring_paths "$(meta_value "$META" harness)" "$wt" "$STATE" "$ID")
+$(fm_control_harness_wiring_paths "$(meta_value "$meta" harness)" "$wt" "$state" "$id")
 EOF
 }
 
@@ -3464,6 +3448,7 @@ cleanup_firstmate_home_children() {
         validate_child_worktree_for_removal "$child_wt" "$child_proj" >/dev/null || return 1
         rm -f "$child_wt/.claude/settings.local.json" "$child_wt/.opencode/plugins/fm-turn-end.js" \
           "$child_wt/.fm-grok-turnend" "$child_wt/.fm-kimi-turnend"
+        remove_harness_worktree_wiring "$child_wt" "$child_meta" "$sub_state" "$child_id"
       fi
       fm_backend_remove_worktree "$child_backend" "$child_orca_worktree_id" || return 1
     elif [ -n "$child_wt" ] && [ -d "$child_wt" ]; then
@@ -3484,6 +3469,7 @@ cleanup_firstmate_home_children() {
         rm -f "$child_wt/.claude/settings.local.json" "$child_wt/.opencode/plugins/fm-turn-end.js" \
           "$child_wt/.opencode/plugins/fm-busy-state.js" \
           "$child_wt/.fm-grok-turnend" "$child_wt/.fm-kimi-turnend"
+        remove_harness_worktree_wiring "$child_wt" "$child_meta" "$sub_state" "$child_id"
         if [ -n "$child_proj" ] && [ -d "$child_proj" ] && command -v treehouse >/dev/null 2>&1; then
           teardown_scrub_scratch_copy "$child_wt" || return 1
           child_pool_slot=0

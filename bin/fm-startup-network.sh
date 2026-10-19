@@ -359,7 +359,10 @@ report_requires_wake() {  # <state>
 }
 
 queue_result_wake() {  # <state>
-  fm_wake_append check startup-network \
+  local deadline=${DELIVERY_DEADLINE:-$(now)}
+  fm_run_timed "$(seconds_until "$deadline")" env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
+    FM_ROOT_OVERRIDE="$FM_ROOT" bash -c '. "$1"; fm_wake_append check startup-network "$2"' \
+    _ "$SCRIPT_DIR/fm-wake-lib.sh" \
     "check: startup-network: deferred startup network checks finished ($1); read them with $FM_ROOT/bin/fm-startup-network.sh report" \
     || true
 }

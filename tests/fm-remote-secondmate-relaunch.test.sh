@@ -189,4 +189,27 @@ fm_pr_poll_artifacts_valid "$HOME_DIR/state" ios "$ROOT/bin/fm-pr-poll.sh" \
   || fail "a remote relaunch broke PR poll authentication by writing harness/model/effort after pr="
 pass "a remote relaunch keeps an already-armed PR poll authenticating"
 
+FM_HOME="$HOME_DIR" bash -c '
+  . "$1"
+  fm_secondmate_liveness_lock ios || exit 1
+  : > "$2"
+  exec sleep 30
+' _ "$ROOT/bin/fm-secondmate-liveness-lib.sh" "$TMP/lock-ready" &
+holder=$!
+waited=0
+while [ ! -e "$TMP/lock-ready" ] && [ "$waited" -lt 100 ]; do
+  sleep 0.05
+  waited=$((waited + 1))
+done
+if [ ! -e "$TMP/lock-ready" ]; then
+  kill "$holder" 2>/dev/null || true
+  fail "automatic recovery did not acquire the lifecycle mutex"
+fi
+OUT=$(run_relaunch ios claude claude-opus-5-5 medium); RC=$?
+kill "$holder" 2>/dev/null || true
+wait "$holder" 2>/dev/null || true
+expect_code 1 "$RC" "manual remote relaunch must refuse during automatic recovery"
+assert_contains "$OUT" "another lifecycle action is already running" "remote relaunch must share recovery's mutex"
+pass "remote manual replacement refuses while automatic recovery owns the route"
+
 echo "ALL TESTS PASSED"

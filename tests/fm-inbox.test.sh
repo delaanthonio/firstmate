@@ -90,6 +90,28 @@ assert_contains "$fail_out" "queued " "plain note still prints queued before the
 assert_contains "$fail_out" "NOT woken" "plain note still reports the wake failure"
 pass "plain note keeps exit 1 for a saved-but-unannounced failure"
 
+home=$(make_home marker-write-failure)
+mkdir -p "$home/state/inbox"
+: > "$home/state/inbox/.announced"
+rc=0
+first=$(run_inbox "$home" note --request-id marker-fail --json "receipt failure" 2> "$home/error") || rc=$?
+expect_code 3 "$rc" "a receipt failure must report saved but unannounced"
+first_id=$(printf '%s' "$first" | json_get id)
+assert_equals "False" "$(printf '%s' "$first" | json_get announced)" "failed receipt is not announced"
+assert_equals "1" "$(count_wakes "$home")" "the wake was appended before the receipt failed"
+rc=0
+run_inbox "$home" note --request-id marker-fail --json "receipt failure" > "$home/replay" 2> "$home/error" || rc=$?
+expect_code 3 "$rc" "replay still reports the receipt failure"
+rc=0
+run_inbox "$home" announce --json "$first_id" > "$home/announce" 2> "$home/error" || rc=$?
+expect_code 3 "$rc" "explicit announce still reports the receipt failure"
+assert_equals "1" "$(count_wakes "$home")" "retries must recognize the queued wake"
+rm "$home/state/inbox/.announced"
+run_inbox "$home" announce --json "$first_id" > "$home/repaired" || fail "receipt repair should succeed"
+assert_equals "True" "$(json_get announced < "$home/repaired")" "receipt repair is announced"
+assert_equals "1" "$(count_wakes "$home")" "receipt repair must not append a duplicate"
+pass "announcement receipt failures remain visible and retries retain one wake"
+
 # --- duplicate request id returns the original identity ---------------------
 
 home=$(make_home idempotent)

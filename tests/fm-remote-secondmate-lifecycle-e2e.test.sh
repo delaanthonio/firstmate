@@ -1571,7 +1571,7 @@ FM_HOME="$PARENT" bash -c '
 printf 'confirmed:%s\n' "$retired_wake_corr" > "$PARENT/state/.backlog-handoff-ios.wake-pending"
 printf '%s\tattempt\n' "$(date +%s)" > "$PARENT/state/.secondmate-relaunch-ios"
 printf '%s\tdead\n' "$(date +%s)" > "$PARENT/state/.secondmate-relaunch-bound-ios"
-liveness_lock="$PARENT/state/.secondmate-liveness-ios.lock"
+liveness_lock="$PARENT/state/.control-ios.lock"
 # The link is published before the claim finishes; signal only after acquire.
 # shellcheck disable=SC2016 # Positional parameters expand in the child shell.
 ( STATE="$PARENT/state" exec bash -c '. "$1" && fm_lock_acquire_wait "$2" && touch "$3" && exec sleep 120' \
@@ -1590,7 +1590,7 @@ liveness_owner=$liveness_holder_pid
 if remote_env "$ROOT/bin/fm-teardown.sh" ios > "$TMP_ROOT/teardown-liveness-busy.out" 2>&1; then
   fail "remote retirement proceeded under an active liveness episode"
 fi
-assert_grep 'liveness check is in progress for ios' "$TMP_ROOT/teardown-liveness-busy.out" \
+assert_grep 'another lifecycle action is already running for task ios' "$TMP_ROOT/teardown-liveness-busy.out" \
   "a liveness-busy retirement did not ask for a retry"
 assert_present "$REMOTE_HOME" "a liveness-busy retirement removed the remote home"
 assert_present "$PARENT/state/ios.meta" "a liveness-busy retirement removed parent metadata"

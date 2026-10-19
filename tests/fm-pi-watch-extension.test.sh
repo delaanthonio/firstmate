@@ -3495,8 +3495,20 @@ await previous.handlers.get("session_shutdown")?.({ type: "session_shutdown", re
 await waitFor(() => liveArms().length === 0, "retired old-session successor");
 
 const replacement = makePi(false);
+const coordinator = globalThis.__firstmatePiWatchReplacements.get(
+  `${process.env.FM_HOME}/state/extensions/pi-primary-watch/session-replacement-actionable.json`,
+);
+const pendingBeforeReload = coordinator.pending;
+const deliveriesBeforeReload = coordinator.deliveries;
+delete coordinator.nextGenerationId;
 const replacementMod = await import(`${pathToFileURL(process.env.PLUGIN).href}?replacement=durable-handoff`);
+if (coordinator.pending !== pendingBeforeReload || coordinator.deliveries !== deliveriesBeforeReload) {
+  throw new Error("upgrade discarded outstanding deliveries");
+}
 replacementMod.default(replacement.pi);
+if (!/^generation=[1-9][0-9]* phase=active$/.test(
+  readFileSync(`${process.env.FM_HOME}/state/.pi-watch-extension-loaded`, "utf8").trim().split("\n")[2],
+)) throw new Error("upgrade did not publish a numeric generation");
 const replacementStart = replacement.handlers.get("session_start")?.({
   type: "session_start",
   reason: "new",
@@ -3545,7 +3557,7 @@ process.exit(0);
 EOF
 )
   status=$?
-  expect_code 0 "$status" "Pi session replacement must auto-arm and carry an in-flight actionable close"
+  expect_code 0 "$status" "Pi session replacement must auto-arm and carry an in-flight actionable close: $out"
   [ -z "$out" ] || fail "Pi session-replacement handoff test printed output: $out"
   pass "Pi session replacement auto-arms and carries its in-flight actionable close"
 }

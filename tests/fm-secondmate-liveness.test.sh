@@ -465,13 +465,13 @@ test_sweep_skips_mate_whose_liveness_lock_is_held() {
   # the sweep must skip rather than probe or relaunch a moving target.
   ( STATE="$w/home/state" bash -c \
       '. "$1" && fm_lock_acquire_wait "$2" && sleep 30' \
-      _ "$ROOT/bin/fm-wake-lib.sh" "$w/home/state/.secondmate-liveness-sm1.lock" ) &
+      _ "$ROOT/bin/fm-wake-lib.sh" "$w/home/state/.control-sm1.lock" ) &
   holder=$!
-  while [ ! -d "$w/home/state/.secondmate-liveness-sm1.lock" ] && [ "$i" -lt 100 ]; do
+  while [ ! -d "$w/home/state/.control-sm1.lock" ] && [ "$i" -lt 100 ]; do
     sleep 0.05
     i=$((i + 1))
   done
-  [ -d "$w/home/state/.secondmate-liveness-sm1.lock" ] || fail "the fixture never acquired the liveness lock"
+  [ -d "$w/home/state/.control-sm1.lock" ] || fail "the fixture never acquired the liveness lock"
 
   out=$(run_bootstrap "$tmuxfb:$fb" "$w/home" zsh "$log")
 

@@ -299,25 +299,39 @@ test_clear_removes_tokens_and_the_view_even_when_off() {
   pass "clear: removes this home's tokens and the agents view after the feature is turned off"
 }
 
+assert_sidebar_config() {
+  python3 - "$1" "${2:-}" <<'PYTHON' || fail "sidebar TOML meaning differs: $1"
+import sys, tomllib
+with open(sys.argv[1], "rb") as source:
+    ui = tomllib.load(source)["ui"]
+assert ui["sidebar"] == {
+    "spaces": {"rows": [["state_icon", "workspace"], [{"token": "$fm_group", "bold": True}, "$fm_state"]]},
+    "agents": {"rows": [["state_icon", {"token": "$fm_group", "bold": True}, "$fm_state", "$fm_task"]]},
+}, ui
+if sys.argv[2]:
+    assert ui["agent_panel_sort"] == sys.argv[2], ui
+PYTHON
+}
+
 test_sidebar_config_apply_backs_up_and_refuses_twice() {
   local out cfg backups
   new_home sidebar
   cfg="$FAKE_DIR/config.toml"
   printf '[ui]\nagent_panel_sort = "spaces"\n' > "$cfg"
   out=$(groups sidebar-config 2>&1) || fail "sidebar-config print failed: $out"
-  assert_contains "$out" '[ui.sidebar.agents]' "printed rows"
+  printf '%s\n' "$out" > "$FAKE_DIR/printed.toml"
+  assert_sidebar_config "$FAKE_DIR/printed.toml"
   assert_equals "" "$(cat "$FAKE_HERDR_LOG")" "printing the rows calls no Herdr command"
   out=$(groups sidebar-config --apply "$cfg" 2>&1) || fail "sidebar-config apply failed: $out"
   backups=$(find "$FAKE_DIR" -maxdepth 1 -name 'config.toml.bak-*')
   [ -n "$backups" ] || fail "apply made no backup"
   assert_equals $'[ui]\nagent_panel_sort = "spaces"' "$(cat "$backups")" "backup holds the original"
-  assert_contains "$(cat "$cfg")" '[ui.sidebar.spaces]' "rows appended"
-  assert_contains "$(cat "$cfg")" 'agent_panel_sort = "spaces"' "original content kept"
+  assert_sidebar_config "$cfg" spaces
   if out=$(groups sidebar-config --apply "$cfg" 2>&1); then
     fail "a second apply must refuse"
   fi
   assert_contains "$out" "already defines Herdr sidebar rows" "refusal reason"
-  assert_equals "1" "$(grep -c '^\[ui.sidebar.spaces\]' "$cfg")" "rows appended exactly once"
+  assert_sidebar_config "$cfg" spaces
   assert_equals "" "$(cat "$FAKE_HERDR_LOG")" "apply never reloads Herdr"
   pass "sidebar-config: prints rows; --apply backs up, appends once, never reloads Herdr"
 }

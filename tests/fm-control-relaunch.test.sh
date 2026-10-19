@@ -79,6 +79,10 @@ case "${1:-}" in
       case "$payload" in
         /exit|/quit)
           printf 'zsh' > "$D/command"
+          if [ -f "$D/pause-exit" ]; then
+            : > "$D/exit-paused"
+            while [ ! -e "$D/release-exit" ]; do /bin/sleep 0.01; done
+          fi
           [ -z "${FM_FAKE_EXIT_TRANSPORT_FAIL_AFTER_STOP:-}" ] || exit 1
           ;;
         *'encode launch-brief'* | *'Firstmate operational input waiting: read'*)
@@ -1192,7 +1196,7 @@ test_turnend_auth_paths_are_owned_by_the_control_adapter() {
 }
 
 test_secondmate_relaunch_picks_up_the_configured_harness_pin() {
-  local dir home out rc settings
+  local dir home out rc settings control_pid waited=0
   dir=$(new_case smpin sm3)
   home="$dir/home"
   mkdir -p "$home/config"
@@ -1219,7 +1223,25 @@ test_secondmate_relaunch_picks_up_the_configured_harness_pin() {
   printf '%s\n' "fm-sm3" > "$dir/fake/windows"
   printf '%s' "$dir/smhome" > "$dir/fake/cwd"
   printf 'droid' > "$dir/fake/becomes"
-  out=$(run_control "$dir" sm3 relaunch); rc=$?
+  : > "$dir/fake/pause-exit"
+  run_control "$dir" sm3 relaunch > "$dir/relaunch.out" &
+  control_pid=$!
+  while [ ! -e "$dir/fake/exit-paused" ] && [ "$waited" -lt 200 ]; do
+    sleep 0.05
+    waited=$((waited + 1))
+  done
+  if [ ! -e "$dir/fake/exit-paused" ]; then
+    : > "$dir/fake/release-exit"
+    wait "$control_pid" || true
+    fail "manual relaunch never reached the stopped-agent gap"
+  fi
+  rc=0
+  FM_HOME="$home" bash -c '. "$1"; fm_secondmate_liveness_lock sm3' \
+    _ "$ROOT/bin/fm-secondmate-liveness-lib.sh" || rc=$?
+  : > "$dir/fake/release-exit"
+  wait "$control_pid" || fail "manual replacement failed: $(cat "$dir/relaunch.out")"
+  [ "$rc" -ne 0 ] || fail "automatic recovery acquired the lifecycle mutex during manual replacement"
+  out=$(cat "$dir/relaunch.out"); rc=0
   expect_code 0 "$rc" "a configured secondmate harness should relaunch"$'\n'"$out"
   [ "$(journal_field "$dir" sm3 to_harness)" = droid ] \
     || fail "a secondmate relaunch should pick up the configured harness pin, got '$(journal_field "$dir" sm3 to_harness)'"

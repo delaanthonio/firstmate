@@ -139,7 +139,7 @@ wait_for_startup_network_wake() {  # <home> [tenths]
 # holder's pid. The holder keeps the pid the lock records, so the lock's
 # stale-owner recovery never reclaims it while the test runs.
 hold_publish_lock() {  # <home>
-  local lock="$1/state/.startup-network.lock" holder waited=0
+  local lock="$1/state/${2:-.startup-network.lock}" holder waited=0
   FM_STATE_OVERRIDE="$1/state" FM_ROOT_OVERRIDE="$ROOT" bash -c '
     . "$1/fm-wake-lib.sh"
     fm_lock_try_acquire "$2" || exit 1
@@ -859,6 +859,46 @@ EOF
   pass "fm-startup-network: a held publish lock ends the worker inside its budget with a failed-rerun record"
 }
 
+test_enqueue_locks_cannot_outlive_the_delivery_budget() {
+  local rec home root log lock scenario holder publisher began took rc report
+  for lock in .wake-queue.lock .watcher-down.lock; do
+    for scenario in normal publish-held; do
+      rec=$(new_world "enqueue-$lock-$scenario")
+      IFS='|' read -r home root log <<EOF
+$rec
+EOF
+      holder=$(hold_publish_lock "$home" "$lock")
+      publisher=
+      [ "$scenario" != publish-held ] || publisher=$(hold_publish_lock "$home")
+      began=$(date +%s)
+      rc=0
+      fm_run_timed 12 env PATH="$root/bin:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$root" \
+        FM_STARTUP_NETWORK_TIMEOUT=2 FM_SESSION_START_TIMEOUT=2 FM_FAKE_BOOTSTRAP_LOG="$log" \
+        FM_FAKE_BOOTSTRAP_OUT=ENQUEUE_DIAGNOSTIC \
+        "$root/bin/fm-startup-network.sh" run --locked 0 > "$home/output" 2>&1 || rc=$?
+      took=$(( $(date +%s) - began ))
+      kill "$holder" ${publisher:+"$publisher"} 2>/dev/null || true
+      [ "$rc" -ne 124 ] || fail "$scenario enqueue stalled on $lock beyond the outer bound"
+      [ "$took" -le 7 ] || fail "$scenario enqueue spent ${took}s on a 2s budget"
+      report=$(run_stage "$home" "$root" report)
+      if [ "$scenario" = normal ]; then
+        assert_contains "$report" ENQUEUE_DIAGNOSTIC "enqueue timeout lost the diagnostic report"
+      else
+        assert_contains "$report" 'still held by pid' "publication failure lost the lock report"
+      fi
+      FM_HOME="$home" FM_ROOT_OVERRIDE="$root" bash -c '
+        . "$1"
+        for name in .startup-network.lock .wake-queue.lock .watcher-down.lock; do
+          fm_lock_try_acquire "$STATE/$name" || exit 1
+          fm_lock_release "$STATE/$name"
+        done
+      ' _ "$ROOT/bin/fm-wake-lib.sh" || fail "timed enqueue stranded a live lock owner"
+    done
+  done
+  pass "startup delivery bounds queue and recovery locks on normal and publication-failure paths"
+}
+
+test_enqueue_locks_cannot_outlive_the_delivery_budget
 test_wait_fails_without_a_published_stage
 test_start_returns_without_holding_the_callers_stdout
 test_harvest_acknowledgement_suppresses_the_wake_and_no_claim_produces_it

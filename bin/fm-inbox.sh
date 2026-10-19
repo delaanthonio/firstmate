@@ -252,8 +252,15 @@ note_announced() {  # <id>
 }
 
 mark_announced() {  # <id>
-  mkdir -p "$ANNOUNCED_DIR"
-  printf '%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$ANNOUNCED_DIR/$1"
+  local tmp
+  mkdir -p "$ANNOUNCED_DIR" || return 1
+  tmp=$(mktemp "$ANNOUNCED_DIR/.staging-XXXXXX") || return 1
+  if printf '%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$tmp" \
+    && mv -f "$tmp" "$ANNOUNCED_DIR/$1"; then
+    return 0
+  fi
+  rm -f "$tmp"
+  return 1
 }
 
 # true | false | unknown, for the note recorded at <path>.
@@ -353,8 +360,10 @@ announce_note() {  # <id> <summary>
     fm_lock_release "$FM_WAKE_QUEUE_LOCK"
     return 2
   fi
-  if fm_wake_append_locked check "inbox:$id" "check: captain inbox note $id - $summary"; then
-    mark_announced "$id"
+  if awk -F '\t' -v key="inbox:$id" '$3 == "check" && $4 == key { found=1 } END { exit !found }' \
+      "$FM_WAKE_QUEUE" 2>/dev/null \
+    || fm_wake_append_locked check "inbox:$id" "check: captain inbox note $id - $summary"; then
+    mark_announced "$id" || status=1
   else
     status=1
   fi
