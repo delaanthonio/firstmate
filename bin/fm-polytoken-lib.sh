@@ -155,7 +155,7 @@ fm_polytoken_shell_quote() {
 # absent key, becomes `bypass`. A missing or unreadable global config refuses
 # rather than launching a worker with no models or credentials.
 fm_polytoken_write_config() {  # <config-dir>
-  local cfgdir=$1 source matcher replace
+  local cfgdir=$1 source
   source="$(fm_polytoken_global_config_dir)/config.yaml"
   [ -f "$source" ] || {
     echo "error: polytoken global config '$source' is missing; a polytoken worker needs the operator's providers and credentials mirrored into its per-task config dir, and none exists to mirror" >&2
@@ -163,19 +163,13 @@ fm_polytoken_write_config() {  # <config-dir>
   }
   mkdir -p "$cfgdir" || return 1
   chmod 700 "$cfgdir" 2>/dev/null || true
-  matcher=$(sed -n 's/^default_permission_matcher:[[:space:]]*//p' "$source" | head -1 | sed 's/[[:space:]]#.*$//' | tr -d "[:space:]\"'")
-  case "$matcher" in
-    bypass_plus) replace=keep ;;
-    *) replace=enforce ;;
-  esac
-  if [ "$replace" = keep ]; then
-    cat "$source" >"$cfgdir/config.yaml" || return 1
-  else
-    sed 's/^default_permission_matcher:.*/default_permission_matcher: bypass/' "$source" >"$cfgdir/config.yaml" || return 1
-    if ! grep -q '^default_permission_matcher:' "$cfgdir/config.yaml"; then
-      printf '\ndefault_permission_matcher: bypass\n' >>"$cfgdir/config.yaml" || return 1
-    fi
-  fi
+  command -v ruby >/dev/null 2>&1 || { echo "error: ruby is required to normalize the Polytoken YAML config" >&2; return 1; }
+  ruby -ryaml - "$source" > "$cfgdir/config.yaml" <<'RUBY' || return 1
+config = YAML.safe_load(File.read(ARGV.fetch(0)), aliases: true)
+abort "Polytoken config must be a mapping" unless config.is_a?(Hash)
+config["default_permission_matcher"] = "bypass" unless config["default_permission_matcher"] == "bypass_plus"
+print YAML.dump(config)
+RUBY
   chmod 600 "$cfgdir/config.yaml" || return 1
 }
 

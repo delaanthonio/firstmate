@@ -189,6 +189,7 @@ stop_home_processes() {  # <home>
   done < <(cat "$home/orphan-pid" 2>/dev/null)
 }
 suite_cleanup() {
+  fm_test_reap_children
   local home
   while IFS= read -r home; do
     [ -n "$home" ] && stop_home_processes "$home"
@@ -1627,10 +1628,11 @@ test_a_park_stopped_mid_take_over_leaves_the_take_over_to_the_next_park() {
     . "$1"
     fm_lock_acquire_wait "$2" || exit 1
     : > "$3"
-    while [ ! -e "$4" ]; do sleep 0.1; done
+    while [ ! -e "$4" ] && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 0.1; done
     fm_lock_release "$2"
   ' _ "$ROOT/bin/fm-wake-lib.sh" "$home/state/.watcher-down.lock" "$home/marker-lock-held" "$home/marker-lock-release" &
   holder=$!
+  fm_test_track_child "$holder"
   wait_until 100 test -e "$home/marker-lock-held" || fail "fixture: could not hold the recovery-marker lock"
   turn_end "$home"
   wait_until 150 grep -q "	take-over	arm=$LEFT_ARM\$" "$home/state/.supervision-host.log" \
@@ -2483,13 +2485,14 @@ test_park_boundary_rechecked_just_before_the_engine_turn() {
   local home real_node pid park=120 turn=3 grace=1
   home=$(make_home boundary-late away)
   real_node=$(command -v node)
-  mkfifo "$home/render-release"
   echo 0 > "$home/park-clock"
   cat > "$home/fakebin/node" <<SH
 #!/usr/bin/env bash
 if [ "\${2:-}" = wake-prompt ]; then
+  fm_test_track_child "\$\$"
   cp "\$FM_HOME/state/.supervision-host" "\$FM_HOME/host-record-at-render" 2>/dev/null
-  read -r _ < "\$FM_HOME/render-release"
+  while [ ! -e "\$FM_HOME/render-release" ] && [ "\$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do /bin/sleep 0.02; done
+  [ -e "\$FM_HOME/render-release" ] || exit 1
 fi
 exec "$real_node" "\$@"
 SH
@@ -2503,10 +2506,8 @@ SH
   [ -s "$home/host-record-at-render" ] \
     || fail "the close was stopped before the successor started: $(cat "$home/host.out")"
   echo $((park - turn - grace)) > "$home/park-clock"
-  exec 3<> "$home/render-release"
-  printf 'release\n' >&3
+  : > "$home/render-release"
   wait_until 300 host_exited "$home" || fail "boundary-late: the host did not end its park"
-  exec 3>&-
   assert_re '^signal: .*demo.status' "$home/host.out" "the close read at the boundary must reach main"
   [ "$(tail -n 1 "$home/host.out")" = "$(grep '^supervision-host: cycle boundary - ' "$home/host.out")" ] \
     || fail "the close must be printed ahead of the boundary line: $(cat "$home/host.out")"

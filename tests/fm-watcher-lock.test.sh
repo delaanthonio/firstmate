@@ -565,7 +565,7 @@ SH
 }
 
 test_lock_stale_steal_single_winner_under_concurrency() {
-  local dir state lockdir dead marker gate hold i pids pid waiter winner wins
+  local dir state lockdir dead marker gate hold i pids pid waiter winner wins polls=0
   dir=$(make_case lock-stale-concurrency)
   state="$dir/state"
   lockdir="$state/.contend.lock"
@@ -576,18 +576,18 @@ test_lock_stale_steal_single_winner_under_concurrency() {
   mkdir "$lockdir"
   printf '%s\n' "$dead" > "$lockdir/pid"
   : > "$marker"
-  mkfifo "$gate" "$hold"
   # try_acquire is nonblocking: all one-shot candidates may lose to a transient
   # steal mutex. A waiting contender guarantees eventual acquisition, and the
-  # FIFO keeps the winner alive until every other contender has finished.
+  # Release barrier keeps the winner alive until every other contender has finished.
   FM_STATE_OVERRIDE="$state" bash -c '
     . "$1"
-    fm_lock_acquire_wait "$2" || exit 1
+    fm_lock_acquire_wait_bounded "$2" 10 || exit 1
     printf "%s\n" "${BASHPID:-$$}" >> "$3"
     printf "%s\n" "${BASHPID:-$$}" > "$4"
-    IFS= read -r _ < "$5"
+    while [ ! -e "$5" ] && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 0.02; done
   ' _ "$LIB" "$lockdir" "$marker" "$gate" "$hold" &
   waiter=$!
+  fm_test_track_child "$waiter"
   pids=
   i=1
   while [ "$i" -le 39 ]; do
@@ -596,20 +596,24 @@ test_lock_stale_steal_single_winner_under_concurrency() {
       if fm_lock_try_acquire "$2"; then
         printf "%s\n" "${BASHPID:-$$}" >> "$3"
         printf "%s\n" "${BASHPID:-$$}" > "$4"
-        IFS= read -r _ < "$5"
+        while [ ! -e "$5" ] && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 0.02; done
       fi
     ' _ "$LIB" "$lockdir" "$marker" "$gate" "$hold" &
-    pids="$pids $!"
+    pid=$!
+    fm_test_track_child "$pid"
+    pids="$pids $pid"
     i=$((i + 1))
   done
+  while [ ! -s "$gate" ] && [ "$polls" -lt 200 ]; do sleep 0.05; polls=$((polls + 1)); done
+  [ -s "$gate" ] || fail "no contender published a winner within the fixture bound"
   IFS= read -r winner < "$gate"
   [ "$winner" = "$waiter" ] || { kill "$waiter" 2>/dev/null || true; wait "$waiter" 2>/dev/null || true; }
   for pid in $pids; do
-    [ "$pid" = "$winner" ] || wait "$pid" 2>/dev/null || true
+    [ "$pid" = "$winner" ] || wait_for_exit "$pid" 100 || true
   done
   wins=$(awk 'NF { c++ } END { print c + 0 }' "$marker")
-  printf 'release\n' > "$hold"
-  wait "$winner" 2>/dev/null || true
+  : > "$hold"
+  wait_for_exit "$winner" 100 || fail "the winning contender did not stop after release"
   [ "$wins" -eq 1 ] || fail "expected exactly one stale-lock stealer, got $wins"
   pass "concurrent stale-lock steal yields exactly one winner"
 }

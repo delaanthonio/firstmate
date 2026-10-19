@@ -43,9 +43,10 @@ test_fixture_root_gone_after_sigterm() {
     . "'"$LIB"'"
     d=$(fm_test_tmproot fm-test-cleanup-term)
     printf "%s\n" "$d" > "'"$dirfile"'"
-    while :; do sleep 0.1; done
+    while [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 0.1; done
   ' &
   pid=$!
+  fm_test_track_child "$pid"
   tries=0
   while [ "$tries" -lt 100 ]; do
     [ -s "$dirfile" ] && break
@@ -106,9 +107,10 @@ test_orphan_sweep_respects_fixture_ownership() {
     . "'"$LIB"'"
     d=$(fm_test_tmproot fm-test-cleanup-active)
     printf "%s\n" "$d" > "'"$dirfile"'"
-    while :; do sleep 0.1; done
+    while [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 0.1; done
   ' &
   pid=$!
+  fm_test_track_child "$pid"
   tries=0
   while [ "$tries" -lt 100 ]; do
     [ -s "$dirfile" ] && break
@@ -182,9 +184,10 @@ test_registries_avoid_git_worktree_root() {
     d=$(fm_test_tmproot fm-test-cleanup-gitroot)
     printf "%s\n" "$d" > "$3"
     # Hold the suite open so a concurrent add would see any root-side leak.
-    while :; do sleep 0.1; done
+    while [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 0.1; done
   ' _ "$repo" "$LIB" "$dirfile" &
   pid=$!
+  fm_test_track_child "$pid"
   tries=0
   while [ "$tries" -lt 100 ]; do
     [ -s "$dirfile" ] && break
@@ -199,7 +202,7 @@ test_registries_avoid_git_worktree_root() {
       fail "fm_test_tmproot placed a fixture root inside the git worktree root: $child_dir"
       ;;
   esac
-  for entry in "$repo"/.fm-test-cleanup.* "$repo"/.fm-test-procevent.* "$repo"/.fm-test-watcher.*; do
+  for entry in "$repo"/.fm-test-cleanup.* "$repo"/.fm-test-procevent.* "$repo"/.fm-test-watcher.* "$repo"/.fm-test-children.*; do
     [ ! -e "$entry" ] || fail "a live test registry landed in the git worktree root: $entry"
   done
   kill -TERM "$pid"
@@ -209,6 +212,27 @@ test_registries_avoid_git_worktree_root() {
   pass "test registries and fixture roots stay out of a git worktree TMPDIR"
 }
 
+test_registered_children_are_reaped_after_a_failed_assertion() {
+  local harness rc pid
+  harness=$(fm_test_tmproot fm-child-failure)
+  rc=0
+  bash -s -- "$LIB" "$harness" <<'CHILD' || rc=$?
+. "$1"
+(
+  bash -c 'trap "" TERM; printf "%s\n" "$$" > "$1"; exec sleep 60' _ "$2/pid" >/dev/null 2>&1 &
+  fm_test_track_child "$!"
+)
+for _ in $(seq 1 100); do [ -s "$2/pid" ] && break; sleep 0.01; done
+[ -s "$2/pid" ] || exit 19
+exit 17
+CHILD
+  expect_code 17 "$rc" "the fixture must exit at its deliberate failure"
+  pid=$(cat "$harness/pid")
+  for _ in $(seq 1 100); do kill -0 "$pid" 2>/dev/null || break; sleep 0.01; done
+  ! kill -0 "$pid" 2>/dev/null || fail "a failed assertion left its TERM-resistant fixture child alive"
+  pass "registered children survive subshell registration and are reaped on a failed assertion"
+}
+
 test_fixture_root_gone_after_normal_exit
 test_fixture_root_gone_after_sigterm
 test_cleanup_registry_resists_precreation
@@ -216,3 +240,4 @@ test_fixture_registration_failure_rolls_back_root
 test_orphan_sweep_respects_fixture_ownership
 test_orphan_sweep_reaps_read_only_package_tree
 test_registries_avoid_git_worktree_root
+test_registered_children_are_reaped_after_a_failed_assertion

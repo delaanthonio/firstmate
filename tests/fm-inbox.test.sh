@@ -173,6 +173,40 @@ assert_grep "recover me" "$home/state/inbox/$crash_id.note" \
   "the completed note carries the caller's body"
 pass "a crash between recording the request id and publishing the note reuses the original id"
 
+home=$(make_home publish-after-ack)
+mkdir -p "$home/fakebin"
+cat > "$home/fakebin/publish-barrier" <<'SH'
+#!/usr/bin/env bash
+if [ -f "$PUBLISH_HOME/state/inbox/.requests/resurrect" ] && [ ! -e "$PUBLISH_HOME/resumed" ]; then
+  : > "$PUBLISH_HOME/paused"
+  for _ in $(seq 1 500); do [ -e "$PUBLISH_HOME/release" ] && break; sleep 0.01; done
+  [ -e "$PUBLISH_HOME/release" ] || exit 91
+  : > "$PUBLISH_HOME/resumed"
+fi
+case "${0##*/}" in
+  rm) exec "$PUBLISH_REAL_RM" "$@" ;;
+  mv) exec "$PUBLISH_REAL_MV" "$@" ;;
+esac
+SH
+chmod +x "$home/fakebin/publish-barrier"
+ln -s publish-barrier "$home/fakebin/rm"
+ln -s publish-barrier "$home/fakebin/mv"
+PUBLISH_HOME="$home" PUBLISH_REAL_RM="$(command -v rm)" PUBLISH_REAL_MV="$(command -v mv)" \
+  PATH="$home/fakebin:$PATH" run_inbox "$home" note --request-id resurrect --json 'original' > "$home/original.json" &
+first_publisher=$!
+fm_test_track_child "$first_publisher"
+for _ in $(seq 1 200); do [ -e "$home/paused" ] && break; sleep 0.01; done
+[ -e "$home/paused" ] || fail "the first publisher never paused after reservation"
+retry=$(run_inbox "$home" note --request-id resurrect --json 'replayed')
+retry_id=$(printf '%s' "$retry" | json_get id)
+run_inbox "$home" drain --ack "$retry_id" >/dev/null
+: > "$home/release"
+wait "$first_publisher" || fail "the original publisher failed after acknowledgement"
+assert_absent "$home/state/inbox/$retry_id.note" "the original publisher resurrected an acknowledged note"
+assert_present "$home/state/inbox/handled/$retry_id.note" "acknowledgement must retain the original note identity"
+assert_equals 1 "$(count_wakes "$home")" "the concurrent publishers must produce one wake"
+pass "a delayed request-id publisher cannot resurrect a replay that was already acknowledged"
+
 # --- saved-but-unannounced, then repair without a second note ---------------
 
 home=$(make_home announce-fail)

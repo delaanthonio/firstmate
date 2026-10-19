@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { runCommandAsync } from "./fm-async-exec.ts";
 
 // Shared wake-dispatch handshake between the Pi watcher extension (the
@@ -21,7 +22,7 @@ import { runCommandAsync } from "./fm-async-exec.ts";
 // Postures (docs/pi-supervision-branch.md "Postures"). The away-posture record
 // state/.afk-contract (owner: bin/fm-afk-contract.sh) is the posture; it is
 // read as a file at every routing decision, never inferred from chat. While
-// it exists the branch takes EVERY actionable row - check rows, decision-owned
+// its mode is away the branch takes EVERY actionable row - check rows, decision-owned
 // rows, and heartbeat rows included - and main is offered nothing the branch
 // can take. The two vetoes that describe a broken queue stay vetoes in both
 // postures, and such a wake, like every watcher-failure alarm, still falls
@@ -31,13 +32,19 @@ import { runCommandAsync } from "./fm-async-exec.ts";
 export const FM_BRANCH_DISPATCH_EVENT = "fm-branch-supervision:dispatch";
 
 // The away-posture record's state-relative filename, exactly as
-// bin/fm-afk-contract.sh writes it. Presence is the only fact read here; the
-// guarded scripts validate the record themselves (bin/fm-lease-lib.sh).
+// bin/fm-afk-contract.sh writes it.
 export const AFK_CONTRACT_FILE = ".afk-contract";
 
 export function afkPostureRecordPresent(state: string): boolean {
   try {
-    return statSync(join(state, AFK_CONTRACT_FILE)).isFile();
+    if (!statSync(join(state, AFK_CONTRACT_FILE)).isFile()) return false;
+    try {
+      return execFileSync("bash", [fileURLToPath(new URL("../../../bin/fm-afk-contract.sh", import.meta.url)), "mode"], {
+        encoding: "utf8", env: { ...process.env, FM_STATE_OVERRIDE: state }, stdio: ["ignore", "pipe", "ignore"],
+      }).trim() !== "quiet";
+    } catch {
+      return true;
+    }
   } catch {
     return false;
   }

@@ -347,20 +347,27 @@ test_agent_view_helper_sends_only_the_whitelisted_requests() {
 import json, socket, sys
 path, out, action = sys.argv[1:]
 srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+srv.settimeout(5)
 srv.bind(path); srv.listen(1)
 conn, _ = srv.accept()
+conn.settimeout(5)
 data = b""
 while b"\n" not in data:
-    data += conn.recv(65536)
+    chunk = conn.recv(65536)
+    if not chunk: raise RuntimeError("client closed before its request")
+    data += chunk
 open(out, "wb").write(data)
 result = {"type": "agent_view", "active": action == "set", "source": "firstmate", "label": "projects"}
 conn.sendall((json.dumps({"id": "fm-agent-view", "result": result}) + "\n").encode())
 conn.close()
 PY
     server=$!
+    fm_test_track_child "$server"
     for _ in 1 2 3 4 5 6 7 8 9 10; do [ -S "$sock" ] && break; sleep 0.2; done
+    [ -S "$sock" ] || fail "the fixture socket never became ready: $(cat "$dir/server.log")"
     out=$("$ROOT/bin/backends/herdr-agent-view.py" "$sock" "$action" 2>&1)
     status=$?
+    [ "$status" -eq 0 ] || kill "$server" 2>/dev/null || true
     wait "$server" || true
     [ "$status" -eq 0 ] || fail "agent view helper $action failed ($status): $out $(cat "$dir/server.log")"
     case "$action" in

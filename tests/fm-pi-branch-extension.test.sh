@@ -61,6 +61,7 @@ install_pi_branch_extension_fixture() {
   cp "$ROOT/.pi/extensions/lib/fm-operational-input.ts" "$repo/.pi/extensions/lib/fm-operational-input.ts"
   mkdir -p "$repo/bin"
   cp "$ROOT/bin/fm-operational-input.sh" "$repo/bin/fm-operational-input.sh"
+  cp "$ROOT/bin/fm-afk-contract.sh" "$ROOT/bin/fm-classify-lib.sh" "$ROOT/bin/fm-timeout-lib.sh" "$repo/bin/"
   chmod +x "$repo/bin/fm-operational-input.sh"
   cat > "$repo/node_modules/@earendil-works/pi-coding-agent/package.json" <<'JSON'
 {"name":"@earendil-works/pi-coding-agent","type":"module","exports":"./index.js"}
@@ -2012,6 +2013,52 @@ EOF
 # cancelled rather than re-presented; and the first run boundary after the
 # record is archived presents the accumulated rows with a fresh triggered
 # budget. Every record read goes through the real bin/fm-afk-contract.sh.
+test_quiet_record_keeps_attended_routing_and_outcome_processing() {
+  local repo home out status
+  repo="$TMP_ROOT/quiet-migration-root"
+  home="$TMP_ROOT/quiet-migration-home"
+  mkdir -p "$home/state" "$home/config"
+  install_pi_branch_extension_fixture "$repo"
+  FM_HOME="$home" FM_AFK_MODE=quiet "$ROOT/bin/fm-afk-contract.sh" enter --words 'remain present' >/dev/null \
+    || fail "quiet entry failed"
+  PLUGIN="$repo/.pi/extensions/fm-branch-supervision.ts" FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
+    DRIVER_PRELUDE="$DRIVER_PRELUDE" node --input-type=module > "$TMP_ROOT/node-output" 2>&1 <<'JS'
+const prelude = process.env.DRIVER_PRELUDE;
+await eval(`(async () => { ${prelude}; globalThis.__t = { fire, dispatch, settle, sentToMain, outcomeScript, defaultSessionCtx, home }; })()`);
+const { fire, dispatch, settle, sentToMain, outcomeScript, defaultSessionCtx, home } = globalThis.__t;
+const { pathToFileURL } = await import("node:url");
+const { writeFileSync } = await import("node:fs");
+const lib = await import(new URL("./lib/fm-branch-dispatch.ts", pathToFileURL(process.env.PLUGIN)));
+if (lib.afkPostureRecordPresent(`${home}/state`)) throw new Error("quiet was treated as away after migration");
+writeFileSync(`${home}/state/.wake-queue`, "1\t1\tcheck\tstartup-network\tcheck: startup-network\n");
+if (lib.branchOfferForWake(`${home}/state`, "check: startup-network", lib.afkPostureRecordPresent(`${home}/state`)).eligible) {
+  throw new Error("quiet check was routed away from main");
+}
+await fire("session_start", {}, defaultSessionCtx);
+let finish;
+globalThis.__fmOnBranchPrompt = () => new Promise((resolve) => { finish = resolve; });
+const offer = dispatch("signal: quiet ordinary wake");
+if (!offer.accepted) throw new Error("quiet ordinary branch work was refused");
+await settle(() => (globalThis.__fmPrompts ?? []).length === 1, "quiet prompt");
+if (globalThis.__fmPrompts[0].includes("POSTURE: AWAY")) throw new Error("quiet prompt declared the captain away");
+const report = globalThis.__fmSessions[0].options.customTools.find((tool) => tool.name === "fm_branch_report");
+await report.execute("quiet-report", { task: "branch-driver", verdict: "captain", summary: "result ready" }, undefined, undefined, {});
+finish();
+await offer.settlement;
+await settle(() => sentToMain.some((entry) => entry.message?.customType === "fm-branch-process"), "quiet captain processing");
+if (!outcomeScript(["unprocessed"]).trim()) throw new Error("quiet captain outcome was suppressed");
+writeFileSync(`${home}/state/.afk-contract`, "version: 2\nwords: -\n");
+if (!lib.afkPostureRecordPresent(`${home}/state`)) throw new Error("a legacy away record stopped holding main");
+writeFileSync(`${home}/state/.afk-contract`, "mode: damaged\n");
+if (!lib.afkPostureRecordPresent(`${home}/state`)) throw new Error("a damaged mode stopped holding main");
+process.exit(0);
+JS
+  status=$?
+  out=$(cat "$TMP_ROOT/node-output")
+  expect_code 0 "$status" "quiet migration must retain attended routing and captain processing: $out"
+  pass "quiet records keep Pi check routing, prompts, and captain outcomes attended after migration"
+}
+
 test_away_record_parks_main_and_presents_after_archive() {
   local repo home out status
   repo="$TMP_ROOT/away-root"
@@ -6203,6 +6250,7 @@ test_branch_dispatch_keeps_project_with_canonical_owner
 test_branch_dispatch_routes_secondmate_signal_by_new_span
 test_branch_cache_key_is_per_home_stable
 test_branch_default_on_heartbeat_afk_and_fallback
+test_quiet_record_keeps_attended_routing_and_outcome_processing
 test_away_record_parks_main_and_presents_after_archive
 test_away_unchanged_held_outcome_reaches_the_captain_once_until_a_new_event
 test_away_only_wake_rejects_when_record_is_archived_before_drain

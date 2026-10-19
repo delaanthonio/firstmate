@@ -152,7 +152,9 @@ SH
     reset-boundary)
       cat >> "$dir/bin/fm-watch-arm.sh" <<'SH'
 : > "$FM_HOME/state/arm-waiting"
-while [ ! -e "$FM_HOME/state/arm-release" ]; do sleep 0.02; done
+fm_test_track_child "$$"
+while [ ! -e "$FM_HOME/state/arm-release" ] && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 0.02; done
+[ -e "$FM_HOME/state/arm-release" ] || exit 1
 printf 'watcher: FAILED - cycle ended without an actionable reason\n'
 exit 1
 SH
@@ -226,7 +228,9 @@ SH
       cat > "$dir/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
 echo "$$" >> "$FM_HOME/state/arm-ran"
-while [ ! -e "$FM_HOME/state/arm-release" ]; do sleep 0.02; done
+fm_test_track_child "$$"
+while [ ! -e "$FM_HOME/state/arm-release" ] && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 0.02; done
+[ -e "$FM_HOME/state/arm-release" ] || exit 1
 printf 'pending:downtime:fixture-generation\n' > "$FM_HOME/state/.watcher-down"
 touch "$FM_HOME/state/.last-watcher-beat"
 printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
@@ -258,6 +262,7 @@ run_autoarm_bg() {
         "$FM_HOME/bin/fm-claude-stop-autoarm.sh"
       ' > "$out" 2>&1 &
   RUN_AUTOARM_BG_PID=$!
+  fm_test_track_child "$RUN_AUTOARM_BG_PID"
 }
 
 watcher_identity() {
@@ -1300,6 +1305,7 @@ test_orphaned_claim_from_dead_session_is_superseded_by_replacement() {
       for _ in $(seq 1 250); do [ -e "$FM_HOME/state/arm-ran" ] && break; sleep 0.02; done
     '
   orphan_pid=$(cat "$dir/state/orphan-hook-pid")
+  fm_test_track_child "$orphan_pid"
   kill -0 "$orphan_pid" 2>/dev/null || fail "the orphaned hook did not survive its session's exit"
   [ "$(epoch_field "$dir" owner_pid)" = "$orphan_pid" ] || fail "the dying session's hook did not claim the ledger: $(cat "$dir/state/.claude-autoarm-epoch")"
   [ "$(epoch_outcome "$dir")" = arming ] || fail "the orphaned claim is not arming: $(epoch_outcome "$dir")"
@@ -1316,6 +1322,7 @@ test_orphaned_claim_from_dead_session_is_superseded_by_replacement() {
         "$FM_HOME/bin/fm-claude-stop-autoarm.sh"
       ' > "$dir/state/replacement-out" 2>&1 &
   RUN_AUTOARM_BG_PID=$!
+  fm_test_track_child "$RUN_AUTOARM_BG_PID"
   for i in $(seq 1 250); do
     kill -0 "$RUN_AUTOARM_BG_PID" 2>/dev/null || break
     [ "$(wc -l < "$dir/state/arm-ran")" -ge 2 ] && break
@@ -1370,6 +1377,7 @@ test_resumed_same_id_session_supersedes_the_orphan() {
       for _ in $(seq 1 250); do [ -e "$FM_HOME/state/arm-ran" ] && break; sleep 0.02; done
     '
   orphan_pid=$(cat "$dir/state/orphan-hook-pid")
+  fm_test_track_child "$orphan_pid"
   kill -0 "$orphan_pid" 2>/dev/null || fail "the orphaned hook did not survive its session's exit"
   [ "$(epoch_field "$dir" owner_session_id)" = sess-resumed ] \
     || fail "the dying session's claim did not record its session id: $(cat "$dir/state/.claude-autoarm-epoch")"
@@ -1387,6 +1395,7 @@ test_resumed_same_id_session_supersedes_the_orphan() {
         "$FM_HOME/bin/fm-claude-stop-autoarm.sh"
       ' > "$dir/state/replacement-out" 2>&1 &
   RUN_AUTOARM_BG_PID=$!
+  fm_test_track_child "$RUN_AUTOARM_BG_PID"
   for i in $(seq 1 250); do
     kill -0 "$RUN_AUTOARM_BG_PID" 2>/dev/null || break
     [ "$(wc -l < "$dir/state/arm-ran")" -ge 2 ] && break

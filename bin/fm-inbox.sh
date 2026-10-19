@@ -418,16 +418,28 @@ claim_request_id() {  # <request-id> <note-id>  -> 0 claimed, 1 already exists
 
 publish_from_reservation() {  # <request-id> <source> <body> <extra>
   local request_id=$1 source=$2 body=$3 extra=$4
-  local reserved="$REQUESTS/$request_id" id tmp
+  local reserved="$REQUESTS/$request_id" id tmp rc=0
   [ -f "$reserved" ] || return 1
   id=$(tr -d '\r' <"$reserved")
   id=${id%%$'\n'*}
   valid_note_id "$id" || return 1
-  if [ ! -f "$INBOX/$id.note" ] && [ ! -f "$INBOX/handled/$id.note" ]; then
-    tmp=$(mktemp "$INBOX/.staging-XXXXXX")
-    write_note_file "$tmp" "$id" "$source" "$body" "$extra" "$request_id"
-    mv "$tmp" "$INBOX/$id.note"
+  need_python
+  tmp=$(mktemp "$INBOX/.staging-XXXXXX") || return 1
+  if ! write_note_file "$tmp" "$id" "$source" "$body" "$extra" "$request_id"; then
+    rm -f "$tmp"
+    return 1
   fi
+  python3 - "$reserved" "$tmp" "$INBOX/$id.note" "$INBOX/handled/$id.note" <<'PY' || rc=$?
+import fcntl, os, sys
+from pathlib import Path
+reserved, staged, pending, handled = sys.argv[1:]
+with open(reserved) as reservation:
+    fcntl.flock(reservation, fcntl.LOCK_EX)
+    if not Path(pending).is_file() and not Path(handled).is_file():
+        os.replace(staged, pending)
+PY
+  rm -f "$tmp"
+  [ "$rc" -eq 0 ] || return "$rc"
   printf '%s\n' "$id"
 }
 
@@ -454,7 +466,6 @@ queue_note() {
     tmp=$(mktemp "$INBOX/.staging-XXXXXX")
     staging_name=$(basename "$tmp")
     id="$(date +%s)-${staging_name#.staging-}"
-    write_note_file "$tmp" "$id" "$source" "$body" "$extra" "$request_id"
     if ! claim_request_id "$request_id" "$id"; then
       rm -f "$tmp"
       id=$(publish_from_reservation "$request_id" "$source" "$body" "$extra") \
@@ -463,7 +474,9 @@ queue_note() {
       finish_note_result replay "$id" "$request_id" "$json" "$strict" "$summary"
       return $?
     fi
-    mv "$tmp" "$INBOX/$id.note"
+    rm -f "$tmp"
+    id=$(publish_from_reservation "$request_id" "$source" "$body" "$extra") \
+      || die "request id $request_id is reserved but unreadable; retry the same request id"
     summary=$(note_summary_from_body "$body")
     finish_note_result created "$id" "$request_id" "$json" "$strict" "$summary"
     return $?

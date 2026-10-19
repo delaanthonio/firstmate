@@ -589,14 +589,6 @@ test_e2e_daemon_parented_version_named_session_keeps_its_lock() {
 # turn-end guard, and the real lock script once per phase under a chosen hook
 # environment, recording every verdict for the assertions below.
 
-BG_FIXTURE_PIDS=()
-reap_background_fixture() {
-  local pid
-  for pid in ${BG_FIXTURE_PIDS[@]+"${BG_FIXTURE_PIDS[@]}"}; do
-    kill -TERM "$pid" 2>/dev/null || true
-  done
-}
-trap 'reap_background_fixture; fm_test_cleanup' EXIT
 
 make_background_session_home() {  # <dir>
   local dir=$1
@@ -614,6 +606,7 @@ make_background_session_home() {  # <dir>
   # chain the assertions depend on.
   cat > "$dir/frontend.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 i=0
 while [ "$i" -lt 200 ] && [ "$(ps -o ppid= -p $$ 2>/dev/null | tr -d ' ')" != 1 ]; do
   sleep 0.05
@@ -624,28 +617,31 @@ CLAUDE_CODE_SESSION_ID=S1 CLAUDE_PID=$$ "$FM_HOME/bin/fm-lock.sh" > "$FM_HOME/st
 printf '%s\n' "$?" > "$FM_HOME/state/frontend-lock.rc"
 "$FM_FIXTURE_CLAUDE" "$FM_HOME/daemon.sh" &
 disown
-while [ ! -e "$FM_HOME/state/stop-frontend" ]; do sleep 0.05; done
+while [ ! -e "$FM_HOME/state/stop-frontend" ] && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 0.05; done
 exit 0
 SH
   cat > "$dir/daemon.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 printf '%s\n' "$$" > "$FM_HOME/state/daemon-pid"
 exec -a 'claude bg-pty-host' "$FM_FIXTURE_CLAUDE" "$FM_HOME/ptyhost.sh" &
-while :; do sleep 0.1; done
+while [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 0.1; done
 exit 0
 SH
   cat > "$dir/ptyhost.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 printf '%s\n' "$$" > "$FM_HOME/state/ptyhost-pid"
 exec -a 'claude bg-spare' "$FM_FIXTURE_CLAUDE" "$FM_HOME/spare.sh" &
-while [ ! -e "$FM_HOME/state/stop-spare" ]; do sleep 0.1; done
+while [ ! -e "$FM_HOME/state/stop-spare" ] && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 0.1; done
 exit 0
 SH
   cat > "$dir/spare.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 printf '%s\n' "$$" > "$FM_HOME/state/spare-pid"
 n=1
-while [ ! -e "$FM_HOME/state/stop-spare" ]; do
+while [ ! -e "$FM_HOME/state/stop-spare" ] && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do
   req="$FM_HOME/state/fire-$n"
   if [ -f "$req" ]; then
     out="$FM_HOME/state/phase-$n"
@@ -762,7 +758,7 @@ test_e2e_background_session_keeps_its_lock_across_a_recycled_chain() {
   daemon=$(tr -d '[:space:]' < "$dir/state/daemon-pid")
   ptyhost=$(tr -d '[:space:]' < "$dir/state/ptyhost-pid")
   spare=$(tr -d '[:space:]' < "$dir/state/spare-pid")
-  BG_FIXTURE_PIDS+=("$frontend" "$daemon" "$ptyhost" "$spare")
+  for fixture_pid in "$frontend" "$daemon" "$ptyhost" "$spare"; do fm_test_track_child "$fixture_pid"; done
   expect_code 0 "$(tr -d '[:space:]' < "$dir/state/frontend-lock.rc")" "the front-end could not acquire the lock: $(cat "$dir/state/frontend-lock.out")"
   [ "$(tr -d '[:space:]' < "$dir/state/.lock")" = "$frontend" ] \
     || fail "the front-end's lock names $(cat "$dir/state/.lock"), expected its own pid $frontend"
@@ -883,7 +879,7 @@ SH
     FM_HOME="$dir" FM_LOCK="$ROOT/bin/fm-lock.sh" FM_WAKE="$ROOT/bin/fm-wake-lib.sh" \
     "$NAMED_CLAUDE" "$dir/run.sh" &
   session_pid=$!
-  BG_FIXTURE_PIDS+=("$session_pid")
+  fm_test_track_child "$session_pid"
   wait_for_file "$dir/state/acquire.rc" "the initial lock acquisition"
   expect_code 0 "$(tr -d '[:space:]' < "$dir/state/acquire.rc")" \
     "the session could not acquire its lock: $(cat "$dir/state/acquire.out")"
@@ -891,10 +887,10 @@ SH
     || fail "the initial acquire did not record S1"
   wait_for_file "$dir/state/holder-pid" "the claim-lock holder pid"
   holder_pid=$(tr -d '[:space:]' < "$dir/state/holder-pid")
-  BG_FIXTURE_PIDS+=("$holder_pid")
+  fm_test_track_child "$holder_pid"
   wait_for_file "$dir/state/confirm-pid" "the same-session confirmation pid"
   confirm_pid=$(tr -d '[:space:]' < "$dir/state/confirm-pid")
-  BG_FIXTURE_PIDS+=("$confirm_pid")
+  fm_test_track_child "$confirm_pid"
   wait_for_file "$dir/state/confirm.rc" "the contended confirmation result"
   wait "$session_pid" || true
   expect_code 0 "$(tr -d '[:space:]' < "$dir/state/confirm.rc")" \
@@ -992,19 +988,19 @@ SH
     FM_CLAUDE="$NAMED_CLAUDE" \
     "$NAMED_CLAUDE" "$dir/run.sh" &
   session_pid=$!
-  BG_FIXTURE_PIDS+=("$session_pid")
+  fm_test_track_child "$session_pid"
   wait_for_file "$dir/state/acquire.rc" "the initial lock acquisition"
   expect_code 0 "$(tr -d '[:space:]' < "$dir/state/acquire.rc")" \
     "the session could not acquire its lock: $(cat "$dir/state/acquire.out")"
   wait_for_file "$dir/state/other-pid" "the other live harness pid"
   other_pid=$(tr -d '[:space:]' < "$dir/state/other-pid")
-  BG_FIXTURE_PIDS+=("$other_pid")
+  fm_test_track_child "$other_pid"
   wait_for_file "$dir/state/holder-pid" "the claim-lock holder pid"
   holder_pid=$(tr -d '[:space:]' < "$dir/state/holder-pid")
-  BG_FIXTURE_PIDS+=("$holder_pid")
+  fm_test_track_child "$holder_pid"
   wait_for_file "$dir/state/confirm-pid" "the same-session confirmation pid"
   confirm_pid=$(tr -d '[:space:]' < "$dir/state/confirm-pid")
-  BG_FIXTURE_PIDS+=("$confirm_pid")
+  fm_test_track_child "$confirm_pid"
   wait_for_file "$dir/state/confirm.rc" "the contended confirmation result"
   wait "$session_pid" || true
   [ "$(tr -d '[:space:]' < "$dir/state/confirm.rc")" != 0 ] \
@@ -1118,7 +1114,7 @@ test_reanchor_keeps_task_leases_live() {
     printf "%s\n" "$$" > "$0/state/front-pid"
     while [ ! -e "$0/state/stop" ] && [ "$SECONDS" -lt "${FM_TEST_STUB_MAX_BLOCK_SECONDS:-120}" ]; do sleep 0.05; done
   ' "$dir" &
-  BG_FIXTURE_PIDS+=("$!")
+  fm_test_track_child "$!"
   wait_for_file "$dir/state/front-pid" "the front-end pid"
   front_pid=$(tr -d '[:space:]' < "$dir/state/front-pid")
   printf '%s\n' "$front_pid" > "$dir/state/.lock"
@@ -1135,7 +1131,7 @@ test_reanchor_keeps_task_leases_live() {
       printf "%s\n" "$$" > "$FM_HOME/state/model-pid"
       while [ ! -e "$FM_HOME/state/stop" ] && [ "$SECONDS" -lt "${FM_TEST_STUB_MAX_BLOCK_SECONDS:-120}" ]; do sleep 0.05; done
     ' &
-  BG_FIXTURE_PIDS+=("$!")
+  fm_test_track_child "$!"
   wait_for_file "$dir/state/model-pid" "the model-loop pid"
   model_pid=$(tr -d '[:space:]' < "$dir/state/model-pid")
   expect_code 0 "$(tr -d '[:space:]' < "$dir/state/reanchor.rc")" \
@@ -1176,7 +1172,7 @@ test_reanchor_keeps_autoarm_midturn_healthy() {
     printf "%s\n" "$$" > "$0/state/front-pid"
     while [ ! -e "$0/state/stop" ] && [ "$SECONDS" -lt "${FM_TEST_STUB_MAX_BLOCK_SECONDS:-120}" ]; do sleep 0.05; done
   ' "$dir" &
-  BG_FIXTURE_PIDS+=("$!")
+  fm_test_track_child "$!"
   wait_for_file "$dir/state/front-pid" "the front-end pid"
   front_pid=$(tr -d '[:space:]' < "$dir/state/front-pid")
   printf '%s\n' "$front_pid" > "$dir/state/.lock"
@@ -1195,7 +1191,7 @@ test_reanchor_keeps_autoarm_midturn_healthy() {
       printf "%s\n" "$$" > "$FM_HOME/state/model-pid"
       while [ ! -e "$FM_HOME/state/stop" ] && [ "$SECONDS" -lt "${FM_TEST_STUB_MAX_BLOCK_SECONDS:-120}" ]; do sleep 0.05; done
     ' &
-  BG_FIXTURE_PIDS+=("$!")
+  fm_test_track_child "$!"
   wait_for_file "$dir/state/model-pid" "the model-loop pid"
   model_pid=$(tr -d '[:space:]' < "$dir/state/model-pid")
   expect_code 0 "$(tr -d '[:space:]' < "$dir/state/reanchor.rc")" \

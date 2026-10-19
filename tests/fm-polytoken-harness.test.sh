@@ -377,7 +377,7 @@ test_polytoken_lab_config_excludes_normalized_mcp_keys() {
 }
 
 test_polytoken_write_config_enforces_the_unattended_posture() {
-  local rec case_dir home cfgdir out rc
+  local rec case_dir home cfgdir out rc value expected
   rec=$(make_wiring_case config)
   case_dir=$rec
   home="$case_dir/home"
@@ -401,6 +401,16 @@ test_polytoken_write_config_enforces_the_unattended_posture() {
     XDG_CONFIG_HOME="$home/.config" HOME="$home" fm_polytoken_write_config "$cfgdir" \
       || fail "a bypass_plus global config spelled $spelling must be mirrored"
     assert_generated_yaml "$cfgdir/config.yaml" '{"version":4,"default_permission_matcher":"bypass_plus"}'
+  done
+  for spelling in '"default_permission_matcher"' "'default_permission_matcher'" '"default_permission_\u006datcher"'; do
+    for value in bypass_plus standard; do
+      printf 'version: 4\n%s: %s\n' "$spelling" "$value" > "$home/.config/polytoken/config.yaml"
+      XDG_CONFIG_HOME="$home/.config" HOME="$home" fm_polytoken_write_config "$cfgdir" \
+        || fail "a quoted matcher key must be normalized"
+      expected=$value
+      [ "$value" = bypass_plus ] || expected=bypass
+      assert_generated_yaml "$cfgdir/config.yaml" "{\"version\":4,\"default_permission_matcher\":\"$expected\"}"
+    done
   done
   # An absent key is appended, not silently inherited: the project layer
   # fully replaces the global config, so nothing can be inherited.
@@ -697,11 +707,14 @@ class H(BaseHTTPRequestHandler):
 server = HTTPServer(("127.0.0.1", 0), H)
 with open(os.environ["PTFAKE_STUB_PORT_FILE"], "w") as f:
     f.write(str(server.server_port))
+import threading
+threading.Timer(int(os.environ.get("FM_TEST_STUB_MAX_BLOCK_SECONDS", "120")), lambda: os._exit(0)).start()
 server.serve_forever()
 PY
   : > "$dir/port"
   PTFAKE_STUB_PORT_FILE="$dir/port" python3 "$dir/stub.py" &
   local pid=$!
+  fm_test_track_child "$pid"
   local i=0
   while [ ! -s "$dir/port" ] && [ "$i" -lt 50 ]; do
     sleep 0.1

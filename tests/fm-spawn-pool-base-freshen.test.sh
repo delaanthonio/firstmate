@@ -13,6 +13,26 @@ set -u
 
 TMP_ROOT=$(fm_test_tmproot fm-spawn-pool-base-freshen)
 
+fixture_task_tmp() {
+  FM_HOME="$1" FM_ROOT="$1" bash -c '. "$1"; printf "/tmp/fm-%s/%s" "$(fm_backend_hometag)" "$2"' \
+    _ "$ROOT/bin/fm-backend-hometag-lib.sh" "$2"
+}
+
+fixture_launch_dir() {
+  python3 - "$1" "$2" <<'PYTHON'
+import hashlib, os, sys
+print("/tmp/fm-" + sys.argv[2] + "+" + hashlib.sha256(os.path.realpath(sys.argv[1]).encode()).hexdigest())
+PYTHON
+}
+
+cleanup_fixture_task() {
+  local home=$1 id
+  shift
+  for id in "$@"; do
+    rm -rf "$(fixture_task_tmp "$home" "$id")" "$(fixture_launch_dir "$home" "$id")"
+  done
+}
+
 make_case() {
   local name=$1 id=$2 default=${3:-main} case_dir home project origin pool publisher fakebin initial
   case_dir="$TMP_ROOT/$name"
@@ -57,6 +77,23 @@ run_spawn() {
   shift
   fm_test_run_spawn "$HOME_DIR" "$POOL_DIR" "$FAKEBIN_DIR" \
     "$id" "$PROJECT_DIR" "$@"
+}
+
+test_fixture_cleanup_is_scoped_to_its_home() {
+  local a="$TMP_ROOT/cleanup-home-a" b="$TMP_ROOT/cleanup-home-b" id=identical-task tmp_a tmp_b launch_a launch_b
+  mkdir -p "$a" "$b"
+  tmp_a=$(fixture_task_tmp "$a" "$id"); tmp_b=$(fixture_task_tmp "$b" "$id")
+  launch_a=$(fixture_launch_dir "$a" "$id"); launch_b=$(fixture_launch_dir "$b" "$id")
+  printf '%s\n' "$tmp_a" "$tmp_b" "$launch_a" "$launch_b" >> "$FM_TEST_CLEANUP_REGISTRY"
+  mkdir -p "$tmp_a" "$tmp_b" "$launch_a" "$launch_b"
+  : > "$launch_b/other-run"
+  cleanup_fixture_task "$a" "$id"
+  assert_absent "$tmp_a" "this home's task root must be removed"
+  assert_absent "$launch_a" "this home's launch root must be removed"
+  assert_present "$tmp_b" "another home's task root must survive"
+  assert_present "$launch_b/other-run" "another home's staged command must survive"
+  cleanup_fixture_task "$b" "$id"
+  pass "fixture cleanup preserves equal task ids owned by another home"
 }
 
 test_remote_seeded_home_spawns_from_treehouse_pool() {
@@ -829,7 +866,6 @@ test_refused_launch_leaves_the_pool_for_a_retry_and_a_second_task() {
   local rec id other out status slot_root world claim1 claim2
   id='pool-refused-retry-r1'
   other='pool-refused-second-r1'
-  rm -rf "/tmp/fm-$id" "/tmp/fm-$other"
   rec=$(make_case refused-retry "$id")
   read_case_record "$rec"
   fm_test_spawn_brief "$HOME_DIR" "$other"
@@ -865,7 +901,7 @@ SH
   [ ! -e "$world/fm-$id.id" ] \
     || fail "the refused launch left its window open, still leasing $(cat "$world/fm-$id.path")"
   [ ! -e "$claim1" ] && [ ! -e "$claim2" ] || fail "the refused launch left a slot claim behind"
-  [ ! -e "/tmp/fm-$id" ] || fail "the refused launch left its task temp root behind"
+  [ ! -e "$(fixture_task_tmp "$HOME_DIR" "$id")" ] || fail "the refused launch left its task temp root behind"
 
   out=$(run_spawn "$id" --harness codex --mode no-mistakes --yolo off)
   status=$?
@@ -880,7 +916,7 @@ SH
     "the second task was handed the retried task's slot"
   grep -Fxq -- "task=$id" "$claim1" || fail "slot 1 is not claimed by the retried task: $(cat "$claim1" 2>/dev/null)"
   grep -Fxq -- "task=$other" "$claim2" || fail "slot 2 is not claimed by the second task: $(cat "$claim2" 2>/dev/null)"
-  rm -rf "/tmp/fm-$id" "/tmp/fm-$other" "/tmp/fm-$id+"* "/tmp/fm-$other+"*
+  cleanup_fixture_task "$HOME_DIR" "$id" "$other"
   pass "a launch refused after its slot claim leaves the pool for a retry and a second task"
 }
 
@@ -1040,7 +1076,7 @@ SH
     "a fresh polytoken isolation refusal must name the worktree and the closed window"$'\n'"$out"
   assert_not_contains "$out" "Inspect target firstmate:fm-$id" \
     "a fresh polytoken isolation refusal must not point at its closed window"
-  rm -rf "/tmp/fm-$id" "/tmp/fm-$id+"*
+  cleanup_fixture_task "$HOME_DIR" "$id"
   pass "the treehouse-get isolation refusal points only at what survives the abort"
 }
 
@@ -1175,6 +1211,7 @@ test_scout_base_branch_refused_on_gerrit_forge() {
   pass "a based scout on a forge=gerrit project is refused at spawn"
 }
 
+test_fixture_cleanup_is_scoped_to_its_home
 test_remote_seeded_home_spawns_from_treehouse_pool
 test_pool_slot_claim_follows_the_spawn_outcome
 test_refused_launch_leaves_the_pool_for_a_retry_and_a_second_task

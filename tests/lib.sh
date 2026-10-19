@@ -180,6 +180,35 @@ FM_TEST_TMPDIR=$(fm_test_tmpdir) || return 1
 
 FM_TEST_CLEANUP_DIRS=()
 FM_TEST_CLEANUP_REGISTRY=$(mktemp "$FM_TEST_TMPDIR/.fm-test-cleanup.$$.XXXXXX") || return 1
+FM_TEST_CHILD_REGISTRY=$(mktemp "$FM_TEST_TMPDIR/.fm-test-children.$$.XXXXXX") || return 1
+FM_TEST_CHILD_PS=$(command -v ps) || return 1
+export FM_TEST_CHILD_REGISTRY FM_TEST_CHILD_PS
+
+fm_test_track_child() {
+  local pid=$1 birth
+  if ! birth=$(LC_ALL=C "$FM_TEST_CHILD_PS" -p "$pid" -o lstart= 2>/dev/null) || [ -z "$birth" ]; then
+    kill -0 "$pid" 2>/dev/null || return 0
+    kill -KILL "$pid" 2>/dev/null || true
+    return 1
+  fi
+  printf '%s\t%s\n' "$pid" "$birth" >> "$FM_TEST_CHILD_REGISTRY"
+}
+export -f fm_test_track_child
+
+fm_test_reap_children() {
+  local pid birth signal
+  [ -f "$FM_TEST_CHILD_REGISTRY" ] || return 0
+  for signal in TERM KILL; do
+    while IFS=$'\t' read -r pid birth; do
+      [ -n "$pid" ] && [ -n "$birth" ] || continue
+      [ "$birth" = "$(LC_ALL=C "$FM_TEST_CHILD_PS" -p "$pid" -o lstart= 2>/dev/null)" ] || continue
+      kill -"$signal" "$pid" 2>/dev/null || true
+    done < "$FM_TEST_CHILD_REGISTRY"
+    [ "$signal" != TERM ] || sleep 0.1
+  done
+  while IFS=$'\t' read -r pid birth; do wait "$pid" 2>/dev/null || true; done < "$FM_TEST_CHILD_REGISTRY"
+  rm -f "$FM_TEST_CHILD_REGISTRY"
+}
 
 fm_test_pid_identity() {
   local pid=$1
@@ -188,7 +217,7 @@ fm_test_pid_identity() {
 }
 
 FM_TEST_OWNER_IDENTITY=$(fm_test_pid_identity "$$") || {
-  rm -f "$FM_TEST_CLEANUP_REGISTRY"
+  rm -f "$FM_TEST_CLEANUP_REGISTRY" "$FM_TEST_CHILD_REGISTRY"
   return 1
 }
 
@@ -295,6 +324,7 @@ fm_test_remove_tree() {
 
 fm_test_cleanup() {
   local d
+  fm_test_reap_children
   fm_test_reap_watchers
   fm_test_reap_procevent_homes
   for d in "${FM_TEST_CLEANUP_DIRS[@]:-}"; do
