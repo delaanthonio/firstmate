@@ -21,8 +21,18 @@ for name in devin devin-helper; do ln -s /bin/bash "$TMP_ROOT/names/$name"; done
 # shellcheck disable=SC2016
 out=$(CLAUDECODE=1 "$TMP_ROOT/names/devin" -c '"$1"; :' _ "$HARNESS")
 [ "$out" = devin ] || fail "native Devin ancestry must beat foreign CLAUDECODE: $out"
+negativebin=$(fm_fakebin "$TMP_ROOT/negative-ancestry")
+cat > "$negativebin/ps" <<'SH'
+#!/usr/bin/env bash
+case "$*" in
+  *"comm="*|*"args="*) printf '%s\n' devin-helper; exit 0 ;;
+  *"ppid="*) printf '0\n'; exit 0 ;;
+esac
+exit 1
+SH
+chmod +x "$negativebin/ps"
 # shellcheck disable=SC2016
-out=$("$TMP_ROOT/names/devin-helper" -c '"$1" ancestry "$$"; :' _ "$HARNESS")
+out=$(PATH="$negativebin:$PATH" "$TMP_ROOT/names/devin-helper" -c '"$1" ancestry "$$"; :' _ "$HARNESS")
 [ "$out" != 'comm devin' ] || fail "unrelated devin-helper claimed the adapter"
 [ "$(fm_agent_process_classify_name /opt/bin/devin)" = agent ] || fail "liveness lost Devin"
 [ "$(fm_agent_process_classify_name devin-helper)" = other ] || fail "liveness claims unrelated executable"

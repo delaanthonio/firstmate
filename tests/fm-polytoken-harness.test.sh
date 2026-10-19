@@ -119,8 +119,9 @@ test_polytoken_claims_no_inherited_launcher_marker() {
   cat > "$fakebin/ps" <<'SH'
 #!/usr/bin/env bash
 case "$*" in
-  *"comm="*) printf '%s\n' polytoken; exit 0 ;;
-  *"args="*) printf '%s\n' 'polytoken --config-dir /tmp/x new'; exit 0 ;;
+  *"comm="*) printf '%s\n' "${FAKE_PS_COMM:?}"; exit 0 ;;
+  *"args="*) printf '%s\n' "${FAKE_PS_ARGS:?}"; exit 0 ;;
+  *"ppid="*) printf '0\n'; exit 0 ;;
 esac
 exit 1
 SH
@@ -128,12 +129,13 @@ SH
   # AGENT=1 was observed reaching a real polytoken worker's tool subprocess
   # (verified live), so it must never promote to a polytoken identity when no
   # polytoken ancestry exists.
-  out=$(AGENT=1 "$HARNESS")
+  out=$(AGENT=1 FAKE_PS_COMM=bash FAKE_PS_ARGS=bash PATH="$fakebin:$PATH" "$HARNESS")
   [ "$out" != polytoken ] \
     || fail "an inherited AGENT=1 with no polytoken ancestry must not claim polytoken, got '$out'"
   # A structural polytoken ancestor outranks a retained CLAUDECODE, so a
   # cleared launch boundary is defense in depth rather than the only guard.
-  out=$(AGENT=1 CLAUDECODE=1 PATH="$fakebin:$PATH" "$HARNESS")
+  out=$(AGENT=1 CLAUDECODE=1 FAKE_PS_COMM=polytoken \
+    FAKE_PS_ARGS='polytoken --config-dir /tmp/x new' PATH="$fakebin:$PATH" "$HARNESS")
   [ "$out" = polytoken ] \
     || fail "a structural polytoken ancestor must outrank an inherited CLAUDECODE, got '$out'"
   pass "fm-harness.sh: no inherited launcher marker claims the polytoken identity"

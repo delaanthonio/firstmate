@@ -22,8 +22,18 @@ for name in command-code command-code-helper; do ln -s /bin/bash "$TMP_ROOT/name
 # shellcheck disable=SC2016
 out=$(CLAUDECODE=1 "$TMP_ROOT/names/command-code" -c '"$1"; :' _ "$HARNESS")
 [ "$out" = commandcode ] || fail "native Command Code ancestry must beat foreign CLAUDECODE: $out"
+negativebin=$(fm_fakebin "$TMP_ROOT/negative-ancestry")
+cat > "$negativebin/ps" <<'SH'
+#!/usr/bin/env bash
+case "$*" in
+  *"comm="*|*"args="*) printf '%s\n' command-code-helper; exit 0 ;;
+  *"ppid="*) printf '0\n'; exit 0 ;;
+esac
+exit 1
+SH
+chmod +x "$negativebin/ps"
 # shellcheck disable=SC2016
-out=$("$TMP_ROOT/names/command-code-helper" -c '"$1" ancestry "$$"; :' _ "$HARNESS")
+out=$(PATH="$negativebin:$PATH" "$TMP_ROOT/names/command-code-helper" -c '"$1" ancestry "$$"; :' _ "$HARNESS")
 [ "$out" != 'comm commandcode' ] || fail "unrelated command-code-helper claimed the adapter"
 [ "$(fm_agent_process_classify_name /usr/bin/command-code)" = agent ] || fail "liveness lost Command Code"
 [ "$(fm_agent_process_classify_name command-code-helper)" = other ] || fail "liveness claims unrelated executable"
