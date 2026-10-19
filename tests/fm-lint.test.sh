@@ -366,8 +366,11 @@ fi
 target=${!#}
 case "$target" in
   *blocker*)
+    fm_test_track_child "$$"
     sleep "${FM_TEST_BLOCK_SECS:-300}" &
-    printf '%s\n' "$!" > "${FM_TEST_CHILD_PID:-/dev/null}"
+    child=$!
+    fm_test_track_child "$child"
+    printf '%s\n' "$child" > "${FM_TEST_CHILD_PID:-/dev/null}"
     printf '%s\n' "$$" > "${FM_TEST_STUB_PID:-/dev/null}"
     exec sleep "${FM_TEST_BLOCK_SECS:-300}"
     ;;
@@ -1444,6 +1447,7 @@ test_root_deadline_names_the_root_and_reaps_the_tree() {
 
   sleep 300 &
   sentinel_pid=$!
+  fm_test_track_child "$sentinel_pid"
   rc=0
   out=$(PATH="$fakebin:$PATH" FM_LINT_JOBS=1 \
     FM_LINT_REQUIRE_BOUNDS=1 \
@@ -1514,6 +1518,7 @@ test_root_memory_limit_reports_a_named_death() {
   # the allocator is refused and the run must name the root, not survive.
   sleep 300 &
   sentinel_pid=$!
+  fm_test_track_child "$sentinel_pid"
   rc=0
   out=$(PATH="$fakebin:$PATH" FM_LINT_JOBS=1 \
     FM_LINT_REQUIRE_BOUNDS=1 FM_LINT_ROOT_MEMORY_KIB=262144 \

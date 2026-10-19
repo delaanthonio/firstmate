@@ -141,10 +141,12 @@ wait_for_startup_network_wake() {  # <home> [tenths]
 hold_publish_lock() {  # <home>
   local lock="$1/state/${2:-.startup-network.lock}" holder waited=0
   FM_STATE_OVERRIDE="$1/state" FM_ROOT_OVERRIDE="$ROOT" bash -c '
+    fm_test_track_child "$$"
     . "$1/fm-wake-lib.sh"
     fm_lock_try_acquire "$2" || exit 1
     exec sleep 120' _ "$ROOT/bin" "$lock" >/dev/null 2>&1 </dev/null &
   holder=$!
+  fm_test_track_child "$holder"
   while [ "$(cat "$lock/pid" 2>/dev/null || true)" != "$holder" ] && [ "$waited" -lt 50 ]; do
     sleep 0.1
     waited=$((waited + 1))
@@ -859,6 +861,37 @@ EOF
   pass "fm-startup-network: a held publish lock ends the worker inside its budget with a failed-rerun record"
 }
 
+test_superseded_worker_cannot_publish_through_a_held_lock() {
+  local rec home root log worker holder i
+  rec=$(new_world superseded-complete)
+  IFS='|' read -r home root log <<EOF
+$rec
+EOF
+  FM_FAKE_BOOTSTRAP_LOG="$log" FM_FAKE_BOOTSTRAP_SLEEP=2 FM_FAKE_BOOTSTRAP_OUT=OLD_RESULT \
+    FM_STARTUP_NETWORK_TIMEOUT=10 FM_SESSION_START_TIMEOUT=1 \
+    run_stage "$home" "$root" start --locked 0 --harvest-pid 999999999
+  await_worker_record "$home"
+  worker=$(sed -n 's/^pid=//p' "$home/state/.startup-network.status")
+  fm_test_track_child "$worker"
+  for ((i=0; i<100; i++)); do
+    [ ! -f "$log" ] || break
+    sleep 0.01
+  done
+  assert_present "$log" "the superseded worker never started its probe"
+  holder=$(hold_publish_lock "$home")
+  printf 'NEW_RESULT\n' > "$home/state/.startup-network.report"
+  printf 'NEW_TIMINGS\n' > "$home/state/.startup-network.timings"
+  printf 'NEW_DELIVERED\n' > "$home/state/.startup-network.delivered"
+  printf 'state=done\ngeneration=newer\npid=999999999\n' > "$home/state/.startup-network.status"
+  await_pid_exit "$worker" 100 || fail "the superseded worker outlived its deadline"
+  assert_equals NEW_RESULT "$(cat "$home/state/.startup-network.report")" "the superseded worker overwrote the report"
+  assert_equals NEW_TIMINGS "$(cat "$home/state/.startup-network.timings")" "the superseded worker overwrote timings"
+  assert_equals NEW_DELIVERED "$(cat "$home/state/.startup-network.delivered")" "the superseded worker cleared delivery"
+  assert_equals newer "$(sed -n 's/^generation=//p' "$home/state/.startup-network.status")" "the superseded worker replaced completed status"
+  kill "$holder" 2>/dev/null || true
+  pass "superseded workers cannot overwrite a completed generation through publication fallback"
+}
+
 test_enqueue_locks_cannot_outlive_the_delivery_budget() {
   local rec home root log lock scenario holder publisher began took rc report
   for lock in .wake-queue.lock .watcher-down.lock; do
@@ -898,6 +931,7 @@ EOF
   pass "startup delivery bounds queue and recovery locks on normal and publication-failure paths"
 }
 
+test_superseded_worker_cannot_publish_through_a_held_lock
 test_enqueue_locks_cannot_outlive_the_delivery_budget
 test_wait_fails_without_a_published_stage
 test_start_returns_without_holding_the_callers_stdout

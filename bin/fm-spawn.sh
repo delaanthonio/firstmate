@@ -5057,10 +5057,6 @@ EOF
   return 1
 }
 
-# Bind the discovered session into task metadata (the control verbs' durable
-# address), in the same locked-filter-and-publish shape spawn_record_traceparent
-# uses: an idempotent rewrite that drops any prior polytoken_* binding before
-# appending the fresh one.
 spawn_record_polytoken_session() {
   local meta="$STATE/$ID.meta" status=0 acquired=0
   if [ "$SPAWN_META_LOCK_HELD" != 1 ]; then
@@ -5071,12 +5067,12 @@ spawn_record_polytoken_session() {
   fi
   SPAWN_META_TMP="$STATE/.$ID.meta.polytoken.${BASHPID:-$$}"
   if [ ! -f "$meta" ] || [ ! -w "$meta" ] ||
-    ! awk -F= '$1 != "polytoken_session" && $1 != "polytoken_port" && $1 != "polytoken_credential"' "$meta" >"$SPAWN_META_TMP" ||
     ! {
       echo "polytoken_session=$POLYTOKEN_SESSION_ID"
       echo "polytoken_port=$POLYTOKEN_SESSION_PORT"
       echo "polytoken_credential=$POLYTOKEN_SESSION_CREDENTIAL"
-    } >>"$SPAWN_META_TMP" ||
+      awk -F= '$1 != "polytoken_session" && $1 != "polytoken_port" && $1 != "polytoken_credential"' "$meta"
+    } >"$SPAWN_META_TMP" ||
     ! fm_backlog_atomic_transition publish "$SPAWN_META_TMP" "$meta" "task record" "$STATE"; then
     status=1
     rm -f "$SPAWN_META_TMP" 2>/dev/null || true
@@ -5890,7 +5886,7 @@ EOF
     if [ "$RAW_LAUNCH" -eq 0 ]; then
       if ! fm_polytoken_write_config "$(fm_polytoken_config_dir "$STATE_REAL" "$ID")" \
         || ! fm_polytoken_write_facet "$WT" "$STATE_REAL/$ID.inbox" \
-        || ! fm_polytoken_write_busy_script "$FM_ROOT" "$STATE_REAL" "$ID" "$BUSY_GEN" "$TURNEND" \
+        || ! fm_polytoken_write_busy_script "$FM_ROOT" "$STATE_REAL" "$ID" "$BUSY_GEN" \
         || ! fm_polytoken_write_hooks "$WT" "$(fm_polytoken_busy_script "$STATE_REAL" "$ID")"; then
         echo "error: could not arm the polytoken busy-state wiring for $ID" >&2
         exit 1
@@ -6432,8 +6428,10 @@ spawn_record_traceparent() {
   fi
   SPAWN_META_TMP="$STATE/.$ID.meta.trace.${BASHPID:-$$}"
   if [ ! -f "$meta" ] || [ ! -w "$meta" ] ||
-    ! awk -F= '$1 != "traceparent"' "$meta" >"$SPAWN_META_TMP" ||
-    ! printf 'traceparent=%s\n' "$SPAWN_TRACEPARENT" >>"$SPAWN_META_TMP" ||
+    ! {
+      printf 'traceparent=%s\n' "$SPAWN_TRACEPARENT"
+      awk -F= '$1 != "traceparent"' "$meta"
+    } >"$SPAWN_META_TMP" ||
     ! fm_backlog_atomic_transition publish "$SPAWN_META_TMP" "$meta" "task record" "$STATE"; then
     status=1
     rm -f "$SPAWN_META_TMP" 2>/dev/null || true

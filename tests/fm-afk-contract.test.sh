@@ -516,13 +516,19 @@ test_record_changes_refuse_while_a_reader_holds_the_lock() {
   lock="$home/state/.afk-contract.lock"
 
   FM_STATE_OVERRIDE="$home/state" bash -c '
+    fm_test_track_child "$$"
     . "$1"
-    fm_lock_acquire_wait "$2" || exit 10
+    fm_lock_try_acquire "$2" || exit 10
     printf "ready\n" > "$3"
-    while [ ! -e "$4" ]; do sleep 0.05; done
+    deadline=$((SECONDS + 15))
+    while [ ! -e "$4" ]; do
+      [ "$SECONDS" -lt "$deadline" ] || exit 1
+      sleep 0.05
+    done
     fm_lock_release "$2"
   ' _ "$ROOT/bin/fm-wake-lib.sh" "$lock" "$home/holder.ready" "$home/release" &
   holder_pid=$!
+  fm_test_track_child "$holder_pid"
   i=0
   while [ "$i" -lt 100 ] && [ ! -s "$home/holder.ready" ]; do
     sleep 0.05

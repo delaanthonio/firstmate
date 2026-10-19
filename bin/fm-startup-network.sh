@@ -465,17 +465,15 @@ publish() {  # <generation> <state> <phases> <locked> <started> <rc> <output-fil
 # worker stops here with a failed record instead of spinning after it. The
 # record is written WITHOUT the publish lock: a holder that outlived the whole
 # budget is wedged, not mid-write, and a record `report` reads as failed-rerun
-# beats a worker burning CPU with its output discarded. The write is refused
-# only when the record now belongs to another live worker, the same test the
-# locked path applies. A wake is queued unconditionally because the claim
-# cannot be judged without the lock; a duplicate of an inline print is cheaper
+# beats a worker burning CPU with its output discarded. A wake is queued
+# unconditionally because the claim cannot be judged without the lock; a duplicate of an inline print is cheaper
 # than a failure nobody is woken for.
 publish_lock_held() {  # <generation> <phases> <locked> <started> <lockdir> <output-file> <timing-file>
-  local generation=$1 phases=$2 locked=$3 started=$4 lockdir=$5 out=$6 timings=${7:-}
+  local generation=$1 phases=$2 locked=$3 started=$4 lockdir=$5 out=$6 timings=${7:-} registered=${8:-1}
   printf 'NETWORK_CHECKS: the deferred check worker gave up because %s was still held by %s at its deadline, so %s may be incomplete; rerun %s/bin/fm-startup-network.sh run --locked %s once that lock is released\n' \
     "$lockdir" "$(held_by)" "$(phase_label "$phases")" "$FM_ROOT" "$locked" >> "$out"
   if [ "$(status_get generation)" != "$generation" ] \
-    && [ "$(status_get state)" = running ] && worker_alive; then
+    && { [ "$registered" = 1 ] || { [ "$(status_get state)" = running ] && worker_alive; }; }; then
     return 1
   fi
   record_result "$generation" failed "$phases" "$locked" "$started" 124 "$out" "$timings" >/dev/null
@@ -528,7 +526,7 @@ cmd_run() {  # <locked> <lock-pid> <generation>
   if [ "$internal" -eq 0 ]; then
     generation="$(now).$$.manual"
     if ! take_lock "$PUBLISH_LOCK" "$(seconds_until "$stage_deadline")"; then
-      publish_lock_held "$generation" "$phases" "$sweep_locked" "$started" "$PUBLISH_LOCK" "$out" "$timings"
+      publish_lock_held "$generation" "$phases" "$sweep_locked" "$started" "$PUBLISH_LOCK" "$out" "$timings" 0
       run_cleanup "$out" "$timings"
       return 1
     fi

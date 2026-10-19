@@ -3270,6 +3270,31 @@ test_secondmate_liveness_tick_cadence_gates_the_probe() {
   pass "watch liveness: the cadence marker gates probing and survives across legs"
 }
 
+test_secondmate_bound_notification_retries_after_enqueue_failure() {
+  local dir state now pid rc
+  dir=$(make_secondmate_liveness_case bound-queue-failure)
+  state="$dir/state"
+  now=$(date +%s)
+  printf '%s\tattempt\n%s\tattempt\n%s\tattempt\n' "$now" "$now" "$now" > "$state/.secondmate-relaunch-sm1"
+  mkdir "$state/.wake-queue"
+  run_liveness_leg "$dir" failed FM_FAKE_TMUX_CURRENT_COMMAND=zsh
+  pid=$LIVENESS_PID
+  fm_test_track_child "$pid"
+  rc=0
+  wait_for_exit "$pid" 300 || rc=$?
+  expect_code 1 "$rc" "failed bound enqueue must end the watcher with an error"
+  assert_absent "$state/.secondmate-relaunch-bound-sm1" "failed enqueue committed permanent notification suppression"
+  rmdir "$state/.wake-queue"
+  rm -f "$state/.secondmate-liveness-tick"
+  run_liveness_leg "$dir" retry FM_FAKE_TMUX_CURRENT_COMMAND=zsh
+  pid=$LIVENESS_PID
+  fm_test_track_child "$pid"
+  wait_for_exit "$pid" 300 || fail "the bound notification was not retried"
+  assert_present "$state/.secondmate-relaunch-bound-sm1" "successful retry did not park the mate"
+  [ "$(grep -c 'secondmate-relaunch-bound-sm1' "$state/.wake-queue")" = 1 ] || fail "the retry did not queue exactly one bound notification"
+  pass "a failed bound enqueue remains eligible for notification on the next watcher"
+}
+
 test_secondmate_liveness_tick_attempt_bound_parks_then_rearm_on_alive() {
   local dir state pid ledger now
   dir=$(make_secondmate_liveness_case liveness-bound)
@@ -3575,6 +3600,7 @@ test_secondmate_liveness_tick_relaunches_missing_endpoint
 test_secondmate_liveness_tick_relaunches_every_dead_mate_before_waking
 test_secondmate_liveness_tick_leaves_alive_and_inconclusive_untouched
 test_secondmate_liveness_tick_cadence_gates_the_probe
+test_secondmate_bound_notification_retries_after_enqueue_failure
 test_secondmate_liveness_tick_attempt_bound_parks_then_rearm_on_alive
 test_secondmate_liveness_tick_relaunch_failure_reports_once
 test_secondmate_liveness_tick_fails_closed_on_ledger_errors

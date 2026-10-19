@@ -4709,6 +4709,8 @@ exit 1
 SH
   cat > "$repo/bin/fm-supervision-host.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
+deadline=$((SECONDS + 15))
 printf 'host=%s args=%s primary=%s predecessor=%s\n' "$$" "$*" "${FM_SUPERVISION_HOST_PRIMARY:-}" \
   "${FM_WATCH_PREDECESSOR_ARM_PID:-none}" >> "${FM_ARM_LOG:?}"
 count=$(grep -c '^host=' "$FM_ARM_LOG")
@@ -4720,7 +4722,7 @@ if [ "$count" -eq 1 ]; then
 fi
 printf 'watcher: started pid=%s (beacon fresh) recovery-generation=fixture-generation\n' "$$"
 trap 'exit 0' TERM INT
-while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+while [ ! -e "$FM_STOP_FILE" ]; do [ "$SECONDS" -lt "$deadline" ] || exit 1; sleep 0.02; done
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh" "$repo/bin/fm-supervision-host.sh"
   out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_STOP_FILE="$stop" RECORD_KIND="$kind" node 2>&1 <<'EOF'

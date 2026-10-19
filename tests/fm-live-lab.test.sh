@@ -734,19 +734,21 @@ SH
 chmod +x "$FAKEBIN/claude"
 U="$TMP_ROOT/up-lab"
 (
+  fm_test_track_child "${BASHPID:-$(sh -c 'echo "$PPID"')}"
   end=$(( $(date +%s) + 120 ))
-  until node -e 'const j=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8"));process.exit(j.projects?.[process.argv[2]]?1:0)' "$HOME/.claude.json" "$U/home" 2>/dev/null; do
+  until node -e 'const j=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8"));process.exit(j.projects?.[process.argv[2]]?0:1)' "$HOME/.claude.json" "$U/home" 2>/dev/null; do
     [ "$(date +%s)" -lt "$end" ] || exit 1
     sleep 0.05
   done
   sleep 0.5
-  node -e 'const fs=require("node:fs");const [s,k]=process.argv.slice(1);const j=JSON.parse(fs.readFileSync(s,"utf8"));delete j.projects[k];fs.writeFileSync(s,JSON.stringify(j))' "$HOME/.claude.json" "$U/home"
+  node -e 'const fs=require("node:fs");const [s,k]=process.argv.slice(1);const j=JSON.parse(fs.readFileSync(s,"utf8"));if (!Object.hasOwn(j.projects,k)) process.exit(1);delete j.projects[k];fs.writeFileSync(s,JSON.stringify(j));if(Object.hasOwn(JSON.parse(fs.readFileSync(s,"utf8")).projects,k))process.exit(1)' "$HOME/.claude.json" "$U/home" || exit 1
   echo dropped > "$TMP_ROOT/rival-dropped"
 ) &
 RIVAL=$!
+fm_test_track_child "$RIVAL"
 out=$(SHELL=/bin/sh PATH="$FAKEBIN:$PATH" "$LIVE_LAB" up --harness claude --source "$UPSRC" --ref HEAD --timeout 1 "$U" 2>&1)
 expect_code 1 "$?" "stand-in primary does not answer probe"
-wait "$RIVAL" 2>/dev/null || true
+wait "$RIVAL" 2>/dev/null || fail "the rival did not remove an existing trust entry"
 assert_equals dropped "$(cat "$TMP_ROOT/rival-dropped" 2>/dev/null)" "rival dropped primary trust once"
 assert_equals present "$(cat "$U/claude-launch-trust" 2>/dev/null)" "primary launched trusted after the rival write"
 assert_contains "$out" "ok trust: $U/home is trusted in the Claude store" "readiness sees primary trust"

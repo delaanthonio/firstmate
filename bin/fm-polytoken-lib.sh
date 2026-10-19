@@ -219,8 +219,8 @@ EOF
 # in bin/fm-control.sh writes the close itself. Every writer call is
 # failure-tolerant and the script always exits 0, because a failing hook
 # errors the whole turn (verified live).
-fm_polytoken_write_busy_script() {  # <fm-root> <state-real> <id> <busy-gen> <turnend>
-  local fm_root=$1 state_real=$2 id=$3 gen=$4 turnend=$5 script
+fm_polytoken_write_busy_script() {  # <fm-root> <state-real> <id> <busy-gen>
+  local fm_root=$1 state_real=$2 id=$3 gen=$4 script
   script=$(fm_polytoken_busy_script "$state_real" "$id") || return 1
   cat >"$script" <<EOF
 #!/usr/bin/env bash
@@ -235,8 +235,7 @@ case "\$FM_BUSY_EVENT" in
     $(fm_polytoken_shell_quote "$fm_root/bin/fm-busy-event.sh") apply $(fm_polytoken_shell_quote "$state_real") $(fm_polytoken_shell_quote "$id") busy --gen $(fm_polytoken_shell_quote "$gen") --source polytoken-hook --event "\$FM_BUSY_EVENT" >/dev/null 2>&1 || true
     ;;
   stop)
-    touch $(fm_polytoken_shell_quote "$turnend") 2>/dev/null || true
-    $(fm_polytoken_shell_quote "$fm_root/bin/fm-busy-event.sh") apply $(fm_polytoken_shell_quote "$state_real") $(fm_polytoken_shell_quote "$id") idle --gen $(fm_polytoken_shell_quote "$gen") --source polytoken-hook --event stop >/dev/null 2>&1 || true
+    $(fm_polytoken_shell_quote "$fm_root/bin/fm-busy-event.sh") apply $(fm_polytoken_shell_quote "$state_real") $(fm_polytoken_shell_quote "$id") idle --gen $(fm_polytoken_shell_quote "$gen") --source polytoken-hook --event stop --turn-ended >/dev/null 2>&1 || true
     ;;
 esac
 exit 0

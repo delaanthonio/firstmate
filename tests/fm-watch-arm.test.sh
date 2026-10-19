@@ -1675,6 +1675,7 @@ test_take_over_attaches_to_a_cycle_the_named_arm_does_not_own() {
   FM_HOME="$dir" start_seed_watcher "$state" "$fakebin" "$dir/watch.out"
   sleep 60 &
   other=$!
+  fm_test_track_child "$other"
   PATH="$fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$state" "$WATCH_ARM" --take-over 2>/dev/null
   status=$?
   expect_code 2 "$status" "--take-over without an arm pid must be refused"
@@ -2048,6 +2049,7 @@ test_handling_delivered_accepts_already_acked_generation() {
   mkdir -p "$home/data" "$state/.watch.lock"
   sleep 60 &
   pid=$!
+  fm_test_track_child "$pid"
   identity=$(bash -c '. "$1"; fm_pid_identity "$2"' _ "$ROOT/bin/fm-wake-lib.sh" "$pid") \
     || fail "could not read the fixture watcher identity"
   printf '%s' "$home" > "$state/.watch.lock/fm-home"
@@ -2103,6 +2105,7 @@ test_handling_delivered_rejects_a_superseded_generation() {
   mkdir -p "$home/data" "$state/.watch.lock"
   sleep 60 &
   pid=$!
+  fm_test_track_child "$pid"
   identity=$(bash -c '. "$1"; fm_pid_identity "$2"' _ "$ROOT/bin/fm-wake-lib.sh" "$pid") \
     || fail "could not read the fixture watcher identity"
   printf '%s' "$home" > "$state/.watch.lock/fm-home"

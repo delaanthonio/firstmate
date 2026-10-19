@@ -3451,7 +3451,7 @@ pad_run() {
 
 test_emit_rules_agree_with_tasks_axi() {
   local home n=0 expected required outcome deliverables verdict mode
-  local emit_verdict axi_verdict obligation out pair key pad staging registry
+  local emit_verdict axi_verdict obligation out pair key pad staging registry event_id
   local -a emit_args emit_destination
   home=$(make_home emit-agreement)
   # A work home on the far side of a machine boundary, which is the only place
@@ -3512,13 +3512,16 @@ EOF
       emit_verdict=reject
     fi
 
-    publish_raw_event "$home/state/public-followup/events" "$obligation" main "work-agree-$n" \
-      "$outcome" "$deliverables" >/dev/null || fail "could not publish the raw case $n"
-    out=$(run_pf "$home" consume 2>&1) || true
-    case "$out" in
-      *"rejected "*) axi_verdict=reject ;;
-      *) axi_verdict=accept ;;
-    esac
+    event_id=$(publish_raw_event "$home/state/public-followup/events" "$obligation" main "work-agree-$n" \
+      "$outcome" "$deliverables") || fail "could not publish the raw case $n"
+    out=$(run_pf "$home" consume 2>&1) || fail "case $n consumption failed: $out"
+    if [ -f "$home/state/public-followup/consumed/$event_id" ]; then
+      axi_verdict=accept
+    elif printf '%s\n' "$out" | grep -F "rejected $event_id:" >/dev/null; then
+      axi_verdict=reject
+    else
+      fail "case $n has neither an acceptance nor its rejection receipt: $out"
+    fi
 
     [ "$axi_verdict" = "$verdict" ] \
       || fail "case $n ($expected final, $outcome outcome, $deliverables): tasks-axi says $axi_verdict, the table says $verdict - re-pin the mirrored rule"

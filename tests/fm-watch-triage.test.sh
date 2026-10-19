@@ -5073,8 +5073,25 @@ test_term_stops_a_watcher_blocked_inside_a_poll() {
   sig=$(seen_sig "$state/blocked.status"); printf '%s' "$sig" > "$state/.seen-blocked_status"
   # Opening the write end waits for the capture to open the read end, and the
   # holder then keeps it open without writing, so that capture blocks mid-poll.
-  ( exec 3> "$fifo"; : > "$dir/capture-blocked"; exec sleep 30 ) &
+  (
+    fm_test_track_child "${BASHPID:-$(sh -c 'echo "$PPID"')}"
+    exec python3 - "$fifo" "$dir/capture-blocked" <<'PYTHON'
+import os, sys, time
+end = time.monotonic() + 10
+while True:
+    try:
+        fd = os.open(sys.argv[1], os.O_WRONLY | os.O_NONBLOCK)
+        break
+    except OSError:
+        if time.monotonic() >= end:
+            raise TimeoutError("FIFO capture did not open")
+        time.sleep(0.02)
+open(sys.argv[2], "w").close()
+time.sleep(30)
+PYTHON
+  ) &
   holder=$!
+  fm_test_track_child "$holder"
   PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$fifo" \
     FM_STATE_OVERRIDE="$state" FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &

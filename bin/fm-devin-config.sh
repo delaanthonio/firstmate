@@ -39,7 +39,7 @@ quote() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
 prefix="$(quote "$SCRIPT_DIR/fm-busy-event.sh") apply $(quote "$STATE") $(quote "$ID")"
 suffix="--gen $(quote "$GEN") --source devin-hook"
 submit="$prefix busy $suffix --event user-prompt-submit >/dev/null 2>&1 || true"
-stop="$prefix idle $suffix --event stop >/dev/null 2>&1 && touch $(quote "$STATE/$ID.turn-ended"); true"
+stop="$prefix idle $suffix --event stop --turn-ended >/dev/null 2>&1 || true"
 end="$prefix idle $suffix --event session-end >/dev/null 2>&1 || true"
 if [ ! -e "$SOURCE" ] && [ ! -L "$SOURCE" ]; then SOURCE=/dev/null; fi
 umask 077

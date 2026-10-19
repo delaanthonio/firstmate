@@ -74,6 +74,25 @@ printf 'broken' > "$TMP_ROOT/invalid.json"
 jq -e . "$config" >/dev/null || fail 'failed write replaced valid config'
 pass "private config preserves user hooks; lifecycle and stale-generation rejection"
 
+race_root="$TMP_ROOT/rearm-root"
+mkdir -p "$race_root"
+cp "$ROOT/bin/fm-devin-config.sh" "$race_root/fm-devin-config.sh"
+cat > "$race_root/fm-busy-event.sh" <<'SH'
+#!/usr/bin/env bash
+"$FM_REAL_BUSY_EVENT" "$@" || exit $?
+if [ "$1" = apply ] && [ "$4" = idle ]; then
+  "$FM_REAL_BUSY_EVENT" arm "$2" "$3" >/dev/null || exit 1
+  rm -f "$2/$3.turn-ended"
+fi
+SH
+chmod +x "$race_root/fm-busy-event.sh"
+gen=$("$ROOT/bin/fm-busy-event.sh" arm "$state" worker)
+"$race_root/fm-devin-config.sh" "$state" worker "$gen" "$TMP_ROOT/user.json" || fail "race config generation failed"
+FM_REAL_BUSY_EVENT="$ROOT/bin/fm-busy-event.sh" run_hook Stop
+assert_absent "$state/worker.turn-ended" "a Stop touched the marker after a replacement rearmed"
+[ "$(fm_busy_classify tmux fake:w devin worker "$state")" = 'busy fm-spawn' ] || fail "the replacement lost its busy state"
+pass "Devin Stop cannot touch a turn-ended marker after replacement rearm"
+
 # A user config that opts into both must still produce a worker config with no
 # commit attribution and no imported Claude Code hooks; other import choices
 # the user made survive.

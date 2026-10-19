@@ -75,6 +75,7 @@ stop_lab() {  # <lab>
 }
 cleanup() {
   local lab
+  fm_test_reap_children
   for lab in "$LAB"/*/; do
     [ -d "$lab/fm" ] && stop_lab "${lab%/}"
   done
@@ -310,6 +311,7 @@ fire() {  # <lab> <status-file> <key> <text>
 # confirmed its successor's handling handoff, but not yet re-checked the close
 # at its turn's start. Prints when it saw that and the marker it saw.
 decide_at_handoff() { # <lab> <status-file> <line>
+  local child
   perl -MTime::HiRes=time,sleep -e '
     my ($marker, $status, $line, $limit) = @ARGV;
     my $until = time + $limit;
@@ -328,7 +330,10 @@ decide_at_handoff() { # <lab> <status-file> <line>
       }
       sleep 0.002;
     }
-    exit 1' "$1/fm/state/.watcher-down" "$2" "$3" 600
+    exit 1' "$1/fm/state/.watcher-down" "$2" "$3" 600 &
+  child=$!
+  fm_test_track_child "$child"
+  wait "$child"
 }
 
 # Steps 2-5 on the host under test: every hand-off reaches the idle primary.
@@ -397,6 +402,7 @@ run_positive() {
   decide_at_handoff "$lab" "$lab/fm/state/demo2.status" \
     "needs-decision [at=$(date +%s)] [key=lab-e4]: pick a rollout window" > "$lab/handoff.out" &
   injector=$!
+  fm_test_track_child "$injector"
   e4=$(date +%s)
   printf 'working [at=%s]: rollout prep started\n' "$e4" >> "$lab/fm/state/demo2.status"
   evidence "positive step 5: event 4, a routine working line on task demo2, appended at $e4"

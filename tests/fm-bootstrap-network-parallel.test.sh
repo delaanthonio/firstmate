@@ -17,6 +17,22 @@ set -u
 BASE_PATH=${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}
 TMP_ROOT=$(fm_test_tmproot fm-bootstrap-network-parallel)
 TMP_ROOT=$(cd "$TMP_ROOT" && pwd)
+MUTATION_GROUPS=()
+cleanup_mutation_groups() {
+  local pid
+  for pid in "${MUTATION_GROUPS[@]:-}"; do
+    [ -n "$pid" ] || continue
+    kill -TERM -- "-$pid" 2>/dev/null || true
+  done
+  [ "${#MUTATION_GROUPS[@]}" -eq 0 ] || sleep 0.1
+  for pid in "${MUTATION_GROUPS[@]:-}"; do
+    [ -n "$pid" ] || continue
+    kill -KILL -- "-$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+  done
+  fm_test_cleanup
+}
+trap cleanup_mutation_groups EXIT
 export FM_BACKEND_CMUX_BUNDLE_BIN="$TMP_ROOT/no-bundled-cmux"
 unset TMUX TMUX_PANE HERDR_ENV HERDR_PANE_ID HERDR_SESSION HERDR_SOCKET_PATH \
   CMUX_WORKSPACE_ID CMUX_SURFACE_ID CMUX_SOCKET_PATH CMUX_TAB_ID CMUX_PANEL_ID \
@@ -411,6 +427,7 @@ install_item_ssh() {
   cat > "$fakebin/fake-ssh" <<'SH'
 #!/usr/bin/env bash
 set -u
+fm_test_track_child "$$"
 log=${FM_FAKE_SSH_LOG:?}
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -433,7 +450,10 @@ printf 'START %s %s %s %s\n' "$host" "$command_name" "$subcommand" "$item_rel" >
 case "$command_name:$subcommand" in
   fm-remote-secondmate-control.sh:sync)
     if [ "$host" = "${FM_FAKE_SYNC_HANG_HOST:-none}" ]; then
-      sleep 120
+      sleep 120 &
+      child=$!
+      fm_test_track_child "$child"
+      wait "$child"
     fi
     printf 'END %s %s %s\n' "$host" "$command_name" "$subcommand" >> "$log"
     [ "${FM_FAKE_SYNC_UNKNOWN:-0}" != 1 ] || exit 255
@@ -453,7 +473,10 @@ case "$command_name:$subcommand" in
       printf 'error: synthetic refusal of %s\n' "$item_rel" >&2
       exit 1
     fi
-    sleep "${FM_FAKE_ITEM_SLEEP:-0}"
+    sleep "${FM_FAKE_ITEM_SLEEP:-0}" &
+    child=$!
+    fm_test_track_child "$child"
+    wait "$child"
     printf 'END %s %s %s %s\n' "$host" "$command_name" "$subcommand" "$item_rel" >> "$log"
     if [ "$item_rel" = "${FM_FAKE_ITEM_PUSHED:-none}" ]; then
       printf 'pushed: %s\n' "$item_rel"
@@ -732,6 +755,8 @@ SH
       FM_FAKE_SYNC_HANG_HOST=host-sm FM_FAKE_ITEM_SLEEP=120 \
       "$ROOT/bin/$script" >/dev/null 2>&1 &
     pid=$!
+    MUTATION_GROUPS+=("$pid")
+    fm_test_track_child "$pid"
     set +m
     waited=0
     while ! grep -q "$started" "$CF_LOG" && [ "$waited" -lt 200 ]; do
@@ -744,6 +769,7 @@ SH
     sleep 1
     kill -KILL -- "-$pid" 2>/dev/null || true
     wait "$pid" 2>/dev/null || true
+    MUTATION_GROUPS=()
     own_pg=$(ps -o pgid= -p $$ | tr -d ' ')
     for pg in $(ps -eo pgid=,args= | awk -v f="$CF_FAKEBIN/fake-ssh" 'index($0, f) { print $1 }' | sort -u); do
       [ "$pg" = "$own_pg" ] || kill -KILL -- "-$pg" 2>/dev/null || true

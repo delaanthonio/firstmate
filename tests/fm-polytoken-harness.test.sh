@@ -455,7 +455,7 @@ test_polytoken_write_facet_carries_the_role_contract_without_a_model_pin() {
 }
 
 test_polytoken_busy_writer_dispatches_without_argv_and_never_fails() {
-  local rec case_dir script state_real id gen turnend out
+  local rec case_dir script state_real id gen turnend out marker_before
   rec=$(make_wiring_case busywriter)
   case_dir=$rec
   state_real="$case_dir/state"
@@ -464,7 +464,7 @@ test_polytoken_busy_writer_dispatches_without_argv_and_never_fails() {
   mkdir -p "$state_real"
   "$ROOT/bin/fm-busy-event.sh" arm "$state_real" "$id" >/dev/null || fail "the busy contract must arm"
   gen=$(fm_busy_current_gen "$state_real" "$id") || fail "the armed generation must be readable"
-  fm_polytoken_write_busy_script "$ROOT" "$state_real" "$id" "$gen" "$turnend" \
+  fm_polytoken_write_busy_script "$ROOT" "$state_real" "$id" "$gen" \
     || fail "the busy writer must be generated"
   script=$(fm_polytoken_busy_script "$state_real" "$id")
   [ -f "$script" ] || fail "the busy writer must live in state, not the worktree"
@@ -488,6 +488,15 @@ test_polytoken_busy_writer_dispatches_without_argv_and_never_fails() {
   "$script" || fail "a no-event invocation must still exit 0"
   out=$(fm_busy_record_read "$state_real" "$id")
   assert_contains "$out" "idle polytoken-hook" "the unwired events must not rewrite the record"
+  "$ROOT/bin/fm-busy-event.sh" arm "$state_real" "$id" >/dev/null || fail "replacement arm failed"
+  rm -f "$turnend"
+  POLYTOKEN_HOOK_EVENT=stop "$script" || fail "a retired hook must remain failure tolerant"
+  assert_absent "$turnend" "a retired Stop recreated the replacement turn-ended marker"
+  assert_contains "$(fm_busy_record_read "$state_real" "$id")" "busy fm-spawn" "a retired Stop changed the replacement state"
+  touch -t 202001010000 "$turnend"
+  marker_before=$(python3 -c 'import os,sys;print(os.stat(sys.argv[1]).st_mtime_ns)' "$turnend")
+  POLYTOKEN_HOOK_EVENT=stop "$script" || fail "a stale Stop must remain failure tolerant"
+  assert_equals "$marker_before" "$(python3 -c 'import os,sys;print(os.stat(sys.argv[1]).st_mtime_ns)' "$turnend")" "a stale Stop refreshed an existing replacement marker"
   pass "fm-polytoken-lib: the no-argv busy writer opens, closes, and never fails"
 }
 
@@ -831,6 +840,7 @@ EOF
 set -u
 printf '%s\n' "$*" >>"${PTFAKE_TMUX_LOG:?}"
 case "$*" in
+  *"#{pane_current_command}"*) printf 'zsh\n'; exit 0 ;;
   *"#{pane_current_path}"*) printf '%s\n' "${PTFAKE_PANE_PATH:?}"; exit 0 ;;
   *"#{cursor_y}"*) printf '1\n'; exit 0 ;;
 esac
@@ -911,6 +921,16 @@ BASE_PATH=${FM_TEST_BASE_PATH:-$NODE_BIN_DIR:/usr/bin:/bin:/usr/sbin:/sbin}
 run_polytoken_spawn() {
   local case_dir=$1 home=$2 proj=$3 wt=$4 fakebin=$5 id=$6
   shift 6
+  local arg relaunch=0
+  local -a target=("$id" "$proj")
+  for arg in "$@"; do
+    [ "$arg" != --relaunch ] || relaunch=1
+  done
+  if [ "$relaunch" = 1 ]; then
+    target=("$id")
+  else
+    set -- --mode no-mistakes --yolo off "$@"
+  fi
   HOME="$home" XDG_CONFIG_HOME="$home/.config" FM_ROOT_OVERRIDE='' FM_HOME="$home" \
     FM_STATE_OVERRIDE="${PTFAKE_STATE_DIR:-$home/state}" FM_DATA_OVERRIDE="$home/data" \
     FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
@@ -925,7 +945,7 @@ run_polytoken_spawn() {
     FM_POLYTOKEN_READY_POLLS="${FM_POLYTOKEN_READY_POLLS:-40}" \
     FM_POLYTOKEN_POLL_INTERVAL="${FM_POLYTOKEN_POLL_INTERVAL:-0.1}" \
     PATH="$fakebin:$BASE_PATH" \
-    "$SPAWN" "$id" "$proj" --harness polytoken --model zai/glm-5.3-flash --effort low --mode no-mistakes --yolo off "$@" 2>&1
+    "$SPAWN" "${target[@]}" --harness polytoken --model zai/glm-5.3-flash --effort low "$@" 2>&1
 }
 
 test_polytoken_launch_carries_the_hybrid_contract() {
@@ -1003,6 +1023,25 @@ test_polytoken_launch_carries_the_hybrid_contract() {
   ruby -ryaml -e 'abort "worker matcher must be bypass" unless YAML.safe_load_file(ARGV[0]).fetch("default_permission_matcher") == "bypass"' \
     "$HOME_DIR/state/$id.polytoken-config/config.yaml" || fail "the worker config must enforce the unattended posture"
   pass "fm-spawn: the polytoken launch carries the hybrid contract end to end"
+}
+
+test_polytoken_relaunch_preserves_armed_pr_identity() {
+  local id rec out meta trace
+  for trace in off on; do
+  id="pt-pr-$trace-$$"
+  rec=$(make_polytoken_spawn_case "pr-relaunch-$trace" "$id")
+  read_polytoken_spawn_record "$rec"
+  out=$(FM_TRACE_CONTEXT="$trace" run_polytoken_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id") \
+    || fail "initial Polytoken spawn failed: $out"
+  meta="$HOME_DIR/state/$id.meta"
+  printf 'pr=https://github.com/example/repo/pull/123\npr_head=0123456789012345678901234567890123456789\n' >> "$meta"
+  out=$(FM_TRACE_CONTEXT="$trace" run_polytoken_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" --relaunch) \
+    || fail "Polytoken relaunch failed: $out"
+  bash -c '. "$1"; fm_pr_metadata_identity_parse "$2" && [ "$FM_PR_META_URL" = https://github.com/example/repo/pull/123 ]' \
+    _ "$ROOT/bin/fm-pr-lib.sh" "$meta" || fail "relaunch invalidated the armed PR identity"
+  [ "$(sed -n 's/^polytoken_session=//p' "$meta" | wc -l | tr -d ' ')" = 1 ] || fail "relaunch duplicated its REST binding"
+  pass "Polytoken relaunch preserves armed PR identity with tracing $trace"
+  done
 }
 
 test_polytoken_effort_maps_to_nearest_listed_level() {
@@ -1237,6 +1276,7 @@ test_polytoken_rest_interrupt_settles_the_turn
 test_polytoken_interrupt_close_spares_a_reopened_turn
 test_polytoken_turn_settled_reads_the_typed_sync_verdict
 test_polytoken_launch_carries_the_hybrid_contract
+test_polytoken_relaunch_preserves_armed_pr_identity
 test_polytoken_effort_maps_to_nearest_listed_level
 test_polytoken_missing_axes_refuse_before_pane_creation
 test_polytoken_unlisted_model_refuses_before_pane_creation
