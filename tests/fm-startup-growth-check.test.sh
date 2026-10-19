@@ -515,6 +515,7 @@ STUB
   FM_ROOT_OVERRIDE="$root" FM_HOME="$home" FM_STARTUP_GROWTH_NOW=87401 \
     "$bin/fm-startup-growth-check.sh" check >/dev/null 2>&1 &
   pid=$!
+  fm_test_track_child "$pid"
   while [ ! -f "$ready" ]; do
     [ "$waited" -lt 200 ] || fail "the check never reached its budget call"
     waited=$((waited + 1))

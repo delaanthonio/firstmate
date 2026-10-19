@@ -323,6 +323,7 @@ await_reply_result() { # <result-path>
   local result=$1 handled=${1%.result}.handled _
   if [ "$(reply_owner)" != live ]; then
     remote_env "$ROOT/bin/fm-procevent.sh" start "$SID" >/dev/null 2>&1 &
+    fm_test_track_child "$!"
   fi
   for _ in $(seq 1 800); do
     [ -s "$result" ] && [ -f "$handled" ] && return 0
@@ -371,7 +372,9 @@ if [ "\${1:-}" = clone ]; then
       printf 'clone\n' >> "$TMP_ROOT/provision-clones"
       if mkdir "$TMP_ROOT/provision-first" 2>/dev/null; then
         touch "$TMP_ROOT/provision.entered"
-        while [ ! -f "$TMP_ROOT/provision.release" ]; do sleep 0.02; done
+        fm_test_deadline=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+        while [ ! -f "$TMP_ROOT/provision.release" ] && [ "$SECONDS" -lt "$fm_test_deadline" ]; do sleep 0.02; done
+        [ "$SECONDS" -lt "$fm_test_deadline" ] || exit 1
       fi
       ;;
   esac
@@ -381,6 +384,7 @@ if [ "\${1:-}" = clone ] && [ -n "\${FM_FAKE_CLONE_HOLD_DIR:-}" ] \
   hold_dest="\${!#}"
   "$REAL_GIT" "\$@" &
   hold_git=\$!
+  fm_test_track_child "\$hold_git"
   hold_state() { ps -o stat= -p "\$hold_git" 2>/dev/null | tr -d '[:space:]'; }
   while [ ! -d "\$hold_dest/.git/objects" ]; do
     case "\$(hold_state)" in ''|Z*) wait "\$hold_git"; exit \$? ;; esac
@@ -395,7 +399,9 @@ if [ "\${1:-}" = clone ] && [ -n "\${FM_FAKE_CLONE_HOLD_DIR:-}" ] \
     sleep 0.005
   done
   touch "$TMP_ROOT/race-clone.held"
-  while [ ! -f "$TMP_ROOT/race-clone.release" ] && [ -d "$TMP_ROOT" ]; do sleep 0.02; done
+  fm_test_deadline=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+  while [ ! -f "$TMP_ROOT/race-clone.release" ] && [ -d "$TMP_ROOT" ] && [ "$SECONDS" -lt "$fm_test_deadline" ]; do sleep 0.02; done
+  [ "$SECONDS" -lt "$fm_test_deadline" ] || exit 1
   kill -CONT "\$hold_git" 2>/dev/null || true
   wait "\$hold_git"
   exit \$?
@@ -446,6 +452,7 @@ PATH="$FAKEBIN:$PATH" FM_HOME="$TMP_ROOT/raced-home" FM_ROOT_OVERRIDE="$REMOTE_R
   "$REMOTE_ROOT/bin/fm-remote-home-provision.sh" < "$TMP_ROOT/race.manifest" \
   > "$TMP_ROOT/race-provision.out" 2>&1 &
 race_provision=$!
+fm_test_track_child "$race_provision"
 race_wait=0
 while [ ! -f "$TMP_ROOT/race-clone.held" ]; do
   kill -0 "$race_provision" 2>/dev/null || fail "provision exited before its clone could be held"
@@ -481,6 +488,7 @@ PATH="$FAKEBIN:$PATH" FM_HOME="$TMP_ROOT/appeared-home" FM_ROOT_OVERRIDE="$REMOT
   "$REMOTE_ROOT/bin/fm-remote-home-provision.sh" < "$TMP_ROOT/race.manifest" \
   > "$TMP_ROOT/appeared-provision.out" 2>&1 &
 appeared_provision=$!
+fm_test_track_child "$appeared_provision"
 race_wait=0
 while [ ! -f "$TMP_ROOT/race-clone.held" ]; do
   kill -0 "$appeared_provision" 2>/dev/null || fail "appeared-home provision exited before its clone could be held"
@@ -1214,6 +1222,7 @@ resolve_ios_pending() {
       >> "$REMOTE_HOME/state/parent-replies.status"
     if [ "$(reply_owner)" != live ]; then
       remote_env "$ROOT/bin/fm-procevent.sh" start "$SID" >/dev/null 2>&1 &
+    fm_test_track_child "$!"
     fi
     pending_seen=0
     for _ in $(seq 1 800); do
@@ -1352,6 +1361,7 @@ FM_STATE_OVERRIDE="$WATCH_STATE" FM_SECONDMATE_LIVENESS_SECS=1 FM_POLL=1 \
   remote_env exec "$ROOT/bin/fm-watch.sh" \
   > "$TMP_ROOT/watch-liveness.out" 2> "$TMP_ROOT/watch-liveness.err" &
 watch_pid=$!
+fm_test_track_child "$watch_pid"
 watch_wait=0
 while kill -0 "$watch_pid" 2>/dev/null && [ "$watch_wait" -lt 1500 ]; do
   sleep 0.02
@@ -1404,6 +1414,7 @@ FM_FAKE_SSH_MODE=unreachable FM_STATE_OVERRIDE="$WATCH_STATE_UNREACHABLE" \
   remote_env exec "$ROOT/bin/fm-watch.sh" \
   > "$TMP_ROOT/watch-unreachable.out" 2> "$TMP_ROOT/watch-unreachable.err" &
 watch_pid=$!
+fm_test_track_child "$watch_pid"
 sleep 4
 kill -0 "$watch_pid" 2>/dev/null \
   || fail "the watcher exited against an unreachable remote secondmate: $(cat "$TMP_ROOT/watch-unreachable.out" "$TMP_ROOT/watch-unreachable.err")"
@@ -1634,6 +1645,7 @@ done
 FM_FAKE_SSH_MODE=retire-lost-slot remote_env "$ROOT/bin/fm-teardown.sh" ios \
   > "$TMP_ROOT/teardown-serialized.out" 2> "$TMP_ROOT/teardown-serialized.err" &
 teardown_pid=$!
+fm_test_track_child "$teardown_pid"
 sleep 0.2
 kill -0 "$teardown_pid" 2>/dev/null || fail "remote retirement bypassed an active remote respawn"
 assert_present "$REMOTE_HOME" "remote retirement removed the home during an active remote respawn"

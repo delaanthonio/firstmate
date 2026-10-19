@@ -11,10 +11,17 @@ import pathlib
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 import time
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
+if (any(key in os.environ for key in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR"))
+        or os.environ.get("GIT_CONFIG_GLOBAL") != "/dev/null"
+        or os.environ.get("GIT_CONFIG_NOSYSTEM") != "1"):
+    os.execv("/bin/bash", ["bash", "-c", '. "$1"; shift; exec "$@"', "_",
+                           str(REPO / "tests/git-config-helpers.sh"),
+                           sys.executable, str(__file__), *sys.argv[1:]])
 LAB = pathlib.Path(tempfile.mkdtemp(prefix="fm-turnend-foreign-owner-"))
 OUT = LAB / "evidence"
 OUT.mkdir()

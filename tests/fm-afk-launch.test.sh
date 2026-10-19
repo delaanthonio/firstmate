@@ -21,6 +21,7 @@
 set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$ROOT/tests/lib.sh"
 LAUNCH="$ROOT/bin/fm-afk-launch.sh"
 START="$ROOT/bin/fm-afk-start.sh"
 CONTRACT="$ROOT/bin/fm-afk-contract.sh"
@@ -49,6 +50,7 @@ printf '#!/usr/bin/env bash\nexec sleep 600\n' > "$SLEEPER"
 chmod +x "$SLEEPER"
 TRACK_TMUX_SESSIONS=""
 GLOBAL_CLEANUP() {
+  fm_test_reap_children
   rm -f "$SLEEPER" 2>/dev/null || true
   rm -rf "$OFF_CONFIG" 2>/dev/null || true
   local s
@@ -448,6 +450,7 @@ unit_mode_quiet_daemon_to_away() {
     sleep 600 &
     # shellcheck disable=SC2031 # The background PID is captured immediately in this shell.
     sleep_pid=$!
+    fm_test_track_child "$sleep_pid"
     lock="$st/state/.supervise-daemon.lock"
     mkdir -p "$lock"
     printf '%s' "$sleep_pid" > "$lock/pid"

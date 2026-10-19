@@ -501,6 +501,7 @@ test_concurrent_spawns_cannot_both_take_the_last_place() {
   hold="$case_dir/hold"
   wt=$(new_worktree "$case_dir" task-a)
   FM_FAKE_HOLD="$hold" spawn_ship "$case_dir" task-a "$wt" > "$case_dir/a.out" 2>&1 &
+  fm_test_track_child "$!"
   i=0
   while [ ! -f "$hold.reached" ]; do
     i=$((i + 1))

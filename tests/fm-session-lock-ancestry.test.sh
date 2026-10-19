@@ -616,6 +616,7 @@ printf '%s\n' "$$" > "$FM_HOME/state/frontend-pid"
 CLAUDE_CODE_SESSION_ID=S1 CLAUDE_PID=$$ "$FM_HOME/bin/fm-lock.sh" > "$FM_HOME/state/frontend-lock.out" 2>&1
 printf '%s\n' "$?" > "$FM_HOME/state/frontend-lock.rc"
 "$FM_FIXTURE_CLAUDE" "$FM_HOME/daemon.sh" &
+fm_test_track_child "$!"
 disown
 while [ ! -e "$FM_HOME/state/stop-frontend" ] && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 0.05; done
 exit 0
@@ -625,6 +626,7 @@ SH
 fm_test_track_child "$$"
 printf '%s\n' "$$" > "$FM_HOME/state/daemon-pid"
 exec -a 'claude bg-pty-host' "$FM_FIXTURE_CLAUDE" "$FM_HOME/ptyhost.sh" &
+fm_test_track_child "$!"
 while [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 0.1; done
 exit 0
 SH
@@ -633,6 +635,7 @@ SH
 fm_test_track_child "$$"
 printf '%s\n' "$$" > "$FM_HOME/state/ptyhost-pid"
 exec -a 'claude bg-spare' "$FM_FIXTURE_CLAUDE" "$FM_HOME/spare.sh" &
+fm_test_track_child "$!"
 while [ ! -e "$FM_HOME/state/stop-spare" ] && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 0.1; done
 exit 0
 SH
@@ -847,6 +850,7 @@ bash -c '
   done
   fm_lock_release "$2/.lock.acquire"
 ' _ "$FM_WAKE" "$FM_HOME/state" &
+fm_test_track_child "$!"
 printf '%s\n' "$!" > "$FM_HOME/state/holder-pid"
 
 i=0
@@ -860,6 +864,7 @@ if [ ! -e "$FM_HOME/state/holder-ready" ]; then
 fi
 
 CLAUDE_CODE_SESSION_ID=S2 CLAUDE_PID=$$ "$FM_LOCK" > "$FM_HOME/state/confirm.out" 2>&1 &
+fm_test_track_child "$!"
 printf '%s\n' "$!" > "$FM_HOME/state/confirm-pid"
 
 i=0
@@ -930,6 +935,7 @@ printf '%s\n' 0 > "$FM_HOME/state/acquire.rc"
     sleep 0.05
   done
 ' &
+fm_test_track_child "$!"
 printf '%s\n' "$!" > "$FM_HOME/state/other-bash-pid"
 i=0
 while [ "$i" -lt 400 ] && [ ! -s "$FM_HOME/state/other-pid" ]; do
@@ -951,6 +957,7 @@ bash -c '
   done
   fm_lock_release "$2/.lock.acquire"
 ' _ "$FM_WAKE" "$FM_HOME/state" &
+fm_test_track_child "$!"
 printf '%s\n' "$!" > "$FM_HOME/state/holder-pid"
 
 i=0
@@ -964,6 +971,7 @@ if [ ! -e "$FM_HOME/state/holder-ready" ]; then
 fi
 
 CLAUDE_CODE_SESSION_ID=S2 CLAUDE_PID=$$ "$FM_LOCK" > "$FM_HOME/state/confirm.out" 2>&1 &
+fm_test_track_child "$!"
 printf '%s\n' "$!" > "$FM_HOME/state/confirm-pid"
 
 i=0

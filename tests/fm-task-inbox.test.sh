@@ -1088,6 +1088,7 @@ test_watcher_pays_fire_and_forget_retry_once() {
     FM_SEND_LOG="$log" FM_FAKE_TMUX_CAPTURE="$(idle_capture "$dir")" \
     FM_TASK_INBOX_RING_MAX=1
   pid=$!
+  fm_test_track_child "$pid"
   while [ "$i" -lt 100 ]; do
     grep -qF 'Firstmate instruction waiting' "$log" 2>/dev/null && break
     kill -0 "$pid" 2>/dev/null || break

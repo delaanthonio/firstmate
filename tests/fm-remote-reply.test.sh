@@ -20,6 +20,7 @@ mkdir -p "$PARENT/data" "$PARENT/state" "$REMOTE/state" "$REMOTE/data/reply" "$C
 # stopping that pid alone leaves the supervisor to respawn - the leak
 # tests/fm-remote-job-orphan-reap.test.sh pins. Stop the whole worker tree.
 cleanup() {
+  fm_test_reap_children
   local worker_pid=''
   FM_HOME="$PARENT" FM_PROCEVENT_CLAIM_ROOT="$CLAIMS" \
     "$ROOT/bin/fm-procevent.sh" sweep-home >/dev/null 2>&1 || true
@@ -106,6 +107,8 @@ await_reply_result() { # <result-path>
   local result=$1 handled=${1%.result}.handled _
   if [ "$(reply_owner)" != live ]; then
     remote_env "$ROOT/bin/fm-procevent.sh" start "$SID" >/dev/null 2>&1 &
+  fm_test_track_child "$!"
+    fm_test_track_child "$!"
   fi
   for _ in $(seq 1 800); do
     [ -s "$result" ] && [ -f "$handled" ] && return 0
@@ -795,6 +798,7 @@ stop_reply_listener || fail "the reply listener did not stop before the continui
 FM_REMOTE_REPLY_WAIT_SECONDS=1 \
 FM_REMOTE_REPLY_POLL_LOG="$TMP_ROOT/reply-polls" \
   remote_env "$ROOT/bin/fm-procevent.sh" start "$SID" >/dev/null 2>&1 &
+  fm_test_track_child "$!"
 wait_for "$CLAIMS/$SID.claim" || fail "continuous reply listener never claimed the source"
 HELD_PID=$(sed -n '2p' "$CLAIMS/$SID.claim")
 polls=0
@@ -842,7 +846,9 @@ pass "a remote reply listener stays owned across empty waits and a delta"
 FM_REMOTE_REPLY_FAIL_READ=1 FM_REMOTE_REPLY_POLL_LOG="$TMP_ROOT/failed-polls" \
   FM_PROCEVENT_LAUNCH_FLOOR_SECONDS=1 \
   remote_env "$ROOT/bin/fm-procevent.sh" start "$SID" >/dev/null 2>&1 &
+  fm_test_track_child "$!"
 failed_reader=$!
+fm_test_track_child "$failed_reader"
 wait "$failed_reader" || fail "failed reader did not leave the runner"
 sleep 2
 [ "$(wc -l < "$TMP_ROOT/failed-polls" | tr -d ' ')" -eq 1 ] \
@@ -857,7 +863,9 @@ printf 'working: cannot ingest yet\n' >> "$REMOTE/state/parent-replies.status"
 failed_gen=$((GEN + 1))
 FM_PROCEVENT_LAUNCH_FLOOR_SECONDS=1 FM_REMOTE_REPLY_WAIT_SECONDS=1 \
   remote_env "$ROOT/bin/fm-procevent.sh" start "$SID" >/dev/null 2>&1 &
+  fm_test_track_child "$!"
 failed_ingest=$!
+fm_test_track_child "$failed_ingest"
 wait "$failed_ingest" || fail "failed ingestion did not leave the runner"
 sleep 2
 [ -f "$PARENT/state/procevent-inbox/$SID.$failed_gen.result" ] \
@@ -906,7 +914,9 @@ pass "a preempted reply poll reports a closed window without publishing channel 
 : > "$TMP_ROOT/preempted-polls"
 FM_REMOTE_REPLY_POLL_LOG="$TMP_ROOT/preempted-polls" FM_PROCEVENT_LAUNCH_FLOOR_SECONDS=1 \
   remote_env "$ROOT/bin/fm-procevent.sh" start "$SID" >/dev/null 2>&1 &
+  fm_test_track_child "$!"
 PREEMPTED_RUNNER=$!
+fm_test_track_child "$PREEMPTED_RUNNER"
 wait_for "$CLAIMS/$SID.claim" || fail "the preempted-listener case never claimed the source"
 HELD_PID=$(sed -n '2p' "$CLAIMS/$SID.claim")
 running_poll=''
@@ -1089,6 +1099,7 @@ break_repaired_route() { # <label> [expected-handle-status]
   GEN=$((GEN + 1))
   remote_env "$ROOT/bin/fm-procevent.sh" start "$SID" > "$TMP_ROOT/start-$label-break.out" 2>&1 &
   runner=$!
+  fm_test_track_child "$runner"
   wait "$runner" || fail "the $label continuity break was not captured"
   RESULT_BREAK=$(find "$PARENT/state/procevent-inbox" -name "$SID.$GEN.result" -print -quit)
   [ -n "$RESULT_BREAK" ] || fail "the $label continuity break produced no durable result"

@@ -233,6 +233,31 @@ CHILD
   pass "registered children survive subshell registration and are reaped on a failed assertion"
 }
 
+test_registered_launchers_reap_their_descendants_on_failure() {
+  local harness rc=0 pid
+  harness=$(fm_test_tmproot fm-child-tree-failure)
+  mkdir -p "$harness"
+  bash -s -- "$ROOT/tests/lib.sh" "$harness" <<'CHILD' || rc=$?
+. "$1"
+bash -c 'sleep 600 & printf "%s\n" "$!" > "$1/leaf"; wait' _ "$2" &
+fm_test_track_child "$!"
+for _ in $(seq 1 100); do [ -s "$2/leaf" ] && break; sleep 0.01; done
+[ -s "$2/leaf" ] || exit 19
+exit 17
+CHILD
+  expect_code 17 "$rc" "the fixture must reach its deliberate failure"
+  pid=$(cat "$harness/leaf")
+  for _ in $(seq 1 100); do
+    case "$(ps -p "$pid" -o stat= 2>/dev/null)" in ''|Z*) break ;; esac
+    sleep 0.01
+  done
+  case "$(ps -p "$pid" -o stat= 2>/dev/null)" in
+    ''|Z*) ;;
+    *) fail "a failed assertion left a launcher's descendant alive" ;;
+  esac
+  pass "registered launchers own their descendants on failed assertions"
+}
+
 test_fixture_root_gone_after_normal_exit
 test_fixture_root_gone_after_sigterm
 test_cleanup_registry_resists_precreation
@@ -241,3 +266,5 @@ test_orphan_sweep_respects_fixture_ownership
 test_orphan_sweep_reaps_read_only_package_tree
 test_registries_avoid_git_worktree_root
 test_registered_children_are_reaped_after_a_failed_assertion
+
+test_registered_launchers_reap_their_descendants_on_failure

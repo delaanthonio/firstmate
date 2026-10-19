@@ -582,6 +582,72 @@ test_inherit_push_failure_stops_new_sends() {
   pass "remote inheritance push: a failed item fails the push and no later item is started"
 }
 
+test_inherit_push_reaps_a_sender_without_a_published_result() {
+  local out rc=0
+  convergence_fixture "$TMP_ROOT/push-missing-result" sm:host-sm
+  cat > "$CF_FAKEBIN/mv" <<'SH'
+#!/usr/bin/env bash
+case " $* " in *".rc.tmp "*) exit 1 ;; esac
+exec /bin/mv "$@"
+SH
+  chmod +x "$CF_FAKEBIN/mv"
+  . "$ROOT/bin/fm-timeout-lib.sh"
+  export -f run_inherit_push
+  export CF_FAKEBIN CF_HOME CF_PRIMARY CF_LOG BASE_PATH ROOT
+  out=$(FM_REMOTE_INHERIT_PUSH_JOBS=1 fm_run_timed 15 bash -c 'run_inherit_push sm 1') || rc=$?
+  expect_code 1 "$rc" "a sender that cannot publish its result must fail without hanging"
+  assert_contains "$(cat "$CF_LOG")" 'config/item-a' "the first send must execute"
+  assert_not_contains "$(cat "$CF_LOG")" 'config/item-b' "a missing result must stop further sends"
+  pass "inheritance reaps a failed result publisher and stops scheduling"
+}
+
+test_inherit_push_interruption_reaps_only_its_owned_tree() {
+  local push sentinel pid rc=0 i=0 owned
+  convergence_fixture "$TMP_ROOT/push-interrupted-tree" sm:host-sm
+  sleep 600 &
+  sentinel=$!
+  fm_test_track_child "$sentinel"
+  PATH="$CF_FAKEBIN:$BASE_PATH" FM_HOME="$CF_HOME" FM_ROOT_OVERRIDE="$CF_PRIMARY" \
+    FM_SSH_BIN="$CF_FAKEBIN/fake-ssh" FM_FAKE_SSH_LOG="$CF_LOG" FM_FAKE_ITEM_SLEEP=600 \
+    FM_INHERITABLE_CONFIG='item-a item-b item-c item-d item-e item-f' \
+    "$ROOT/bin/fm-remote-inherit-push.sh" sm 1 > "$CF_HOME/push.out" 2>&1 &
+  push=$!
+  fm_test_track_child "$push"
+  while ! grep -q 'START .*fm-remote-inherit.sh' "$CF_LOG" && [ "$i" -lt 200 ]; do
+    sleep 0.05; i=$((i + 1))
+  done
+  grep -q 'START .*fm-remote-inherit.sh' "$CF_LOG" || fail "the interrupted sender never reached its transport"
+  owned=$(ps -axo pid=,ppid= | awk -v root="$push" '
+    BEGIN { seen[root]=1 }
+    { parent[$1]=$2 }
+    END {
+      do {
+        changed=0
+        for (pid in parent) if ((parent[pid] in seen) && !(pid in seen)) { seen[pid]=1; changed=1 }
+      } while (changed)
+      for (pid in seen) print pid
+    }')
+  for pid in $owned; do fm_test_track_child "$pid"; done
+  kill -TERM "$push"
+  wait "$push" || rc=$?
+  expect_code 143 "$rc" "an interrupted sender must preserve its signal status: $(cat "$CF_HOME/push.out")"
+  kill -0 "$sentinel" 2>/dev/null || fail "sender cleanup reached an unrelated process"
+  for pid in $owned; do
+    i=0
+    while [ "$i" -lt 100 ]; do
+      case "$(ps -p "$pid" -o stat= 2>/dev/null)" in ''|Z*) break ;; esac
+      sleep 0.01; i=$((i + 1))
+    done
+    case "$(ps -p "$pid" -o stat= 2>/dev/null)" in
+      ''|Z*) ;;
+      *) fail "interrupted sender left an owned process alive: $pid" ;;
+    esac
+  done
+  kill "$sentinel" 2>/dev/null || true
+  wait "$sentinel" 2>/dev/null || true
+  pass "inheritance interruption reaps its complete tree and preserves an unrelated sentinel"
+}
+
 test_inherit_push_local_refusal_sends_nothing() {
   local out rc
   convergence_fixture "$TMP_ROOT/push-refusal" sm:host-sm
@@ -787,6 +853,8 @@ test_remote_probe_scheduling_keeps_per_mate_lines fallback
 test_remote_inheritance_failure_names_its_own_error_not_an_unchanged_item
 test_inherit_push_overlaps_items_and_replays_in_order
 test_inherit_push_failure_stops_new_sends
+test_inherit_push_reaps_a_sender_without_a_published_result
+test_inherit_push_interruption_reaps_only_its_owned_tree
 test_inherit_push_local_refusal_sends_nothing
 test_convergence_budget_isolates_a_hung_mate
 test_partial_push_failure_keeps_the_reread_owed

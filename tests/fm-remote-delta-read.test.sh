@@ -38,6 +38,7 @@ run_reader() { # <offset> <prefix> <wait> [rel]
 : > "$DELTA_HOME/$DELTA_LOG_REL"
 run_reader 0 "$EMPTY_SHA" 4 > "$TMP_ROOT/growth.out" &
 READER_PID=$!
+fm_test_track_child "$READER_PID"
 sleep 0.3
 printf 'first line\n' >> "$DELTA_HOME/$DELTA_LOG_REL"
 wait "$READER_PID" || fail "a delta on growth did not exit 0"
@@ -87,6 +88,7 @@ pass 'an unchanged log costs one stat per poll and exits 75 at the window'
 : > "$EXEC_LOG"
 FM_TEST_EXEC_LOG="$EXEC_LOG" PATH="$DELTA_SHIM:/usr/bin:/bin" run_reader 0 "$EMPTY_SHA" 4 > "$TMP_ROOT/growth2.out" &
 READER_PID=$!
+fm_test_track_child "$READER_PID"
 sleep 0.3
 printf 'counted change\n' >> "$DELTA_HOME/$DELTA_LOG_REL"
 wait "$READER_PID" || fail 'the shimmed growth run did not exit 0'
@@ -100,6 +102,7 @@ printf 'alpha\nbeta\n' > "$DELTA_HOME/$DELTA_LOG_REL"
 PREFIX_SHA=$(sha 'alpha\nbeta\n')
 run_reader 11 "$PREFIX_SHA" 4 > "$TMP_ROOT/truncated.out" &
 READER_PID=$!
+fm_test_track_child "$READER_PID"
 sleep 0.3
 printf 'a\n' > "$DELTA_HOME/$DELTA_LOG_REL"
 wait "$READER_PID" || fail 'the truncated read did not exit 0'
@@ -116,6 +119,7 @@ pass 'a shrunk log breaks continuity as truncated with the remaining hash'
 printf 'alpha\nbeta\n' > "$DELTA_HOME/$DELTA_LOG_REL"
 run_reader 11 "$PREFIX_SHA" 4 > "$TMP_ROOT/rewrite.out" &
 READER_PID=$!
+fm_test_track_child "$READER_PID"
 sleep 1.1
 printf 'OMEGA\nbeta\n' > "$DELTA_HOME/$DELTA_LOG_REL"
 wait "$READER_PID" || fail 'the rewritten read did not exit 0'
@@ -190,6 +194,7 @@ pass 'a missing log at the origin cursor keeps waiting until the window closes'
 printf 'whole\n' > "$DELTA_HOME/$DELTA_LOG_REL"
 run_reader 6 "$(sha 'whole\n')" 4 > "$TMP_ROOT/partial.out" &
 READER_PID=$!
+fm_test_track_child "$READER_PID"
 sleep 0.3
 printf 'frag' >> "$DELTA_HOME/$DELTA_LOG_REL"
 sleep 0.4

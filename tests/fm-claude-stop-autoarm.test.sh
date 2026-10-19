@@ -935,6 +935,7 @@ test_abandoned_claim_reclaim_reaps_dead_steal_without_nesting() {
   write_arm_fixture "$dir" actionable
   sleep 60 &
   pid=$!
+  fm_test_track_child "$pid"
   record_autoarm_owner "$dir" "$pid"
   record_autoarm_epoch "$dir" 464 "$pid" rewake
   FM_STATE_OVERRIDE="$dir/state" bash -c '
@@ -943,6 +944,7 @@ test_abandoned_claim_reclaim_reaps_dead_steal_without_nesting() {
     exec sleep 30
   ' _ "$dir/bin/fm-wake-lib.sh" "$dir/state/.claude-autoarm.lock.steal" >/dev/null 2>&1 &
   holder=$!
+  fm_test_track_child "$holder"
   i=0
   while [ "$i" -lt 50 ] && [ ! -s "$dir/state/.claude-autoarm.lock.steal/pid" ]; do
     sleep 0.02
@@ -1237,6 +1239,7 @@ test_open_generation_claim_defers_without_any_lock() {
         printf "%s\n" "$$" > "$FM_HOME/state/.lock"
         sleep 60 &
         owner=$!
+        fm_test_track_child "$owner"
         identity=$(. "$FM_HOME/bin/fm-wake-lib.sh"; fm_pid_identity "$owner") || exit 97
         printf "epoch=464 owner_pid=%s outcome=arming updated_at=1\n%s\n" "$owner" "$identity" \
           > "$FM_HOME/state/.claude-autoarm-epoch"
@@ -1301,6 +1304,7 @@ test_orphaned_claim_from_dead_session_is_superseded_by_replacement() {
       printf "%s\n" "$$" > "$FM_HOME/state/.lock"
       printf "%s\n" "{\"session_id\":\"sess-dying\",\"stop_hook_active\":false}" \
         | "$FM_HOME/bin/fm-claude-stop-autoarm.sh" > "$FM_HOME/state/orphan-out" 2>&1 &
+      fm_test_track_child "$!"
       printf "%s\n" "$!" > "$FM_HOME/state/orphan-hook-pid"
       for _ in $(seq 1 250); do [ -e "$FM_HOME/state/arm-ran" ] && break; sleep 0.02; done
     '
@@ -1373,6 +1377,7 @@ test_resumed_same_id_session_supersedes_the_orphan() {
       printf "%s\n" "$$" > "$FM_HOME/state/.lock"
       printf "%s\n" "{\"session_id\":\"sess-resumed\",\"stop_hook_active\":false}" \
         | "$FM_HOME/bin/fm-claude-stop-autoarm.sh" > "$FM_HOME/state/orphan-out" 2>&1 &
+      fm_test_track_child "$!"
       printf "%s\n" "$!" > "$FM_HOME/state/orphan-hook-pid"
       for _ in $(seq 1 250); do [ -e "$FM_HOME/state/arm-ran" ] && break; sleep 0.02; done
     '
@@ -1448,10 +1453,13 @@ test_recycled_bridge_claim_stays_open_on_session_id_match() {
         . "$1/bin/fm-session-lock-lib.sh"
         sleep 60 &
         owner=$!
+        fm_test_track_child "$owner"
         sleep 60 &
         other=$!
+        fm_test_track_child "$other"
         sleep 61 &
         predecessor=$!
+        fm_test_track_child "$predecessor"
         identity=$(fm_pid_identity "$owner") || exit 97
         lock_identity=$(fm_pid_identity "$other") || exit 97
         if [ "$4" != current ]; then
@@ -1506,6 +1514,7 @@ test_claim_without_numeric_session_lock_is_not_open() {
         . "$1/bin/fm-wake-lib.sh"
         sleep 60 &
         owner=$!
+        fm_test_track_child "$owner"
         identity=$(fm_pid_identity "$owner") || exit 97
         printf "epoch=464 owner_pid=%s outcome=arming updated_at=1\n%s\n" "$owner" "$identity" \
           > "$1/state/.claude-autoarm-epoch"
@@ -1594,6 +1603,7 @@ test_superseded_owner_goes_silent_and_never_double_translates() {
     fire() { printf "%s\n" "{\"session_id\":\"s\",\"stop_hook_active\":false}" | "$FM_HOME/bin/fm-claude-stop-autoarm.sh" > "$FM_HOME/state/$1.out" 2>&1; echo $? > "$FM_HOME/state/$1.rc"; }
     fire a &
     a_pid=$!
+    fm_test_track_child "$a_pid"
     i=0
     while ! grep -q "outcome=arming" "$FM_HOME/state/.claude-autoarm-epoch" 2>/dev/null || [ ! -e "$FM_HOME/state/arm-ran" ]; do
       [ "$i" -lt 50 ] || { echo "owner A never published its arming claim" > "$FM_HOME/state/scenario-fail"; exit 1; }

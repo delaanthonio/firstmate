@@ -84,6 +84,7 @@ test_pi_extension_reports_external_healthy_watcher() {
   plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 printf 'watcher: healthy pid=1 (beacon 0s)\n'
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
@@ -162,6 +163,7 @@ test_pi_tool_returns_agent_tool_result() {
   plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 exit 0
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
@@ -226,10 +228,13 @@ test_pi_redundant_tool_call_is_owned_noop() {
   plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 printf 'arm\n' >> "${FM_ARM_LOG:?}"
 printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
 trap 'exit 0' TERM INT
-while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+fm_test_deadline=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+while [ ! -e "$FM_STOP_FILE" ] && [ "$SECONDS" -lt "$fm_test_deadline" ]; do sleep 0.02; done
+[ "$SECONDS" -lt "$fm_test_deadline" ] || exit 1
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
   out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_STOP_FILE="$stop" node --input-type=module 2>&1 <<'EOF'
@@ -288,6 +293,7 @@ test_pi_scheduled_retry_call_is_owned_noop() {
   plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 printf 'arm\n' >> "${FM_ARM_LOG:?}"
 exit 0
 SH
@@ -346,6 +352,7 @@ test_pi_actionable_close_starts_single_successor_before_delivery() {
   plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 if [ "${1:-}" = --handling-delivered ]; then
   printf 'confirmed generation=%s watcher=%s\n' "$2" "$4" >> "${FM_ARM_LOG:?}"
   exit 0
@@ -359,7 +366,9 @@ if [ "$count" -eq 1 ]; then
 fi
 printf 'watcher: started pid=%s (beacon fresh) recovery-generation=fixture-generation\n' "$$"
 trap 'exit 0' TERM INT
-while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+fm_test_deadline=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+while [ ! -e "$FM_STOP_FILE" ] && [ "$SECONDS" -lt "$fm_test_deadline" ]; do sleep 0.02; done
+[ "$SECONDS" -lt "$fm_test_deadline" ] || exit 1
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
   out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_STOP_FILE="$stop" node --input-type=module 2>&1 <<'EOF'
@@ -441,6 +450,7 @@ test_pi_actionable_output_waits_for_predecessor_close() {
   plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 if [ "${1:-}" = --handling-delivered ]; then
   printf 'handling-confirmed\n' >> "${FM_ARM_LOG:?}"
   exit 0
@@ -456,7 +466,9 @@ if [ "$count" -eq 1 ]; then
   exit 0
 fi
 trap 'exit 0' TERM INT
-while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+fm_test_deadline=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+while [ ! -e "$FM_STOP_FILE" ] && [ "$SECONDS" -lt "$fm_test_deadline" ]; do sleep 0.02; done
+[ "$SECONDS" -lt "$fm_test_deadline" ] || exit 1
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
   out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_STOP_FILE="$stop" node --input-type=module 2>&1 <<'EOF'
@@ -521,6 +533,7 @@ test_pi_branch_offer_owns_actionable_wake() {
   plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 if [ "${1:-}" = --handling-delivered ]; then
   printf 'confirmed generation=%s watcher=%s\n' "$2" "$4" >> "${FM_ARM_LOG:?}"
   exit 0
@@ -534,7 +547,9 @@ if [ "$count" -eq 1 ]; then
 fi
 printf 'watcher: started pid=%s (beacon fresh) recovery-generation=fixture-generation\n' "$$"
 trap 'exit 0' TERM INT
-while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+fm_test_deadline=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+while [ ! -e "$FM_STOP_FILE" ] && [ "$SECONDS" -lt "$fm_test_deadline" ]; do sleep 0.02; done
+[ "$SECONDS" -lt "$fm_test_deadline" ] || exit 1
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
   out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_STOP_FILE="$stop" node --input-type=module 2>&1 <<'EOF'
@@ -633,6 +648,7 @@ test_pi_branch_offer_flags_heartbeat() {
   plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 if [ "${1:-}" = --handling-delivered ]; then
   printf 'confirmed generation=%s watcher=%s\n' "$2" "$4" >> "${FM_ARM_LOG:?}"
   exit 0
@@ -646,7 +662,9 @@ if [ "$count" -eq 1 ]; then
 fi
 printf 'watcher: started pid=%s (beacon fresh) recovery-generation=fixture-generation\n' "$$"
 trap 'exit 0' TERM INT
-while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+fm_test_deadline=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+while [ ! -e "$FM_STOP_FILE" ] && [ "$SECONDS" -lt "$fm_test_deadline" ]; do sleep 0.02; done
+[ "$SECONDS" -lt "$fm_test_deadline" ] || exit 1
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
   # A bare heartbeat is the real wake emitted after the cheap bash scan flags
@@ -718,6 +736,7 @@ test_pi_heartbeat_is_not_ridden_into_main_by_a_co_present_check() {
   plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 if [ "${1:-}" = --handling-delivered ]; then exit 0; fi
 printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
 count=$(grep -c '^arm=' "$FM_ARM_LOG")
@@ -728,7 +747,9 @@ if [ "$count" -eq 1 ]; then
 fi
 printf 'watcher: started pid=%s (beacon fresh) recovery-generation=fixture-generation\n' "$$"
 trap 'exit 0' TERM INT
-while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+fm_test_deadline=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+while [ ! -e "$FM_STOP_FILE" ] && [ "$SECONDS" -lt "$fm_test_deadline" ]; do sleep 0.02; done
+[ "$SECONDS" -lt "$fm_test_deadline" ] || exit 1
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
   out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_STOP_FILE="$stop" node --input-type=module 2>&1 <<'EOF'
@@ -811,6 +832,7 @@ test_pi_main_only_check_classes_stay_on_main() {
   printf 'project=%s/projects/approved\nwindow=fm-window\n' "$home" > "$home/state/task-a.meta"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 if [ "${1:-}" = --handling-delivered ]; then exit 0; fi
 printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
 count=$(grep -c '^arm=' "$FM_ARM_LOG")
@@ -821,7 +843,9 @@ if [ "$count" -eq 1 ]; then
 fi
 printf 'watcher: started pid=%s (beacon fresh) recovery-generation=fixture-generation\n' "$$"
 trap 'exit 0' TERM INT
-while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+fm_test_deadline=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+while [ ! -e "$FM_STOP_FILE" ] && [ "$SECONDS" -lt "$fm_test_deadline" ]; do sleep 0.02; done
+[ "$SECONDS" -lt "$fm_test_deadline" ] || exit 1
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
   while IFS='|' read -r label reason; do
@@ -911,6 +935,7 @@ test_pi_captain_held_signal_stays_on_main() {
   printf 'captain-held [key=route]: awaiting the captain\n \t \n' > "$home/state/task-a.status"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 if [ "${1:-}" = --handling-delivered ]; then exit 0; fi
 printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
 count=$(grep -c '^arm=' "$FM_ARM_LOG")
@@ -921,7 +946,9 @@ if [ "$count" -eq 1 ]; then
 fi
 printf 'watcher: started pid=%s (beacon fresh) recovery-generation=fixture-generation\n' "$$"
 trap 'exit 0' TERM INT
-while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+fm_test_deadline=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+while [ ! -e "$FM_STOP_FILE" ] && [ "$SECONDS" -lt "$fm_test_deadline" ]; do sleep 0.02; done
+[ "$SECONDS" -lt "$fm_test_deadline" ] || exit 1
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
   out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_STOP_FILE="$stop" \
@@ -1001,6 +1028,7 @@ test_pi_unread_pending_reply_forces_later_stale_alias_to_main() {
     > "$home/state/task-a.status"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 if [ "${1:-}" = --handling-delivered ]; then exit 0; fi
 printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
 count=$(grep -c '^arm=' "$FM_ARM_LOG")
@@ -1011,7 +1039,9 @@ if [ "$count" -eq 1 ]; then
 fi
 printf 'watcher: started pid=%s (beacon fresh) recovery-generation=fixture-generation\n' "$$"
 trap 'exit 0' TERM INT
-while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+fm_test_deadline=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+while [ ! -e "$FM_STOP_FILE" ] && [ "$SECONDS" -lt "$fm_test_deadline" ]; do sleep 0.02; done
+[ "$SECONDS" -lt "$fm_test_deadline" ] || exit 1
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
   out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_STOP_FILE="$stop" \
@@ -1099,6 +1129,7 @@ test_pi_distinct_files_mixed_batch_routes_whole_batch_to_main() {
   printf 'project=%s/projects/approved\nwindow=fm-b\n' "$home" > "$home/state/task-b.meta"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 if [ "${1:-}" = --handling-delivered ]; then exit 0; fi
 printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
 count=$(grep -c '^arm=' "$FM_ARM_LOG")
@@ -1109,7 +1140,9 @@ if [ "$count" -eq 1 ]; then
 fi
 printf 'watcher: started pid=%s (beacon fresh) recovery-generation=fixture-generation\n' "$$"
 trap 'exit 0' TERM INT
-while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+fm_test_deadline=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+while [ ! -e "$FM_STOP_FILE" ] && [ "$SECONDS" -lt "$fm_test_deadline" ]; do sleep 0.02; done
+[ "$SECONDS" -lt "$fm_test_deadline" ] || exit 1
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
   out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_STOP_FILE="$stop" \
@@ -1191,6 +1224,7 @@ test_pi_heartbeat_is_not_ridden_into_main_by_a_co_present_needs_decision() {
   plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 if [ "${1:-}" = --handling-delivered ]; then exit 0; fi
 printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
 count=$(grep -c '^arm=' "$FM_ARM_LOG")
@@ -1201,7 +1235,9 @@ if [ "$count" -eq 1 ]; then
 fi
 printf 'watcher: started pid=%s (beacon fresh) recovery-generation=fixture-generation\n' "$$"
 trap 'exit 0' TERM INT
-while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+fm_test_deadline=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+while [ ! -e "$FM_STOP_FILE" ] && [ "$SECONDS" -lt "$fm_test_deadline" ]; do sleep 0.02; done
+[ "$SECONDS" -lt "$fm_test_deadline" ] || exit 1
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
   out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_STOP_FILE="$stop" node --input-type=module 2>&1 <<'EOF'
@@ -1276,6 +1312,7 @@ test_pi_heartbeat_restoration_failure_stays_on_main() {
   plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
 count=$(wc -l < "$FM_ARM_LOG" | tr -d '[:space:]')
 if [ "$count" -eq 1 ]; then
@@ -1352,6 +1389,7 @@ test_pi_watcher_failure_never_offered_to_branch() {
   plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 printf 'watcher: healthy pid=1 (beacon 0s)\n'
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
@@ -1431,6 +1469,7 @@ test_pi_away_record_collapses_eligibility_and_keeps_vetoes_on_main() {
   [ -f "$home/state/.afk-contract" ] || fail "the away-posture record was not written"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 if [ "${1:-}" = --handling-delivered ]; then exit 0; fi
 printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
 count=$(grep -c '^arm=' "$FM_ARM_LOG")
@@ -1441,7 +1480,9 @@ if [ "$count" -eq 1 ]; then
 fi
 printf 'watcher: started pid=%s (beacon fresh) recovery-generation=fixture-generation\n' "$$"
 trap 'exit 0' TERM INT
-while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+fm_test_deadline=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+while [ ! -e "$FM_STOP_FILE" ] && [ "$SECONDS" -lt "$fm_test_deadline" ]; do sleep 0.02; done
+[ "$SECONDS" -lt "$fm_test_deadline" ] || exit 1
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
   while IFS='|' read -r label expect reason queue; do
@@ -1532,6 +1573,7 @@ CASES
   plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 printf 'watcher: healthy pid=1 (beacon 0s)\n'
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
@@ -1599,6 +1641,7 @@ test_pi_handling_delivery_failure_is_typed_once() {
   plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 if [ "${1:-}" = --handling-delivered ]; then
   printf 'refused generation=%s watcher=%s\n' "$2" "$4" >> "${FM_ARM_LOG:?}"
   exit 1
@@ -1612,7 +1655,9 @@ if [ "$count" -eq 1 ]; then
 fi
 printf 'watcher: started pid=%s (beacon fresh) recovery-generation=fixture-generation\n' "$$"
 trap 'exit 0' TERM INT
-while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+fm_test_deadline=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+while [ ! -e "$FM_STOP_FILE" ] && [ "$SECONDS" -lt "$fm_test_deadline" ]; do sleep 0.02; done
+[ "$SECONDS" -lt "$fm_test_deadline" ] || exit 1
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
   out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_STOP_FILE="$stop" node --input-type=module 2>&1 <<'EOF'
@@ -1673,6 +1718,7 @@ test_pi_confirm_failure_retires_arm_with_distinct_watcher_pid() {
   plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 if [ "${1:-}" = --handling-delivered ]; then
   printf 'refused generation=%s watcher=%s\n' "$2" "$4" >> "${FM_ARM_LOG:?}"
   exit 1
@@ -1688,7 +1734,9 @@ sleep 0.02 & dead=$!; wait "$dead" 2>/dev/null || true
 if [ "$dead" = "$$" ]; then dead=1; fi
 printf 'watcher: started pid=%s (beacon fresh) recovery-generation=fixture-distinct\n' "$dead"
 trap 'printf "retired\n" > "${FM_RETIRED_FILE:?}"; exit 0' TERM INT
-while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+fm_test_deadline=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+while [ ! -e "$FM_STOP_FILE" ] && [ "$SECONDS" -lt "$fm_test_deadline" ]; do sleep 0.02; done
+[ "$SECONDS" -lt "$fm_test_deadline" ] || exit 1
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
   out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_STOP_FILE="$stop" FM_RETIRED_FILE="$retired" node --input-type=module 2>&1 <<'EOF'
@@ -1878,6 +1926,7 @@ test_pi_superseded_delivery_has_no_rejection_appendix() {
   plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 if [ "${1:-}" = --handling-delivered ]; then
   printf 'superseded generation=%s watcher=%s\n' "$2" "$4" >> "${FM_ARM_LOG:?}"
   exit 3
@@ -1891,7 +1940,9 @@ if [ "$count" -eq 1 ]; then
 fi
 printf 'watcher: started pid=%s (beacon fresh) recovery-generation=fixture-generation\n' "$$"
 trap 'exit 0' TERM INT
-while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+fm_test_deadline=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+while [ ! -e "$FM_STOP_FILE" ] && [ "$SECONDS" -lt "$fm_test_deadline" ]; do sleep 0.02; done
+[ "$SECONDS" -lt "$fm_test_deadline" ] || exit 1
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
   out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_STOP_FILE="$stop" FM_WATCH_EXTENSION_LOG_KEEP_LINES=50 node --input-type=module 2>&1 <<'EOF'
@@ -1960,6 +2011,7 @@ test_pi_superseded_delivery_is_offered_to_branch() {
   plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 if [ "${1:-}" = --handling-delivered ]; then
   printf 'confirm generation=%s watcher=%s status=%s\n' "$2" "$4" "${FM_CONFIRM_STATUS:?}" >> "${FM_ARM_LOG:?}"
   exit "$FM_CONFIRM_STATUS"
@@ -1973,7 +2025,9 @@ if [ "$count" -eq 1 ]; then
 fi
 printf 'watcher: started pid=%s (beacon fresh) recovery-generation=fixture-generation\n' "$$"
 trap 'exit 0' TERM INT
-while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+fm_test_deadline=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+while [ ! -e "$FM_STOP_FILE" ] && [ "$SECONDS" -lt "$fm_test_deadline" ]; do sleep 0.02; done
+[ "$SECONDS" -lt "$fm_test_deadline" ] || exit 1
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
   out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_STOP_FILE="$stop" node --input-type=module 2>&1 <<'EOF'
@@ -2066,6 +2120,7 @@ test_pi_extension_log_stays_off_unless_opted_in() {
   install_pi_watch_extension_fixture "$repo"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 if [ "${1:-}" = --handling-delivered ]; then
   printf 'superseded generation=%s watcher=%s\n' "$2" "$4" >> "${FM_ARM_LOG:?}"
   exit 3
@@ -2079,7 +2134,9 @@ if [ "$count" -eq 1 ]; then
 fi
 printf 'watcher: started pid=%s (beacon fresh) recovery-generation=fixture-generation\n' "$$"
 trap 'exit 0' TERM INT
-while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+fm_test_deadline=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+while [ ! -e "$FM_STOP_FILE" ] && [ "$SECONDS" -lt "$fm_test_deadline" ]; do sleep 0.02; done
+[ "$SECONDS" -lt "$fm_test_deadline" ] || exit 1
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
   cat > "$driver" <<'EOF'
@@ -2466,6 +2523,7 @@ test_pi_hung_successor_falls_back_to_typed_wake() {
   plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
 count=$(wc -l < "$FM_ARM_LOG" | tr -d '[:space:]')
 if [ "$count" -eq 1 ]; then
@@ -2535,6 +2593,7 @@ test_pi_unretired_successor_falls_back_without_retry() {
   plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 if [ -f "$FM_ARM_LOG" ]; then
   count=$(wc -l < "$FM_ARM_LOG" | tr -d '[:space:]')
 else
@@ -2607,6 +2666,7 @@ test_pi_slow_cleanup_completes_before_adapter_retirement() {
   plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
 count=$(wc -l < "$FM_ARM_LOG" | tr -d '[:space:]')
 if [ "$count" -eq 1 ]; then
@@ -2631,7 +2691,9 @@ if [ "$count" -eq 2 ]; then
   while :; do sleep 0.2; done
 fi
 printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
-while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+fm_test_deadline=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+while [ ! -e "$FM_STOP_FILE" ] && [ "$SECONDS" -lt "$fm_test_deadline" ]; do sleep 0.02; done
+[ "$SECONDS" -lt "$fm_test_deadline" ] || exit 1
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
   out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_STOP_FILE="$stop" FM_ARM_CONFIRM_TIMEOUT=invalid FM_PI_ARM_READY_TIMEOUT_MS=250 FM_WATCH_REARM_RETRY_BASE_MS=5 node --input-type=module 2>&1 <<'EOF'
@@ -2685,6 +2747,7 @@ test_pi_late_unretired_close_resumes_supervision() {
     plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
     cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
 count=$(wc -l < "$FM_ARM_LOG" | tr -d '[:space:]')
 if [ "$count" -eq 1 ]; then
@@ -2701,7 +2764,9 @@ if [ "$count" -eq 2 ]; then
 fi
 printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
 trap 'exit 0' TERM INT
-while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+fm_test_deadline=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+while [ ! -e "$FM_STOP_FILE" ] && [ "$SECONDS" -lt "$fm_test_deadline" ]; do sleep 0.02; done
+[ "$SECONDS" -lt "$fm_test_deadline" ] || exit 1
 SH
     chmod +x "$repo/bin/fm-watch-arm.sh"
     out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_UNRETIRED_READY_FILE="$ready" FM_UNRETIRED_RETIRE_FILE="$retired" FM_RELEASE_FILE="$release" FM_STOP_FILE="$stop" FM_LATE_KIND="$kind" FM_PI_ARM_READY_TIMEOUT_MS="$ARM_READY_TIMEOUT_MS" FM_WATCH_ARM_RETIRE_TIMEOUT_MS=20 FM_WATCH_REARM_RETRY_BASE_MS=5 FM_WATCH_REARM_RETRY_MAX_MS=10 FM_WATCH_REARM_RETRY_LIMIT=2 node --input-type=module 2>&1 <<'EOF'
@@ -2782,12 +2847,15 @@ test_pi_empty_close_retries_instead_of_disappearing() {
   plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
 count=$(wc -l < "$FM_ARM_LOG" | tr -d '[:space:]')
 if [ "$count" -eq 1 ]; then exit 0; fi
 printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
 trap 'exit 0' TERM INT
-while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+fm_test_deadline=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+while [ ! -e "$FM_STOP_FILE" ] && [ "$SECONDS" -lt "$fm_test_deadline" ]; do sleep 0.02; done
+[ "$SECONDS" -lt "$fm_test_deadline" ] || exit 1
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
   out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_STOP_FILE="$stop" FM_WATCH_REARM_RETRY_BASE_MS=5 FM_WATCH_REARM_RETRY_MAX_MS=10 FM_WATCH_REARM_RETRY_LIMIT=2 node --input-type=module 2>&1 <<'EOF'
@@ -2840,6 +2908,7 @@ test_pi_established_empty_close_honors_retry_limit() {
   plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
 printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
 exit 0
@@ -2892,6 +2961,7 @@ test_pi_actionable_close_rechecks_session_lock() {
   plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
 while [ ! -e "$FM_RELEASE_FILE" ]; do sleep 0.02; done
 printf 'signal: lock handoff\n'
@@ -2950,6 +3020,7 @@ test_pi_arm_distinguishes_session_lock_ownership() {
   plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 printf 'arm\n' >> "${FM_ARM_LOG:?}"
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
@@ -3137,6 +3208,7 @@ test_pi_session_transition_generation_owner() {
   plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 # Model the real --restart arm taking over from the still-live replacement
 # predecessor only after this successor process has been committed.
 previous=$(cat "${FM_CHILD_PID_FILE:?}" 2>/dev/null || true)
@@ -3392,6 +3464,7 @@ test_pi_session_replacement_carries_inflight_actionable_close() {
   plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 if [ "${1:-}" = --handling-delivered ]; then
   printf 'confirmed generation=%s watcher=%s\n' "$2" "$4" >> "${FM_ARM_LOG:?}"
   exit 0
@@ -3593,6 +3666,7 @@ test_pi_streaming_followup_is_replayed_after_replacement() {
   plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 trap 'exit 0' TERM INT
 printf 'watcher: started pid=%s\n' "$$"
 while :; do
@@ -3717,6 +3791,7 @@ test_pi_streaming_time_delivery_keeps_the_successor_chain() {
   plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 if [ "${1:-}" = --handling-delivered ]; then
   printf 'confirmed=%s\n' "$2" >> "${FM_ARM_LOG:?}"
   exit 0
@@ -3842,6 +3917,7 @@ test_pi_successor_failure_during_delivery_is_retried_after_delivery() {
   plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
 count=$(grep -c '^arm=' "$FM_ARM_LOG")
 printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
@@ -3855,7 +3931,9 @@ if [ "$count" -eq 2 ]; then
   exit 3
 fi
 trap 'exit 0' TERM INT
-while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+fm_test_deadline=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+while [ ! -e "$FM_STOP_FILE" ] && [ "$SECONDS" -lt "$fm_test_deadline" ]; do sleep 0.02; done
+[ "$SECONDS" -lt "$fm_test_deadline" ] || exit 1
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
   out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_STOP_FILE="$stop" FM_WATCH_REARM_RETRY_BASE_MS=5 FM_WATCH_REARM_RETRY_MAX_MS=10 FM_WATCH_REARM_RETRY_LIMIT=2 node --input-type=module 2>&1 <<'EOF'
@@ -3934,6 +4012,7 @@ test_pi_late_retiring_actionable_reaches_replacement() {
   plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 count=0
 [ ! -f "$FM_ARM_COUNT" ] || count=$(cat "$FM_ARM_COUNT")
 count=$((count + 1))
@@ -4042,6 +4121,7 @@ test_pi_replacement_tokens_are_process_unique() {
   plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 count=0
 [ ! -f "$FM_ARM_COUNT" ] || count=$(cat "$FM_ARM_COUNT")
 count=$((count + 1))
@@ -4147,6 +4227,7 @@ test_pi_replacement_persistence_failure_keeps_predecessor_until_successor() {
   plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 count=0
 [ ! -f "$FM_ARM_COUNT" ] || count=$(cat "$FM_ARM_COUNT")
 count=$((count + 1))
@@ -4287,6 +4368,7 @@ test_pi_process_exit_cleanup_stops_arm_child() {
   plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 trap 'printf "%s\n" "$$" >> "$FM_CLEANUP_LOG"; exit 0' TERM
 printf '%s\n' "$$" > "$FM_CHILD_PID_FILE"
 while :; do sleep 1; done
@@ -4381,6 +4463,7 @@ test_opencode_primary_watch_plugin_uses_effective_state_home() {
   : > "$home/state/task.meta"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 printf 'home=%s root=%s\n' "${FM_HOME:-}" "${FM_ROOT_OVERRIDE:-}" >> "${FM_ARM_LOG:?}"
 printf 'watcher: healthy pid=1 (beacon 0s)\n'
 SH
@@ -4431,6 +4514,7 @@ test_opencode_primary_watch_plugin_sources_effective_config() {
   printf 'export FM_POLL=7\n' > "$home/config/x-mode.env"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 printf 'poll=%s\n' "${FM_POLL:-missing}" >> "${FM_ARM_LOG:?}"
 printf 'watcher: healthy pid=1 (beacon 0s)\n'
 SH
@@ -4481,6 +4565,7 @@ test_opencode_primary_watch_plugin_requires_session_lock() {
   : > "$home/state/task.meta"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 printf 'arm\n' >> "${FM_ARM_LOG:?}"
 printf 'watcher: healthy pid=1 (beacon 0s)\n'
 SH
@@ -4543,6 +4628,7 @@ test_opencode_watch_arm_coordinator_respects_primary_scope() {
   : > "$home/state/task.meta"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 printf 'arm\n' >> "${FM_ARM_LOG:?}"
 printf 'watcher: healthy pid=1 (beacon 0s)\n'
 SH
@@ -4591,6 +4677,7 @@ test_opencode_primary_watch_plugin_rearms_after_wake() {
   : > "$home/state/task.meta"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 if [ "${1:-}" = --handling-delivered ]; then
   printf 'confirmed generation=%s watcher=%s\n' "$2" "$4" >> "${FM_ARM_LOG:?}"
   exit 0
@@ -4604,7 +4691,9 @@ if [ "$count" -eq 1 ]; then
 fi
 printf 'watcher: started pid=%s (beacon fresh) recovery-generation=fixture-generation\n' "$$"
 trap 'exit 0' TERM INT
-while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+fm_test_deadline=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+while [ ! -e "$FM_STOP_FILE" ] && [ "$SECONDS" -lt "$fm_test_deadline" ]; do sleep 0.02; done
+[ "$SECONDS" -lt "$fm_test_deadline" ] || exit 1
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
   out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_STOP_FILE="$stop" node 2>&1 <<'EOF'
@@ -4700,6 +4789,7 @@ test_opencode_primary_watch_plugin_runs_the_supervision_host() {  # [away|quiet]
   cp "$ROOT/bin/fm-supervision-engine-lib.sh" "$repo/bin/"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 if [ "${1:-}" = --handling-delivered ]; then
   printf 'confirmed generation=%s watcher=%s\n' "$2" "$4" >> "${FM_ARM_LOG:?}"
   exit 0
@@ -4782,6 +4872,7 @@ test_opencode_pre_ready_actionable_close_preserves_its_successor() {
   : > "$home/state/task.meta"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
 count=$(wc -l < "$FM_ARM_LOG" | tr -d '[:space:]')
 if [ "$count" -eq 1 ]; then
@@ -4797,7 +4888,9 @@ if [ "$count" -eq 2 ]; then
 fi
 printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
 trap 'exit 0' TERM INT
-while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+fm_test_deadline=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+while [ ! -e "$FM_STOP_FILE" ] && [ "$SECONDS" -lt "$fm_test_deadline" ]; do sleep 0.02; done
+[ "$SECONDS" -lt "$fm_test_deadline" ] || exit 1
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
   out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_PRE_READY_RELEASE_FILE="$release" FM_PRE_READY_RETIRED_FILE="$retired" FM_STOP_FILE="$stop" FM_WATCH_REARM_RETRY_BASE_MS=5 FM_WATCH_REARM_RETRY_MAX_MS=10 FM_WATCH_REARM_RETRY_LIMIT=2 node 2>&1 <<'EOF'
@@ -4863,6 +4956,7 @@ test_opencode_hung_successor_falls_back_to_typed_wake() {
   : > "$home/state/task.meta"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
 count=$(wc -l < "$FM_ARM_LOG" | tr -d '[:space:]')
 if [ "$count" -eq 1 ]; then
@@ -4935,6 +5029,7 @@ test_opencode_unretired_successor_falls_back_without_retry() {
   : > "$home/state/task.meta"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 if [ -f "$FM_ARM_LOG" ]; then
   count=$(wc -l < "$FM_ARM_LOG" | tr -d '[:space:]')
 else
@@ -5010,6 +5105,7 @@ test_opencode_slow_cleanup_completes_before_adapter_retirement() {
   : > "$home/state/task.meta"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
 count=$(wc -l < "$FM_ARM_LOG" | tr -d '[:space:]')
 if [ "$count" -eq 1 ]; then
@@ -5034,7 +5130,9 @@ if [ "$count" -eq 2 ]; then
   while :; do sleep 0.2; done
 fi
 printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
-while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+fm_test_deadline=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+while [ ! -e "$FM_STOP_FILE" ] && [ "$SECONDS" -lt "$fm_test_deadline" ]; do sleep 0.02; done
+[ "$SECONDS" -lt "$fm_test_deadline" ] || exit 1
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
   out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_STOP_FILE="$stop" FM_ARM_CONFIRM_TIMEOUT=invalid FM_OPENCODE_ARM_READY_TIMEOUT_MS=250 FM_WATCH_REARM_RETRY_BASE_MS=5 node 2>&1 <<'EOF'
@@ -5091,6 +5189,7 @@ test_opencode_late_unretired_close_resumes_supervision() {
     : > "$home/state/task.meta"
     cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
 count=$(wc -l < "$FM_ARM_LOG" | tr -d '[:space:]')
 if [ "$count" -eq 1 ]; then
@@ -5107,7 +5206,9 @@ if [ "$count" -eq 2 ]; then
 fi
 printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
 trap 'exit 0' TERM INT
-while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+fm_test_deadline=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+while [ ! -e "$FM_STOP_FILE" ] && [ "$SECONDS" -lt "$fm_test_deadline" ]; do sleep 0.02; done
+[ "$SECONDS" -lt "$fm_test_deadline" ] || exit 1
 SH
     chmod +x "$repo/bin/fm-watch-arm.sh"
     out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_UNRETIRED_READY_FILE="$ready" FM_UNRETIRED_RETIRE_FILE="$retired" FM_RELEASE_FILE="$release" FM_STOP_FILE="$stop" FM_LATE_KIND="$kind" FM_OPENCODE_ARM_READY_TIMEOUT_MS="$ARM_READY_TIMEOUT_MS" FM_WATCH_ARM_RETIRE_TIMEOUT_MS=20 FM_WATCH_REARM_RETRY_BASE_MS=5 FM_WATCH_REARM_RETRY_MAX_MS=10 FM_WATCH_REARM_RETRY_LIMIT=2 node 2>&1 <<'EOF'
@@ -5187,12 +5288,15 @@ test_opencode_empty_close_retries_instead_of_disappearing() {
   : > "$home/state/task.meta"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
 count=$(wc -l < "$FM_ARM_LOG" | tr -d '[:space:]')
 if [ "$count" -eq 1 ]; then exit 0; fi
 printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
 trap 'exit 0' TERM INT
-while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+fm_test_deadline=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+while [ ! -e "$FM_STOP_FILE" ] && [ "$SECONDS" -lt "$fm_test_deadline" ]; do sleep 0.02; done
+[ "$SECONDS" -lt "$fm_test_deadline" ] || exit 1
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
   out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_STOP_FILE="$stop" FM_WATCH_REARM_RETRY_BASE_MS=5 FM_WATCH_REARM_RETRY_MAX_MS=10 FM_WATCH_REARM_RETRY_LIMIT=2 node 2>&1 <<'EOF'
@@ -5247,6 +5351,7 @@ test_opencode_established_empty_close_honors_retry_limit() {
   : > "$home/state/task.meta"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
 printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
 exit 0
@@ -5302,6 +5407,7 @@ test_opencode_actionable_close_rechecks_session_lock() {
   : > "$home/state/task.meta"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
 while [ ! -e "$FM_RELEASE_FILE" ]; do sleep 0.02; done
 printf 'signal: lock handoff\n'
@@ -5369,6 +5475,7 @@ test_opencode_watch_arm_coordinates_with_turnend_guard() {
   : > "$home/state/task.meta"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 printf 'arm\n' >> "${FM_ARM_LOG:?}"
 printf 'watcher: started pid=1 (beacon fresh)\n'
 SH
@@ -5443,6 +5550,7 @@ test_opencode_healthy_arm_output_does_not_suppress_guard() {
   : > "$home/state/task.meta"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 printf 'args=%s\n' "$*" >> "${FM_ARM_LOG:?}"
 printf 'watcher: healthy pid=1 (beacon 0s)\n'
 SH
@@ -5619,6 +5727,7 @@ test_pi_delayed_start_preserves_arm_bound() {
   plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
 count=$(wc -l < "$FM_ARM_LOG" | tr -d '[:space:]')
 if [ "$count" -eq 1 ]; then
@@ -5636,7 +5745,9 @@ exec 4>&-
 : > "$FM_BOUNDARY_PUBLISHED_FILE"
 sleep 0.8
 printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
-while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+fm_test_deadline=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+while [ ! -e "$FM_STOP_FILE" ] && [ "$SECONDS" -lt "$fm_test_deadline" ]; do sleep 0.02; done
+[ "$SECONDS" -lt "$fm_test_deadline" ] || exit 1
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
   out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_RETIRED_FILE="$retired" FM_STOP_FILE="$stop" FM_BOUNDARY_PUBLISHED_FILE="$boundary" FM_PI_ARM_READY_TIMEOUT_MS=600 node --input-type=module 2>&1 <<'EOF'
@@ -5705,6 +5816,7 @@ test_opencode_delayed_start_preserves_arm_bound() {
   : > "$home/state/task.meta"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
 count=$(wc -l < "$FM_ARM_LOG" | tr -d '[:space:]')
 if [ "$count" -eq 1 ]; then
@@ -5722,7 +5834,9 @@ exec 4>&-
 : > "$FM_BOUNDARY_PUBLISHED_FILE"
 sleep 0.8
 printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
-while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+fm_test_deadline=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+while [ ! -e "$FM_STOP_FILE" ] && [ "$SECONDS" -lt "$fm_test_deadline" ]; do sleep 0.02; done
+[ "$SECONDS" -lt "$fm_test_deadline" ] || exit 1
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
   out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_RETIRED_FILE="$retired" FM_STOP_FILE="$stop" FM_BOUNDARY_PUBLISHED_FILE="$boundary" FM_OPENCODE_ARM_READY_TIMEOUT_MS=600 node --input-type=module 2>&1 <<'EOF'

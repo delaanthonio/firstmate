@@ -1624,6 +1624,7 @@ WRAPPER
   FM_HOME="$home" FM_ROOT_OVERRIDE="$root" \
     "$root/bin/fm-spawn.sh" task-q1 --mode no-mistakes --yolo off \
     > "$home/q1.out" 2>&1 &
+    fm_test_track_child "$!"
   i=0
   while [ ! -f "$home/early-cap-passed" ]; do
     i=$((i + 1))

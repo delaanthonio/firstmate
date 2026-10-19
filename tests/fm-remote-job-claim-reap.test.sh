@@ -31,6 +31,7 @@ WORKER_PID=
 command -v python3 >/dev/null || fail "test needs python3 to seed a large claim directory quickly"
 
 cleanup_claim_reap_fixture() {
+  fm_test_reap_children
   if [ -n "$WORKER_PID" ]; then
     kill -TERM "$WORKER_PID" 2>/dev/null || true
     wait "$WORKER_PID" 2>/dev/null || true
@@ -97,6 +98,7 @@ HOME="$ACCOUNT_HOME" FM_ROOT_OVERRIDE="$REMOTE_ROOT" FM_REMOTE_JOB_STATE_ROOT="$
   "$REMOTE_ROOT/bin/fm-remote-job-worker.sh" --serve \
   > "$TMP_ROOT/worker.out" 2> "$TMP_ROOT/worker.err" &
 WORKER_PID=$!
+fm_test_track_child "$WORKER_PID"
 
 for _ in $(seq 1 200); do
   [ -f "$STATE_ROOT/worker.ready" ] && break

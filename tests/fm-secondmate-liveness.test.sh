@@ -467,6 +467,7 @@ test_sweep_skips_mate_whose_liveness_lock_is_held() {
       '. "$1" && fm_lock_acquire_wait "$2" && sleep 30' \
       _ "$ROOT/bin/fm-wake-lib.sh" "$w/home/state/.control-sm1.lock" ) &
   holder=$!
+  fm_test_track_child "$holder"
   while [ ! -d "$w/home/state/.control-sm1.lock" ] && [ "$i" -lt 100 ]; do
     sleep 0.05
     i=$((i + 1))
@@ -495,6 +496,7 @@ test_relaunch_waits_for_other_mates_relaunch_lock() {
       '. "$1" && fm_lock_try_acquire "$2" && trap '\''fm_lock_release "$2"'\'' EXIT && sleep 5' \
       _ "$ROOT/bin/fm-wake-lib.sh" "$lock" ) &
   holder=$!
+  fm_test_track_child "$holder"
   while [ ! -e "$lock" ] && [ "$i" -lt 100 ]; do
     sleep 0.05
     i=$((i + 1))

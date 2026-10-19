@@ -7,6 +7,7 @@
 set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$ROOT/tests/lib.sh"
 HERDR_LAB_HELPER=${HERDR_LAB_HELPER:-$ROOT/bin/fm-herdr-lab.sh}
 # shellcheck source=bin/fm-timeout-lib.sh
 . "$ROOT/bin/fm-timeout-lib.sh"
@@ -283,6 +284,7 @@ LOCK_CONTENTION_OWNER_PID=
 LOCK_REFUSE_HOLDER_PID=
 LOCK_WAIT_HOLDER_PID=
 cleanup_all() {
+  fm_test_reap_children
   local wt pid
   for pid in "$LOCK_CONTENTION_OWNER_PID" "$LOCK_REFUSE_HOLDER_PID" "$LOCK_WAIT_HOLDER_PID"; do
     [ -n "$pid" ] || continue
@@ -1404,7 +1406,9 @@ ROOT="$ROOT" READY="$LOCK_REFUSE_READY" HOLD="$LOCK_REFUSE_HOLD_SECONDS" LOCK="$
   fm_lock_release "$LOCK"
 ' &
 LOCK_REFUSE_HOLDER_PID=$!
-while [ ! -e "$LOCK_REFUSE_READY" ] && kill -0 "$LOCK_REFUSE_HOLDER_PID" 2>/dev/null; do sleep 0.01; done
+fm_test_track_child "$LOCK_REFUSE_HOLDER_PID"
+wait_deadline=$((SECONDS + 10))
+while [ ! -e "$LOCK_REFUSE_READY" ] && kill -0 "$LOCK_REFUSE_HOLDER_PID" 2>/dev/null && [ "$SECONDS" -lt "$wait_deadline" ]; do sleep 0.01; done
 [ -e "$LOCK_REFUSE_READY" ] || fail "could not hold the session presentation lock for resume lock-refuse"
 
 LOCK_REFUSE_FOCUS=$(focus_snapshot)
@@ -1460,7 +1464,9 @@ ROOT="$ROOT" READY="$LOCK_WAIT_READY" HOLD="$LOCK_WAIT_HOLD_SECONDS" LOCK="$LOCK
   fm_lock_release "$LOCK"
 ' &
 LOCK_WAIT_HOLDER_PID=$!
-while [ ! -e "$LOCK_WAIT_READY" ] && kill -0 "$LOCK_WAIT_HOLDER_PID" 2>/dev/null; do sleep 0.01; done
+fm_test_track_child "$LOCK_WAIT_HOLDER_PID"
+wait_deadline=$((SECONDS + 10))
+while [ ! -e "$LOCK_WAIT_READY" ] && kill -0 "$LOCK_WAIT_HOLDER_PID" 2>/dev/null && [ "$SECONDS" -lt "$wait_deadline" ]; do sleep 0.01; done
 [ -e "$LOCK_WAIT_READY" ] || fail "could not hold the session presentation lock for resume lock-wait"
 
 LOCK_WAIT_DEADLINE_SECONDS=$((LOCK_WAIT_HOLD_SECONDS + 60))

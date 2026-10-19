@@ -157,6 +157,7 @@ test_queue_append_during_checkpoint_still_resurfaces() {
   FM_HOME="$home" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 \
     "$CHECKPOINT" --seconds 5 >"$out" 2>"$err" &
   checkpoint_pid=$!
+  fm_test_track_child "$checkpoint_pid"
   wait_for_checkpoint_lock "$home" || {
     kill "$checkpoint_pid" 2>/dev/null || true
     wait "$checkpoint_pid" 2>/dev/null || true

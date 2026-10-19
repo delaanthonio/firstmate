@@ -1074,6 +1074,7 @@ SH
     FM_TEST_GH_HEAD=0123456789abcdef0123456789abcdef01234567 \
       run_check_entry "$dir" "$id" https://github.com/o/r/pull/1 > "$dir/direct.out" 2> "$dir/direct.err" &
     direct_pid=$!
+    fm_test_track_child "$direct_pid"
     i=0
     while [ "$i" -lt 100 ] && ! find "$dir/home/state" -name '.fm-pr-poll-check.*' -print | grep . >/dev/null; do
       sleep 0.01
@@ -1087,6 +1088,7 @@ SH
     FM_TEST_WATCH_BOUND_PAUSE="$dir/direct-in-flight" FM_TEST_GH_STATE=MERGED \
       run_watcher_bounded "$dir/home" "$dir/fakebin" > "$dir/watch.out" 2> "$dir/watch.err" &
     watch_pid=$!
+    fm_test_track_child "$watch_pid"
     direct_rc=0
     wait "$direct_pid" || direct_rc=$?
     rm -f "$dir/direct-in-flight"
@@ -1411,6 +1413,7 @@ test_returned_custom_check_descendants_are_drained() {
     cat > "$state/custom.check.sh" <<'SH'
 #!/usr/bin/env bash
 perl -e '$SIG{TERM}="IGNORE"; open my $ready, ">", $ENV{FM_TEST_DESCENDANT_READY} or die $!; print {$ready} "ready\n"; close $ready; select undef, undef, undef, 0.2 while -d $ENV{FM_TEST_DESCENDANT_HOLD}' &
+fm_test_track_child "$!"
 printf '%s\n' "$!" > "$FM_TEST_DESCENDANT_PID"
 while [ ! -s "$FM_TEST_DESCENDANT_READY" ]; do sleep 0.01; done
 : > "$FM_TEST_DIRECT_DONE"
@@ -3232,6 +3235,7 @@ export FM_ROOT_OVERRIDE="$dir/root" FM_TEST_GUARD_LOG="$dir/guard.log"
   "$PR_MERGE" task-a "$url_b" > "$dir/replacement-merge.out" 2> "$dir/replacement-merge.err"
   printf '%s\n' \$? > "$dir/replacement-merge.rc"
 ) &
+fm_test_track_child "\$!"
 printf '%s\n' "\$!" > "$dir/replacement-merge.pid"
 SH
   chmod +x "$dir/replace-authority.sh"

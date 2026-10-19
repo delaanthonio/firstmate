@@ -4043,8 +4043,13 @@ test_composer_state_inactive_session_fails_fast_without_server_autostart() {
 
 # shellcheck disable=SC2016
 test_composer_state_piped_reader_does_not_hang() {
-  local out rc=0
-  out=$( timeout 3s bash -c '. "$0/bin/fm-backend.sh"; ( fm_backend_composer_state herdr nonexistent-session:p2 ) 2>&1 | head -20' "$ROOT" ) || rc=$?
+  local out rc=0 dir fb
+  dir="$TMP_ROOT/composer-piped"; mkdir -p "$dir/responses"
+  : > "$dir/log"
+  printf '{"client":{"version":"0.7.1","protocol":14},"server":{"running":false}}\n' > "$dir/responses/1.out"
+  fb=$(make_herdr_fakebin "$dir")
+  . "$ROOT/bin/fm-timeout-lib.sh"
+  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$dir/log" FM_HERDR_RESPONSES="$dir/responses" FM_HERDR_SCRIPT_STATUS=1 fm_run_timed 3 bash -c '. "$0/bin/fm-backend.sh"; ( fm_backend_composer_state herdr nonexistent-session:p2 ) 2>&1 | head -20' "$ROOT" ) || rc=$?
   [ "$rc" -eq 0 ] || fail "piped composer probe on bad target hung or failed with rc=$rc"
   [ "$out" = unknown ] || fail "piped composer probe should print unknown, got '$out'"
   pass "fm_backend_composer_state (herdr): piped probe on bad target does not hang EOF-sensitive readers"

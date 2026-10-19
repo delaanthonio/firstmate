@@ -49,6 +49,7 @@ SH
   cat > "$fakebin/agent-view" <<'SH'
 #!/usr/bin/env bash
 printf '%s\t%s\n' "$1" "$2" >> "$FAKE_VIEW_LOG"
+[ ! -e "$FAKE_DIR/view-fail" ] || exit 1
 exit 0
 SH
   chmod +x "$fakebin/agent-view"
@@ -268,6 +269,25 @@ test_sync_reports_only_differences_and_sets_the_view() {
   pass "sync: reports only drifted tokens, workspace tokens only on the exact projection, view set on change"
 }
 
+test_sync_retries_a_failed_agents_view_before_committing_tokens() {
+  local out rc=0
+  new_home view-retry
+  printf 'on\n' > "$HOME_DIR/config/herdr-project-groups"
+  add_task web-run ship /p/storefront w2 'working: go'
+  add_v2_journal web-run w2
+  write_live_lists 0
+  touch "$FAKE_DIR/view-fail"
+  out=$(groups sync 2>&1) || rc=$?
+  expect_code 1 "$rc" "a failed agents view must fail sync"
+  assert_equals "" "$(reports pane)$(reports workspace)" "a failed view must leave tokens retryable"
+  rm "$FAKE_DIR/view-fail"
+  out=$(groups sync 2>&1) || fail "the next sync must retry: $out"
+  assert_contains "$(reports pane)" 'report-metadata w2:p2' "the retry must commit pane tokens"
+  assert_contains "$(reports workspace)" 'report-metadata w2' "the retry must commit projected workspace tokens"
+  assert_equals 2 "$(wc -l < "$FAKE_VIEW_LOG" | tr -d ' ')" "the unchanged task must retry agents view"
+  pass "sync retries a failed agents view before committing its metadata"
+}
+
 test_sync_skips_an_unverified_protocol_with_one_warning() {
   local out
   new_home old-protocol
@@ -414,6 +434,7 @@ test_on_groups_by_project_and_sorts_by_status_rank
 test_rules_order_groups_and_prefer_task_over_repo_over_catch_all
 test_all_invalid_rules_leave_empty_rule_group_and_still_plan
 test_sync_reports_only_differences_and_sets_the_view
+test_sync_retries_a_failed_agents_view_before_committing_tokens
 test_sync_skips_an_unverified_protocol_with_one_warning
 test_clear_removes_tokens_and_the_view_even_when_off
 test_sidebar_config_apply_backs_up_and_refuses_twice

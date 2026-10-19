@@ -110,6 +110,7 @@ case "$1 $2" in
                 { stat -c '%a' "$f" 2>/dev/null || stat -f '%Lp' "$f"; } > "$f.mode"
                 cp "$f" "$f.copy" && rm -f "$f"
               ) >/dev/null 2>&1 &
+              fm_test_track_child "$!"
               ;;
           esac
         fi
@@ -129,7 +130,8 @@ case "$1 $2" in
               printf '#!/bin/sh\nexit 1\n' > "$DIR/rmfail/rm"
               chmod +x "$DIR/rmfail/rm"
               # shellcheck disable=SC2016 # The pane shell expands its own arguments.
-              PATH="$DIR/rmfail:$PATH" sh -c '. "$1"; echo "source-status=$?"; echo SHELL-STILL-ALIVE' _ "$f" > "$DIR/pane.out" 2>&1 &
+              PATH="$DIR/rmfail:$PATH" bash -c 'fm_test_track_child "$$"; . "$1"; echo "source-status=$?"; echo SHELL-STILL-ALIVE' _ "$f" > "$DIR/pane.out" 2>&1 &
+              fm_test_track_child "$!"
               ;;
           esac
         fi
@@ -606,6 +608,7 @@ EOF
         "$SPAWN" "$id" "$case_dir/project" --mode direct-PR --yolo off --backend orca \
         --harness "touch '$case_dir/worker-ran'" > "$case_dir/spawn.log" 2>&1 &
       pid=$!
+      fm_test_track_child "$pid"
       for ((i = 0; i < 300; i++)); do
         if [ "$phase" = enter ]; then
           [ ! -e "$case_dir/text-delivered" ] || break
@@ -700,6 +703,7 @@ SH
       "$SPAWN" "$id" "$case_dir/project" --mode direct-PR --yolo off --backend orca \
       --harness "touch '$case_dir/worker-ran'" > "$case_dir/spawn.log" 2>&1 &
     pid=$!
+    fm_test_track_child "$pid"
     for ((i = 0; i < 300; i++)); do
       [ ! -s "$case_dir/published" ] || break
       kill -0 "$pid" 2>/dev/null || break

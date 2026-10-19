@@ -592,6 +592,7 @@ fire_secondmate_stop() { # <sm-home> <guard-first|guard-last|parallel> <settings
       ;;
     parallel)
       run_secondmate_local_stop_hooks "$settings" &
+      fm_test_track_child "$!"
       run_secondmate_stop_guard "$sm"; status=$?
       wait
       ;;

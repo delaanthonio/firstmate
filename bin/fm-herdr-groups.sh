@@ -385,16 +385,18 @@ cmd_sync() {
       diff=$(changed_tokens "$live_pane" \
         "fm_group=$P_GROUP" "fm_state=$P_STATE" "fm_task=$P_TASK" "fm_sort=$P_SORT")
       if [ -n "$diff" ]; then
+        if [ "$changed" = 0 ]; then
+          if ! agent_view "$session" set; then rc=1; break; fi
+          changed=1
+        fi
         args=()
         while IFS= read -r pair; do args+=(--token "$pair"); done <<EOF
 $diff
 EOF
-        if fm_backend_herdr_cli "$session" pane report-metadata "$P_PANE" \
-          --source "$FM_HERDR_GROUPS_SOURCE" "${args[@]}" >/dev/null 2>&1; then
-          changed=1
-        else
+        fm_backend_herdr_cli "$session" pane report-metadata "$P_PANE" \
+          --source "$FM_HERDR_GROUPS_SOURCE" "${args[@]}" >/dev/null 2>&1 || {
           warn "could not tag pane $P_PANE for task $P_TASK"; rc=1
-        fi
+        }
       fi
       projected_workspace "$P_TASK" "$P_SESSION" "$P_WORKSPACE" "$P_PANE" || continue
       pane_count=$(printf '%s' "$workspaces" | jq -r --arg w "$P_WORKSPACE" '
@@ -406,6 +408,10 @@ EOF
       diff=$(changed_tokens "$live_ws" \
         "fm_group=$P_GROUP" "fm_state=$P_STATE" "fm_group_order=$P_ORDER")
       [ -n "$diff" ] || continue
+      if [ "$changed" = 0 ]; then
+        if ! agent_view "$session" set; then rc=1; break; fi
+        changed=1
+      fi
       args=()
       while IFS= read -r pair; do args+=(--token "$pair"); done <<EOF
 $diff
@@ -415,9 +421,6 @@ EOF
         warn "could not tag workspace $P_WORKSPACE for task $P_TASK"; rc=1
       }
     done
-    if [ "$changed" = 1 ]; then
-      agent_view "$session" set || rc=1
-    fi
   done
   return "$rc"
 }

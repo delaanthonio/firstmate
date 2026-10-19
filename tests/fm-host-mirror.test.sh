@@ -174,6 +174,7 @@ test_operational_foreign_and_unowned_input_is_dropped() {
 
   other=$(make_home unowned)
   sleep 30 &
+  fm_test_track_child "$!"
   printf '%s\n' "$!" > "$other/state/.lock"
   printf '%s' '{"hook_event_name":"UserPromptSubmit","prompt":"not the owner"}' \
     | FM_HOME="$other" FM_ROOT_OVERRIDE="$PRIMARY_ROOT" "$FAKE_CLAUDE" -c '"$0" hook claude' "$MIRROR"

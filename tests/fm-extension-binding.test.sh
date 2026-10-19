@@ -1128,9 +1128,11 @@ rm -f "$order_marker" "$order_release"
 FM_HOME="$H_ORDER" "$PROCEVENT" register-extension ext-lock-order order-source --config-ref no-result \
   > "$TMP_ROOT/lock-order-register.out" 2>&1 &
 order_register_pid=$!
+fm_test_track_child "$order_register_pid"
 wait_for_file "$order_marker" || fail "lock-order registration never entered binding resolution"
 FM_HOME="$H_ORDER" "$PROCEVENT" reconcile > "$TMP_ROOT/lock-order-reconcile.out" 2>&1 &
 order_reconcile_pid=$!
+fm_test_track_child "$order_reconcile_pid"
 for _ in $(seq 1 200); do
   [ -L "$FM_PROCEVENT_CLAIM_ROOT/order-source.lock" ] && break
   sleep 0.01

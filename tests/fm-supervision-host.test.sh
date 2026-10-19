@@ -78,7 +78,8 @@ result() {
   printf '"usage":{"input_tokens":5,"cache_read_input_tokens":100,"cache_creation_input_tokens":10,"output_tokens":20},"session_id":"stub"}\n'
 }
 if [ "$mode" = hang ]; then
-  perl -e 'setpgrp(0, 0); exec "sleep", $ARGV[0]' "$FM_TEST_STUB_MAX_BLOCK_SECONDS" &
+  perl -e 'system("bash", "-c", q{fm_test_track_child "$PPID"}) == 0 or die; setpgrp(0, 0); exec "sleep", $ARGV[0]' "$FM_TEST_STUB_MAX_BLOCK_SECONDS" &
+  fm_test_track_child "$!"
   printf '%s\n' "$!" > "$FM_HOME/orphan-pid"
   sleep "$FM_TEST_STUB_MAX_BLOCK_SECONDS"
   exit 0
@@ -245,6 +246,7 @@ start_host() {  # <home> [park options...]
   FM_HOME="$home" FM_CREW_STATE_BIN="$home/fakebin/fm-crew-state.sh" PATH="$home/fakebin:$PATH" \
     MIRROR_ROOT="$MIRROR_ROOT" "$FAKE_CLAUDE" -c '
       printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+      fm_test_track_child "$$"
       printf "%s\n" "$$" >> "$FM_HOME/claude-pids"
       rm -f "$FM_HOME/host.rc"
       for seed in "$FM_HOME"/mirror-seed.*; do
@@ -254,6 +256,7 @@ start_host() {  # <home> [park options...]
       "$0" park "$@" > "$FM_HOME/host.out" 2>&1
       printf "%s\n" "$?" > "$FM_HOME/host.rc"
     ' "$HOST" "$@" 2>> "$home/claude.err" &
+  fm_test_track_child "$!"
 }
 
 # Extended-regex twins of tests/lib.sh's fixed-string assert_grep pair.
@@ -385,6 +388,26 @@ test_report_after_the_return_is_queued_for_main() {
     "main's drain must present the late outcome"
   assert_not_contains "$drained" 'still building; nothing new has happened' "main's drain rendered the post-return silent note"
   pass "report surface: visible late outcomes queue a relay, while silent outcomes remain stored without a wake or note"
+}
+
+test_late_report_enqueue_failure_keeps_the_wake_unreceipted() {
+  local home state out rc=0
+  home="$TMP_ROOT/report-return-enqueue-failure"
+  state="$home/state"
+  mkdir -p "$state/.wake-queue"
+  printf 'turn=t1\nrows=4\ntasks=alpha\nunscoped=0\nwake=signal: alpha.status\n' > "$state/.supervision-host-turn"
+  out=$(FM_HOME="$home" FM_SUPERVISION_ACTOR=branch FM_BRANCH_REPORT_TURN=t1 "$REPORT" \
+    --task alpha --verdict captain --summary 'PR ready for review' 2>&1) || rc=$?
+  expect_code 1 "$rc" "a late report must fail when its relay cannot be enqueued"
+  assert_contains "$out" 'could not be queued' "the failure must identify the missing relay"
+  [ ! -s "$state/.supervision-host-receipts" ] || fail "a missing relay produced a host receipt"
+  assert_grep 'PR ready for review' "$state/branch-outcomes.jsonl" "the outcome must remain durable"
+  rmdir "$state/.wake-queue"
+  out=$(FM_HOME="$home" FM_SUPERVISION_ACTOR=branch FM_BRANCH_REPORT_TURN=t1 "$REPORT" \
+    --task alpha --verdict captain --summary 'PR ready for review' 2>&1) || fail "relay retry failed: $out"
+  assert_grep 'supervision-host-return:2' "$state/.wake-queue" "retry must durably relay the outcome"
+  [ -s "$state/.supervision-host-receipts" ] || fail "a queued report must receive a host receipt"
+  pass "late report failure retains the outcome without acknowledging its wake"
 }
 
 # --- dispatch entry -----------------------------------------------------------
@@ -1061,6 +1084,7 @@ test_attended_close_with_unidentified_main_session_passes_to_main() {
   FM_HOME="$home" FM_CREW_STATE_BIN="$home/fakebin/fm-crew-state.sh" PATH="$home/fakebin:$PATH" \
     "$FAKE_CLAUDE" -c '
       printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+      fm_test_track_child "$$"
       printf "%s\n" "$$" >> "$FM_HOME/claude-pids"
       mkdir -p "$FM_HOME/proc/$$"
       printf "%s (claude) S\n" "$$" > "$FM_HOME/proc/$$/stat"
@@ -1069,6 +1093,7 @@ test_attended_close_with_unidentified_main_session_passes_to_main() {
       "$0" park > "$FM_HOME/host.out" 2>&1
       printf "%s\n" "$?" > "$FM_HOME/host.rc"
     ' "$HOST" 2>> "$home/claude.err" &
+  fm_test_track_child "$!"
   wait_until 150 watcher_live "$home" || fail "unidentified: the host never started a watcher cycle: $(cat "$home/host.out")"
   append_status "$home" 'step one'
   wait_until 250 host_exited "$home" || fail "unidentified: the close did not reach main: $(cat "$home/state/.supervision-host.log")"
@@ -1170,12 +1195,14 @@ start_hook_session() {  # <home>
   FM_HOME="$home" FM_ROOT_OVERRIDE="$home" FM_CREW_STATE_BIN="$home/fakebin/fm-crew-state.sh" \
     PATH="$home/fakebin:$PATH" "$FAKE_CLAUDE" -c '
       printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+      fm_test_track_child "$$"
       printf "%s\n" "$$" >> "$FM_HOME/claude-pids"
       for seed in "$FM_HOME"/mirror-seed.*; do
         [ -f "$seed" ] || continue
         "$FM_HOME/bin/fm-host-mirror.sh" hook claude < "$seed"
       done
-      while [ ! -e "$FM_HOME/session.stop" ]; do
+      until=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+      while [ ! -e "$FM_HOME/session.stop" ] && [ "$SECONDS" -lt "$until" ]; do
         if [ -e "$FM_HOME/stop.go" ]; then
           rm -f "$FM_HOME/stop.go"
           if [ -e "$FM_HOME/hook.own-group" ]; then
@@ -1184,6 +1211,7 @@ start_hook_session() {  # <home>
             printf "{\"session_id\":\"sess-host-hook\",\"stop_hook_active\":false}\n" > "$FM_HOME/hook.stdin"
             set -m
             "$FM_HOME/bin/fm-claude-stop-autoarm.sh" < "$FM_HOME/hook.stdin" > "$FM_HOME/hook.out" 2> "$FM_HOME/hook.err" &
+            fm_test_track_child "$!"
             printf "%s\n" "$!" > "$FM_HOME/hook.pgid"
             wait "$!"
             printf "%s\n" "$?" > "$FM_HOME/hook.rc"
@@ -1197,6 +1225,7 @@ start_hook_session() {  # <home>
         sleep 0.1
       done
     ' 2>> "$home/claude.err" &
+  fm_test_track_child "$!"
 }
 turn_end() { rm -f "$1/hook.rc"; : > "$1/stop.go"; }
 hook_exited() { [ -s "$1/hook.rc" ]; }
@@ -2628,6 +2657,7 @@ test_first_cycle_status_streams_and_owner_options_reach_it() {
   # A watcher a dead arm left behind, holding this home's watcher lock.
   FM_HOME="$home" PATH="$home/fakebin:$PATH" perl -e 'setpgrp(0, 0); exec @ARGV' "$ROOT/bin/fm-watch-arm.sh" \
     > "$home/stale-arm.out" 2>&1 &
+    fm_test_track_child "$!"
   wait_until 150 grep -qs '^watcher: started pid=' "$home/stale-arm.out" \
     || fail "stream: the fixture arm never started its watcher: $(cat "$home/stale-arm.out")"
   wait_until 150 watcher_live "$home" || fail "stream: the fixture watcher never started"
@@ -2685,8 +2715,10 @@ start_session() {  # <home>
   FM_HOME="$home" FM_CREW_STATE_BIN="$home/fakebin/fm-crew-state.sh" PATH="$home/fakebin:$PATH" \
     MIRROR_ROOT="$MIRROR_ROOT" "$FAKE_CLAUDE" -c '
       printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+      fm_test_track_child "$$"
       printf "%s\n" "$$" >> "$FM_HOME/claude-pids"
-      while [ ! -e "$FM_HOME/session.stop" ]; do
+      until=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+      while [ ! -e "$FM_HOME/session.stop" ] && [ "$SECONDS" -lt "$until" ]; do
         if [ -e "$FM_HOME/park.go" ]; then
           rm -f "$FM_HOME/park.go"
           for seed in "$FM_HOME"/mirror-seed.*; do
@@ -2699,6 +2731,7 @@ start_session() {  # <home>
         sleep 0.1
       done
     ' "$HOST" 2>> "$home/claude.err" &
+  fm_test_track_child "$!"
 }
 
 park_again() {  # <home>
@@ -2919,6 +2952,7 @@ test_host_outside_the_lock_owner_stands_down() {
   home=$(make_home not-owner attended)
   "$FAKE_CLAUDE" -c 'sleep 30' &
   other=$!
+  fm_test_track_child "$other"
   printf '%s\n' "$other" >> "$home/claude-pids"
   printf '%s\n' "$other" > "$home/state/.lock"
   out=$(FM_HOME="$home" PATH="$home/fakebin:$PATH" "$HOST" park 2>&1); rc=$?
@@ -2937,13 +2971,17 @@ test_superseded_host_leaves_the_owner_untouched() {
   FM_HOME="$home" FM_CREW_STATE_BIN="$home/fakebin/fm-crew-state.sh" PATH="$home/fakebin:$PATH" \
     "$FAKE_CLAUDE" -c '
       printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+      fm_test_track_child "$$"
       printf "%s\n" "$$" >> "$FM_HOME/claude-pids"
       "$0" park > "$FM_HOME/host.out" 2>&1 &
-      while [ ! -e "$FM_HOME/go-second" ]; do sleep 0.1; done
+      fm_test_track_child "$!"
+      until=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+      while [ ! -e "$FM_HOME/go-second" ] && [ "$SECONDS" -lt "$until" ]; do sleep 0.1; done
       FM_SUPERVISION_HOST_AUTOARM_GEN=1 FM_SUPERVISION_HOST_OWNER_PID=$$ "$0" park > "$FM_HOME/host2.out" 2>&1
       printf "%s\n" "$?" > "$FM_HOME/host2.rc"
       wait
     ' "$HOST" 2>> "$home/claude.err" &
+  fm_test_track_child "$!"
   wait_until 150 watcher_live "$home" || fail "superseded: the owner host never started a watcher cycle"
   owner=$(awk -F '\t' '$1 == "host" { print $2 }' "$home/state/.supervision-host")
   watcher=$(cat "$home/state/.watch.lock/pid")
@@ -2975,6 +3013,7 @@ test_claude_stop_hook_notifies_when_closed_announced_successor_downtime_restore_
 test_park_exit_probe_uses_half_second_child_sleeps
 test_report_surface_enforces_actor_turn_and_scope
 test_report_after_the_return_is_queued_for_main
+test_late_report_enqueue_failure_keeps_the_wake_unreceipted
 test_dispatch_entry_scopes_rows_and_renders_the_away_tail
 test_branch_outcomes_only_on_a_host_home_off_pi
 test_branch_outcomes_put_captain_first_and_collapse_routine_overflow

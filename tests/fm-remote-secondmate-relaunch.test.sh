@@ -196,6 +196,7 @@ FM_HOME="$HOME_DIR" bash -c '
   exec sleep 30
 ' _ "$ROOT/bin/fm-secondmate-liveness-lib.sh" "$TMP/lock-ready" &
 holder=$!
+fm_test_track_child "$holder"
 waited=0
 while [ ! -e "$TMP/lock-ready" ] && [ "$waited" -lt 100 ]; do
   sleep 0.05

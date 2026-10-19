@@ -948,9 +948,10 @@ test_refused_launch_spares_per_id_paths_under_a_contended_spawn_lock() {
   cat > "$FAKEBIN_DIR/tmux" <<SH
 #!/usr/bin/env bash
 if [ "\${1:-}" = kill-window ] && [ ! -e '$CASE_DIR/holder.pid' ]; then
-  FM_HOME='$HOME_DIR' nohup bash -c '. "\$1"; fm_lock_try_acquire "\$2" || exit 1; : > "\$3"; exec /bin/sleep 60' _ \\
+  FM_HOME='$HOME_DIR' nohup bash -c 'fm_test_track_child "\$\$"; . "\$1"; fm_lock_try_acquire "\$2" || exit 1; : > "\$3"; exec /bin/sleep 60' _ \\
     '$ROOT/bin/fm-wake-lib.sh' '$HOME_DIR/state/.spawn-$id.lock' '$CASE_DIR/holder.ready' \\
     >/dev/null 2>&1 &
+  fm_test_track_child "\$!"
   printf '%s\n' "\$!" > '$CASE_DIR/holder.pid'
   n=0
   while [ ! -e '$CASE_DIR/holder.ready' ] && [ "\$n" -lt 100 ]; do /bin/sleep 0.05; n=\$((n + 1)); done

@@ -74,6 +74,7 @@ FM_HOME="$FM" PATH="$LAB/tmuxbin:$PATH" "$FAKE_CLAUDE" -c '
   "$FM_HOME/bin/fm-supervision-host.sh" park > "$1/host.out" 2>&1
   printf "%s\n" "$?" > "$1/host.rc"
 ' _ "$LAB" 2>> "$LAB/harness.err" &
+fm_test_track_child "$!"
 
 wait_until() {  # <polls of 0.1s> <command...>
   local limit=$1 i=0

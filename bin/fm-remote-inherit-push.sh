@@ -41,7 +41,31 @@ case "$GENERATION" in ''|*[!0-9]*) die "generation must be a positive integer" ;
 REMOTE=$(secondmate_registry_field "$DATA/secondmates.md" "$ID" remote 2>/dev/null || true)
 [ "$REMOTE" = 1 ] || die "secondmate $ID is not a remote route"
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/fm-remote-inherit-push.XXXXXX") || die "cannot create inheritance staging directory"
-trap 'rm -rf -- "$TMP"' EXIT
+pids=()
+results=()
+cleanup() {
+  local pid owned children signal
+  owned=$(printf '%s\n' "${pids[@]:-}" | awk 'NF { printf "%s ", $0 }')
+  if [ -n "$owned" ]; then
+    children=$(ps -axo pid=,ppid= | awk -v roots="$owned" '
+      BEGIN { n=split(roots, ids); for (i=1; i<=n; i++) seen[ids[i]]=1 }
+      { parent[$1]=$2 }
+      END {
+        do {
+          changed=0
+          for (pid in parent) if ((parent[pid] in seen) && !(pid in seen)) { seen[pid]=1; changed=1 }
+        } while (changed)
+        for (pid in seen) print pid
+      }')
+    for signal in TERM KILL; do
+      for pid in $children; do kill -"$signal" "$pid" 2>/dev/null || true; done
+      [ "$signal" != TERM ] || sleep 0.1
+    done
+    for pid in "${pids[@]:-}"; do [ -z "$pid" ] || wait "$pid" 2>/dev/null || true; done
+  fi
+  rm -rf -- "$TMP"
+}
+trap cleanup EXIT
 trap 'exit 143' TERM
 trap 'exit 130' INT
 EMPTY="$TMP/empty"
@@ -122,13 +146,6 @@ send_item() {  # <n>
   printf '%s\n' "$rc" > "$TMP/item.$n.rc.tmp" && mv -f "$TMP/item.$n.rc.tmp" "$TMP/item.$n.rc"
 }
 
-item_failed() {  # <n>: 0 when the item finished with a non-zero status
-  local rc=
-  [ -f "$TMP/item.$1.rc" ] || return 1
-  read -r rc < "$TMP/item.$1.rc" || true
-  [ "$rc" != 0 ]
-}
-
 running=0
 next=1
 launched=0
@@ -137,20 +154,29 @@ while [ "$next" -le "$N" ] || [ "$running" -gt 0 ]; do
   running=0
   i=1
   while [ "$i" -le "$launched" ]; do
-    if [ -f "$TMP/item.$i.started" ] && [ ! -f "$TMP/item.$i.rc" ]; then
-      running=$((running + 1))
-    elif item_failed "$i"; then
-      stop=1
+    if [ -n "${pids[$i]:-}" ]; then
+      if kill -0 "${pids[$i]}" 2>/dev/null; then
+        running=$((running + 1))
+      else
+        wait "${pids[$i]}" 2>/dev/null || true
+        pids[$i]=
+        results[$i]=1
+        if [ -s "$TMP/item.$i.rc" ]; then
+          read -r "results[$i]" < "$TMP/item.$i.rc" || true
+        fi
+      fi
     fi
+    if [ "${results[$i]:-0}" != 0 ]; then stop=1; fi
     i=$((i + 1))
   done
   if [ "$stop" -eq 0 ] && [ "$next" -le "$N" ] && [ "$running" -lt "$JOBS" ]; then
     launched=$next
     if [ "$(cut -d' ' -f1 "$TMP/item.$next.plan")" = skip ]; then
-      printf '0\n' > "$TMP/item.$next.rc"
+      results[$next]=0
     else
-      : > "$TMP/item.$next.started"
       send_item "$next" &
+      pids[$next]=$!
+      running=$((running + 1))
     fi
     next=$((next + 1))
     continue
@@ -158,7 +184,6 @@ while [ "$next" -le "$N" ] || [ "$running" -gt 0 ]; do
   [ "$running" -gt 0 ] || break
   sleep 0.05
 done
-wait
 
 # Replay in allowlist order, so the output reads exactly as one sequential push
 # would: each sent item's own stdout and stderr, and a session-scoped item's
@@ -169,10 +194,10 @@ while [ "$i" -le "$launched" ]; do
   if [ "$(cut -d' ' -f1 "$TMP/item.$i.plan")" = skip ]; then
     printf 'unchanged: %s\n' "$(cat "$TMP/item.$i.rel")"
   else
-    cat "$TMP/item.$i.out"
-    cat "$TMP/item.$i.err" >&2
-    if item_failed "$i"; then
-      item_rc=$(cat "$TMP/item.$i.rc")
+    [ ! -f "$TMP/item.$i.out" ] || cat "$TMP/item.$i.out"
+    [ ! -f "$TMP/item.$i.err" ] || cat "$TMP/item.$i.err" >&2
+    if [ "${results[$i]:-1}" != 0 ]; then
+      item_rc=${results[$i]:-1}
       if [ "$status" -eq 0 ] || [ "$item_rc" -eq 255 ]; then status=$item_rc; fi
     fi
   fi

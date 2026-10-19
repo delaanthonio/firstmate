@@ -1232,6 +1232,7 @@ test_secondmate_relaunch_picks_up_the_configured_harness_pin() {
   : > "$dir/fake/pause-exit"
   run_control "$dir" sm3 relaunch > "$dir/relaunch.out" &
   control_pid=$!
+  fm_test_track_child "$control_pid"
   while [ ! -e "$dir/fake/exit-paused" ] && [ "$waited" -lt 200 ]; do
     sleep 0.05
     waited=$((waited + 1))
@@ -2496,7 +2497,8 @@ test_herdr_relaunch_resumes_only_the_registered_pi_session() {
     }
     dir=$HERDR_CASE_DIR
     rm -f "$dir/fake/herdr-stopped"
-    sed -i 's/^harness=claude$/harness=pi/' "$dir/home/state/resume-$registered.meta"
+    sed 's/^harness=claude$/harness=pi/' "$dir/home/state/resume-$registered.meta" > "$dir/meta.tmp" \
+      && mv "$dir/meta.tmp" "$dir/home/state/resume-$registered.meta" || fail "could not set fixture harness"
     # Keep the pane's status authority registered to an existing Pi session,
     # while process-info proves that its previous agent has exited.
     printf '{"result":{"agent":{"agent":"%s","agent_status":"idle","agent_session":{"kind":"path","value":"/tmp/pi-bound-session.jsonl"}}}}\n' \

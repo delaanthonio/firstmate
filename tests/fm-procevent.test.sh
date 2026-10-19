@@ -791,7 +791,9 @@ done
 if [ "${1-}" = poll ] && [ "${3-}" = --agent-reply ]; then
   printf 'poll%s reply: %s\n' "$n" "$4" >> "$MULTI_ROOT/replies"
 fi
-while [ ! -e "$MULTI_ROOT/trigger$n" ]; do sleep 0.02; done
+fm_test_deadline=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+while [ ! -e "$MULTI_ROOT/trigger$n" ] && [ "$SECONDS" -lt "$fm_test_deadline" ]; do sleep 0.02; done
+[ "$SECONDS" -lt "$fm_test_deadline" ] || exit 1
 case "$n" in
   1|2)
     printf 'session:\n  status: feedback\nprompts[1]{uid,prompt,selector,tag,text}:\n  "","round %s","","message",""\n' "$n"
@@ -829,6 +831,7 @@ assert_contains "$list_out" "task:worker-1/listening" \
 PATH="$MULTI_BIN:$PATH" LAVISH_AXI_HOST=recovery.example LAVISH_AXI_PORT=34387 FM_HOME="$HMULTI" \
   pe "$HMULTI" start "$multi_id" > "$MULTI_ROOT/run1" 2>&1 &
 MULTI_RUN=$!
+fm_test_track_child "$MULTI_RUN"
 for _ in $(seq 1 100); do [ "$(cat "$MULTI_ROOT/count" 2>/dev/null || true)" = 1 ] && break; sleep 0.02; done
 touch "$MULTI_ROOT/trigger1"
 for _ in $(seq 1 100); do [ -f "$HMULTI/state/worker-1.inbox/001.msg" ] && break; sleep 0.02; done
@@ -973,7 +976,9 @@ ORPHAN_TRIGGER="$TMP_ROOT/lavish-orphan-hold"
 export ORPHAN_TRIGGER
 cat > "$ORPHAN_BIN/lavish-axi" <<'SH'
 #!/usr/bin/env bash
-while [ ! -e "$ORPHAN_TRIGGER" ]; do sleep 0.02; done
+fm_test_deadline=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+while [ ! -e "$ORPHAN_TRIGGER" ] && [ "$SECONDS" -lt "$fm_test_deadline" ]; do sleep 0.02; done
+[ "$SECONDS" -lt "$fm_test_deadline" ] || exit 1
 printf 'session:\n  status: feedback\nprompts[1]{uid,prompt,selector,tag,text}:\n  "","after the crash","","message",""\n'
 SH
 chmod +x "$ORPHAN_BIN/lavish-axi"
@@ -1316,7 +1321,9 @@ cat > "$REARM_BIN/lavish-axi" <<'SH'
 set -eu
 [ "${1-}" != --version ] || { printf '0.1.79\n'; exit 0; }
 [ "${3-}" != --agent-reply ] || printf '%s\n' "$4" >> "$REARM_ROOT/replies"
-while [ ! -e "$REARM_ROOT/release" ]; do sleep 0.02; done
+fm_test_deadline=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+while [ ! -e "$REARM_ROOT/release" ] && [ "$SECONDS" -lt "$fm_test_deadline" ]; do sleep 0.02; done
+[ "$SECONDS" -lt "$fm_test_deadline" ] || exit 1
 printf 'session:\n  status: feedback\nprompts[1]{uid,prompt,selector,tag,text}:\n  "","one more round","","message",""\n'
 SH
 chmod +x "$REARM_BIN/lavish-axi"
@@ -4634,7 +4641,9 @@ mkdir -p "$READY/bin" "$READY/home/state"
 cat > "$READY/bin/lavish-axi" <<'SH'
 #!/usr/bin/env bash
 printf 'started\n' >> "${READY_MARK:?}"
-while [ ! -e "${READY_RELEASE:?}" ]; do sleep 0.02; done
+fm_test_deadline=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+while [ ! -e "${READY_RELEASE:?}" ] && [ "$SECONDS" -lt "$fm_test_deadline" ]; do sleep 0.02; done
+[ "$SECONDS" -lt "$fm_test_deadline" ] || exit 1
 printf 'session:\n  status: ended\n'
 SH
 chmod +x "$READY/bin/lavish-axi"
@@ -4683,6 +4692,7 @@ wait_for "$delay_ready" || fail "delayed-start fixture could not hold the source
 PATH="$DELAY/bin:$PATH" FM_HOME="$DELAY/home" \
   "$ROOT/bin/fm-procevent-lavish.sh" arm "$delay_art" > "$DELAY/arm.out" 2>"$DELAY/arm.err" &
 delay_arm=$!
+fm_test_track_child "$delay_arm"
 sleep 0.4
 assert_not_contains "$(cat "$DELAY/arm.out" 2>/dev/null || true)" "armed:" \
   "arm reported ready while the listener could not start"
@@ -4812,7 +4822,9 @@ case "${1-}" in
     [ "${3-}" = --agent-reply ] || exit 3
     printf '%s\n' "$4" > "$LEGACY/reply"
     printf 'started\n' > "$LEGACY/started"
-    while [ ! -e "$LEGACY/release" ]; do sleep 0.02; done
+    fm_test_deadline=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+    while [ ! -e "$LEGACY/release" ] && [ "$SECONDS" -lt "$fm_test_deadline" ]; do sleep 0.02; done
+    [ "$SECONDS" -lt "$fm_test_deadline" ] || exit 1
     printf 'session:\n  status: feedback\nprompts[1]{uid,prompt,selector,tag,text}:\n  "","next round","","message",""\n'
     ;;
   *) exit 2 ;;
@@ -4878,7 +4890,7 @@ set -eu
 case "${1-}" in
   --version) printf '0.1.80\n' ;;
   reply) printf '%s\n' "$(cat -- "$4")" >> "$REPLY_FAIL/replies" ;;
-  poll) while [ ! -e "$REPLY_FAIL/release" ]; do sleep 0.02; done; exit 1 ;;
+  poll) fm_test_deadline=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS)); while [ ! -e "$REPLY_FAIL/release" ] && [ "$SECONDS" -lt "$fm_test_deadline" ]; do sleep 0.02; done; [ "$SECONDS" -lt "$fm_test_deadline" ] || exit 1; exit 1 ;;
   *) exit 2 ;;
 esac
 SH
@@ -5024,11 +5036,15 @@ case "${1-}" in
     printf 'poll\n' >> "$DRAIN/polls"
     printf 'poll\n' >> "$DRAIN/order"
     if [ "$(wc -l < "$DRAIN/polls")" -eq 1 ]; then
-      while [ ! -e "$DRAIN/release1" ]; do sleep 0.02; done
+      fm_test_deadline=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+      while [ ! -e "$DRAIN/release1" ] && [ "$SECONDS" -lt "$fm_test_deadline" ]; do sleep 0.02; done
+      [ "$SECONDS" -lt "$fm_test_deadline" ] || exit 1
     fi
     [ "${3-}" != --agent-reply ] || exit 3
     if [ "$(wc -l < "$DRAIN/polls")" -ge 2 ]; then
-      while [ ! -e "$DRAIN/release2" ]; do sleep 0.02; done
+      fm_test_deadline=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+      while [ ! -e "$DRAIN/release2" ] && [ "$SECONDS" -lt "$fm_test_deadline" ]; do sleep 0.02; done
+      [ "$SECONDS" -lt "$fm_test_deadline" ] || exit 1
     fi
     printf 'session:\n  status: feedback\nprompts[1]{uid,prompt,selector,tag,text}:\n  "","next round","","message",""\n'
     ;;
@@ -5067,6 +5083,7 @@ done
 # meets it still held, then release it partway through the confirm window.
 setsid sleep 60 &
 drain_holder=$!
+fm_test_track_child "$drain_holder"
 # Read the identity only once the holder has exec'd sleep: mid-exec its cmdline
 # can read empty, and a pre-exec identity would never match the live holder.
 for _ in $(seq 1 100); do
@@ -5085,6 +5102,7 @@ PATH="$DRAIN/bin:$PATH" FM_HOME="$DRAIN/home" FM_PROCEVENT_LAUNCH_CONFIRM_SECOND
   "$ROOT/bin/fm-procevent-lavish.sh" arm "$drain_art" --for worker-drain \
   --agent-reply-file "$DRAIN/reply2" > "$DRAIN/arm2.out" 2> "$DRAIN/arm2.err" &
 drain_arm=$!
+fm_test_track_child "$drain_arm"
 sleep 1
 kill -KILL "$drain_holder" 2>/dev/null || true
 wait "$drain_holder" 2>/dev/null || true

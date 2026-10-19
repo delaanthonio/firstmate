@@ -103,6 +103,7 @@ start_worker() {
       FM_REMOTE_JOB_STATE_ROOT="$FM_TEST_STATE" FM_REMOTE_JOB_PLATFORM_OVERRIDE=Darwin \
       exec "$FM_TEST_WORKER"
   ) >> "$FM_TEST_WORKER_LOG" 2>&1 < /dev/null &
+  fm_test_track_child "$!"
   printf '%s\n' "$!" > "$FM_TEST_TRACKED"
   set +m
 }
@@ -126,6 +127,7 @@ case "${1:-}" in
       : > "$FM_TEST_REMOVING"
       nohup /bin/sh -c 'sleep "$1"; rm -f "$2" "$3"' sh "${FM_TEST_BOOTOUT_DELAY:-1}" "$FM_TEST_LOADED" "$FM_TEST_REMOVING" \
         </dev/null >/dev/null 2>&1 &
+      fm_test_track_child "$!"
     else
       rm -f "$FM_TEST_LOADED"
     fi
@@ -168,6 +170,7 @@ stop_pid() {
 }
 
 cleanup() {
+  fm_test_reap_children
   : > "$SWEEP_GATE.release" 2>/dev/null || true
   stop_pid "$(cat "$FM_TEST_TRACKED" 2>/dev/null)"
   stop_pid "$(cat "$STATE_ROOT/worker.lock/pid" 2>/dev/null)"
@@ -217,6 +220,7 @@ fm_remote_job_worker_identity_matches "$REMOTE_ROOT" "$ACCOUNT_HOME" \
 fm_remote_job_probe "$ACCOUNT_HOME" && fail 'replacement inherited predecessor readiness before recording ownership'
 fm_remote_job_wait_for_probe "$REMOTE_ROOT" "$ACCOUNT_HOME" > "$TMP_ROOT/wait-owner.out" 2>&1 &
 PROBE_WAITER=$!
+fm_test_track_child "$PROBE_WAITER"
 /bin/sleep 1
 kill -0 "$PROBE_WAITER" 2>/dev/null || fail 'startup wait accepted the predecessor heartbeat'
 : > "$FM_TEST_OWNER_GATE.release"
@@ -275,6 +279,7 @@ launchctl bootout "gui/$(id -u)/dev.firstmate.remote-job" || fail 'the stub laun
 CALLERS=()
 for caller in 1 2 3; do
   ensure_darwin > "$TMP_ROOT/ensure-$caller.out" 2>&1 &
+  fm_test_track_child "$!"
   CALLERS+=("$!")
 done
 for caller_pid in "${CALLERS[@]}"; do
@@ -398,7 +403,9 @@ hold_lock() (
   fm_remote_job_reload_lock_release "$STATE_ROOT/launchagent.repair"
 )
 hold_lock a & HOLD_A=$!
+fm_test_track_child "$HOLD_A"
 hold_lock b & HOLD_B=$!
+fm_test_track_child "$HOLD_B"
 wait "$HOLD_A" || fail 'the first reclaiming caller did not acquire the repair lock'
 wait "$HOLD_B" || fail 'the second reclaiming caller did not acquire the repair lock'
 [ "$(sed -n 1p "$HOLD_LOG" | cut -d' ' -f1)$(sed -n 2p "$HOLD_LOG" | cut -d' ' -f1)" = enterleave ] \

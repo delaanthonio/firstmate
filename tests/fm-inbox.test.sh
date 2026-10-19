@@ -638,6 +638,7 @@ home=$(make_home ready-holder)
 # fm-harness.sh ancestry both classify it without PATH tricks.
 perl -e '$0="claude"; sleep 60' &
 holder_pid=$!
+fm_test_track_child "$holder_pid"
 # Give ps a moment to report the renamed comm.
 sleep 0.2
 kill_holder() {

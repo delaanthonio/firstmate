@@ -65,6 +65,7 @@ script = r'''
 . "$1"
 bash -c 'trap "" TERM; kill -STOP "$$"; exec sleep 300' &
 pid=$!
+fm_test_track_child "$pid"
 for i in $(seq 1 100); do
   state=$(ps -p "$pid" -o stat=)
   case "$state" in *T*) break ;; esac
@@ -202,6 +203,7 @@ test_live_stalled_watch_lock_is_replaced_past_hard_bound() {
   err="$dir/watch.err"
   sleep 300 &
   holder=$!
+  fm_test_track_child "$holder"
   identity=$(FM_STATE_OVERRIDE="$state" bash -c '. "$1"; fm_pid_identity "$2"' _ "$LIB" "$holder") || fail "could not identify the fake holder"
   mkdir -p "$state/.watch.lock"
   printf '%s\n' "$holder" > "$state/.watch.lock/pid"
@@ -218,6 +220,7 @@ test_live_stalled_watch_lock_is_replaced_past_hard_bound() {
   # Same holder and beacon, a bound it is past -> evicted and replaced.
   PATH="$fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$state" FM_GUARD_GRACE=1 FM_WATCHER_STALL_BOUND=3 FM_POLL=5 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" 2> "$err" &
   pid=$!
+  fm_test_track_child "$pid"
   i=0
   lock_pid=
   while [ "$i" -lt 100 ]; do
@@ -386,6 +389,7 @@ leave_dead_link_locks() {  # <state> <lock>...
     exec sleep 30
   ' _ "$LIB" "$@" >/dev/null 2>&1 &
   holder=$!
+  fm_test_track_child "$holder"
   i=0
   while [ "$i" -lt 50 ] && [ ! -s "$last/pid" ]; do
     sleep 0.02
@@ -525,6 +529,7 @@ last=
 for arg do last=$arg; done
 if [ "$last" = "$FM_TEST_RACE_PATH" ] && mkdir "$FM_TEST_RACE_ONCE" 2>/dev/null; then
   bash -c '
+    fm_test_track_child "$$"
     . "$1"
     if fm_lock_try_acquire_steal_mutex "$2"; then
       printf "won %s\n" "${BASHPID:-$$}" > "$3"
@@ -532,6 +537,7 @@ if [ "$last" = "$FM_TEST_RACE_PATH" ] && mkdir "$FM_TEST_RACE_ONCE" 2>/dev/null;
     fi
     printf "lost\n" > "$3"
   ' _ "$FM_TEST_LIB" "$last" "$FM_TEST_RACE_OUT" >/dev/null 2>&1 &
+  fm_test_track_child "$!"
   i=0
   while [ "$i" -lt 100 ] && [ ! -s "$FM_TEST_RACE_OUT" ]; do
     sleep 0.05
@@ -921,6 +927,7 @@ test_arm_attaches_and_waits_for_live_fresh_watcher() {
   # A genuinely live watcher with a fresh beacon already holds the singleton.
   PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_POLL=5 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" 2>&1 &
   wpid=$!
+  fm_test_track_child "$wpid"
   i=0
   while [ "$i" -lt 60 ]; do
     [ "$(cat "$state/.watch.lock/pid" 2>/dev/null || true)" = "$wpid" ] && [ -e "$state/.last-watcher-beat" ] && break
@@ -961,6 +968,7 @@ test_attached_arm_signal_is_recorded_in_cycle_ledger() {
   armout="$dir/arm.out"
   PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_POLL=5 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" 2>&1 &
   wpid=$!
+  fm_test_track_child "$wpid"
   i=0
   while [ "$i" -lt 60 ]; do
     [ "$(cat "$state/.watch.lock/pid" 2>/dev/null || true)" = "$wpid" ] && [ -e "$state/.last-watcher-beat" ] && break
@@ -1017,6 +1025,7 @@ SH
     FM_TEST_ARM_PID_FILE="$pidfile" FM_POLL=5 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH_ARM" > "$armout" 2>&1 &
   armpid=$!
+  fm_test_track_child "$armpid"
   printf '%s\n' "$armpid" > "$pidfile"
   i=0
   while [ "$i" -lt 100 ] && is_live_non_zombie "$armpid"; do
@@ -1052,7 +1061,10 @@ case "$last" in
       i=$((i + 1))
     done
     kill -TERM "$(cat "$FM_TEST_ARM_PID_FILE")" 2>/dev/null || true
-    while [ ! -e "$FM_TEST_RELEASE" ]; do sleep 0.05; done
+    fm_test_track_child "$$"
+    until=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+    while [ ! -e "$FM_TEST_RELEASE" ] && [ "$SECONDS" -lt "$until" ]; do sleep 0.05; done
+    [ -e "$FM_TEST_RELEASE" ] || exit 1
     ;;
 esac
 exec /bin/ln "$@"
@@ -1063,6 +1075,7 @@ SH
     FM_ARM_CONFIRM_TIMEOUT=2 FM_POLL=5 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH_ARM" > "$armout" 2>&1 &
   armpid=$!
+  fm_test_track_child "$armpid"
   printf '%s\n' "$armpid" > "$pidfile"
   i=0
   while [ "$i" -lt 100 ] && is_live_non_zombie "$armpid"; do
@@ -1458,6 +1471,7 @@ test_pid_identity_is_terminal_width_invariant() {
   fi
   sleep "$long_arg" &
   live=$!
+  fm_test_track_child "$live"
   narrow=$(COLUMNS=20 FM_PROC_ROOT_OVERRIDE="$no_proc" bash -c '. "$1"; fm_pid_identity "$2"' _ "$LIB" "$live" 2>/dev/null)
   wide=$(COLUMNS=1000 FM_PROC_ROOT_OVERRIDE="$no_proc" bash -c '. "$1"; fm_pid_identity "$2"' _ "$LIB" "$live" 2>/dev/null)
   kill "$live" 2>/dev/null || true

@@ -32,6 +32,7 @@ mkdir -p "$REMOTE_ROOT/bin" "$REMOTE_HOME" "$ACCOUNT_HOME" "$RUNTIME_BIN"
 # that pid alone leaves the supervisor to respawn - the leak
 # tests/fm-remote-job-orphan-reap.test.sh pins. Stop the whole worker tree.
 cleanup_remote_job_fixture() {
+  fm_test_reap_children
   [ -z "$OTHER_PID" ] || kill "$OTHER_PID" 2>/dev/null || true
   [ -z "$RECOVERY_WORKER_PID" ] || kill "$RECOVERY_WORKER_PID" 2>/dev/null || true
   [ -z "$REPEAT_WORKER_PID" ] || kill "$REPEAT_WORKER_PID" 2>/dev/null || true
@@ -149,6 +150,7 @@ SH
     fm_remote_job_write_state "$FM_REMOTE_JOB_JOBS/$FM_REMOTE_JOB_ID" 'done'
   ) &
   pid=$!
+  fm_test_track_child "$pid"
   fm_remote_job_wait "$ACCOUNT_HOME" "$FM_REMOTE_JOB_ID" || fail "$FM_REMOTE_JOB_ERROR"
   wait "$pid" || fail "$label result producer failed"
   pid=''
@@ -161,6 +163,7 @@ SH
     fm-delay-job.sh 0.8 "$poll_dir/ran" </dev/null >/dev/null || fail "$FM_REMOTE_JOB_ERROR"
   HOME="$ACCOUNT_HOME" "$BASH" "$REMOTE_ROOT/bin/fm-remote-job-worker.sh" --lane "$FM_REMOTE_JOB_ID" &
   pid=$!
+  fm_test_track_child "$pid"
   wait "$pid" || fail "$label command lane failed"
   pid=''
   [ -e "$poll_dir/ran" ] || fail "$label lane did not execute its command"
@@ -173,6 +176,7 @@ SH
   : > "$FM_POLL_SLEEP_LOG"
   HOME="$ACCOUNT_HOME" "$BASH" "$REMOTE_ROOT/bin/fm-remote-job-worker.sh" > "$poll_dir/worker.log" 2>&1 &
   pid=$!
+  fm_test_track_child "$pid"
   for ((i = 0; i < 200; i++)); do
     grep -qx 1 "$FM_POLL_SLEEP_LOG" && break
     /bin/sleep 0.05
@@ -883,6 +887,7 @@ HOME="$LOST_HOME" FM_ROOT_OVERRIDE="$REMOTE_ROOT" FM_REMOTE_JOB_STATE_ROOT="$LOS
   FM_REMOTE_JOB_PLATFORM_OVERRIDE=Linux "$REMOTE_ROOT/bin/fm-remote-job-worker.sh" --serve \
   > "$TMP_ROOT/lost-term.out" 2> "$TMP_ROOT/lost-term.err" &
 LOST_TERM_PID=$!
+fm_test_track_child "$LOST_TERM_PID"
 for _ in $(seq 1 300); do
   [ -f "$LOST_STATE/worker.ready" ] && break
   sleep 0.05
@@ -935,6 +940,7 @@ HOME="$LOST_HOME" FM_ROOT_OVERRIDE="$REMOTE_ROOT" FM_REMOTE_JOB_STATE_ROOT="$LOS
   FM_REMOTE_JOB_PLATFORM_OVERRIDE=Linux "$REMOTE_ROOT/bin/fm-remote-job-worker.sh" --serve \
   > "$TMP_ROOT/lost-cleanup.out" 2> "$TMP_ROOT/lost-cleanup.err" &
 LOST_TERM_PID=$!
+fm_test_track_child "$LOST_TERM_PID"
 for _ in $(seq 1 300); do
   [ -f "$LOST_STATE/worker.ready" ] && break
   sleep 0.05
@@ -979,6 +985,7 @@ HOME="$OWNER_HOME" FM_ROOT_OVERRIDE="$REMOTE_ROOT" FM_REMOTE_JOB_STATE_ROOT="$OW
   FM_REMOTE_JOB_PLATFORM_OVERRIDE=Linux "$REMOTE_ROOT/bin/fm-remote-job-worker.sh" --serve \
   > "$TMP_ROOT/replacement-lost.out" 2> "$TMP_ROOT/replacement-lost.err" &
 LOST_TERM_PID=$!
+fm_test_track_child "$LOST_TERM_PID"
 for _ in $(seq 1 300); do
   [ -f "$OWNER_STATE/worker.ready" ] && break
   sleep 0.05
@@ -994,6 +1001,7 @@ HOME="$OWNER_HOME" FM_ROOT_OVERRIDE="$REMOTE_ROOT" FM_REMOTE_JOB_STATE_ROOT="$OW
   FM_REMOTE_JOB_PLATFORM_OVERRIDE=Linux "$REMOTE_ROOT/bin/fm-remote-job-worker.sh" --serve \
   > "$TMP_ROOT/replacement-owner.out" 2> "$TMP_ROOT/replacement-owner.err" &
 REPLACEMENT_OWNER_PID=$!
+fm_test_track_child "$REPLACEMENT_OWNER_PID"
 for _ in $(seq 1 300); do
   [ -f "$OWNER_STATE/worker.lock/pid" ] && [ "$(cat "$OWNER_STATE/worker.lock/pid")" = "$REPLACEMENT_OWNER_PID" ] && break
   sleep 0.05
@@ -1088,6 +1096,7 @@ HOME="$STALL_HOME" FM_ROOT_OVERRIDE="$REMOTE_ROOT" FM_REMOTE_JOB_STATE_ROOT="$ST
   "$REMOTE_ROOT/bin/fm-remote-job-worker.sh" --serve \
   > "$TMP_ROOT/stall-lost.out" 2> "$TMP_ROOT/stall-lost.err" &
 STALL_WORKER_PID=$!
+fm_test_track_child "$STALL_WORKER_PID"
 printf '%s\n' "$STALL_WORKER_PID" > "$STALL_HOLD"
 STALL_DEADLINE=$((SECONDS + 30))
 until [ -f "$STALL_STATE/worker.ready" ] || [ "$SECONDS" -ge "$STALL_DEADLINE" ]; do sleep 0.05; done
@@ -1115,6 +1124,7 @@ HOME="$STALL_HOME" FM_ROOT_OVERRIDE="$REMOTE_ROOT" FM_REMOTE_JOB_STATE_ROOT="$ST
   FM_REMOTE_JOB_PLATFORM_OVERRIDE=Linux "$REMOTE_ROOT/bin/fm-remote-job-worker.sh" --serve \
   > "$TMP_ROOT/stall-replacement.out" 2> "$TMP_ROOT/stall-replacement.err" &
 STALL_REPLACEMENT_PID=$!
+fm_test_track_child "$STALL_REPLACEMENT_PID"
 STALL_DEADLINE=$((SECONDS + 30))
 until [ "$(cat "$STALL_STATE/worker.lock/pid" 2>/dev/null || true)" = "$STALL_REPLACEMENT_PID" ] \
   || [ "$SECONDS" -ge "$STALL_DEADLINE" ]; do
@@ -1205,6 +1215,7 @@ HOME="$QUIET_HOME" PATH="$QUIET_SHIM:/usr/bin:/bin:/usr/sbin:/sbin" FM_TEST_EXEC
   FM_REMOTE_JOB_PLATFORM_OVERRIDE=Linux FM_REMOTE_JOB_STAGE_REAP_SECONDS=2 \
   "$REMOTE_ROOT/bin/fm-remote-job-worker.sh" --serve > "$TMP_ROOT/quiet-worker.out" 2> "$TMP_ROOT/quiet-worker.err" &
 QUIET_WORKER_PID=$!
+fm_test_track_child "$QUIET_WORKER_PID"
 quiet_wait_ready() { # <state> <label>
   for _ in $(seq 1 200); do
     [ -f "$1/worker.ready" ] && break
@@ -1438,6 +1449,7 @@ HOME="$SCAN_ACCOUNT" PATH="$QUIET_SHIM:/usr/bin:/bin:/usr/sbin:/sbin" \
   "$REMOTE_ROOT/bin/fm-remote-job-worker.sh" --lane "$SCAN_POLL_ID" \
   > "$TMP_ROOT/scan-lane.out" 2> "$TMP_ROOT/scan-lane.err" &
 SCAN_LANE_PID=$!
+fm_test_track_child "$SCAN_LANE_PID"
 for _ in $(seq 1 200); do
   [ "$(fm_remote_job_read_state "$SCAN_STATE/jobs/$SCAN_POLL_ID" 2>/dev/null || true)" = running ] && break
   sleep 0.05
@@ -1496,6 +1508,7 @@ HOME="$SCAN_ACCOUNT" PATH="$QUIET_SHIM:/usr/bin:/bin:/usr/sbin:/sbin" \
   "$REMOTE_ROOT/bin/fm-remote-job-worker.sh" --lane "$SCAN_BOUND_POLL_ID" \
   > "$TMP_ROOT/scan-bound-lane.out" 2> "$TMP_ROOT/scan-bound-lane.err" &
 SCAN_LANE_PID=$!
+fm_test_track_child "$SCAN_LANE_PID"
 for _ in $(seq 1 200); do
   [ "$(fm_remote_job_read_state "$SCAN_STATE/jobs/$SCAN_BOUND_POLL_ID" 2>/dev/null || true)" = 'done' ] && break
   sleep 0.05

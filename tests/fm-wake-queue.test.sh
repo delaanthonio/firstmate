@@ -247,6 +247,7 @@ foreign_stall_watch_leg() {  # <dir> <leg> <now> [observation]
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
     "$WATCH" > "$dir/watch-$leg.out" 2> "$dir/watch-$leg.err" &
   pid=$!
+  fm_test_track_child "$pid"
   if [ -n "$observation" ]; then
     while [ "$i" -lt 600 ] && is_live_non_zombie "$pid" \
       && { [ "$(cat "$marker" 2>/dev/null || true)" != "$observation" ] || [ -e "$stall" ]; }; do
@@ -451,6 +452,7 @@ secondmate_stall_watch_leg() { # <dir> <leg> <mode> [arg...]
   touch "$dir/state/.secondmate-liveness-tick"
   FM_SECONDMATE_LIVENESS_SECS=99999999 "$WATCH" >"$out" 2>"$err" &
   pid=$!
+  fm_test_track_child "$pid"
   case "$mode" in
     alert)
       while [ "$i" -lt "$limit" ]; do
@@ -461,6 +463,7 @@ secondmate_stall_watch_leg() { # <dir> <leg> <mode> [arg...]
           fi
           FM_SECONDMATE_LIVENESS_SECS=99999999 "$WATCH" >>"$out" 2>>"$err" &
           pid=$!
+          fm_test_track_child "$pid"
         fi
         sleep 0.1
         i=$((i + 1))
@@ -557,6 +560,7 @@ secondmate_stall_watch_leg() { # <dir> <leg> <mode> [arg...]
       rm -f "$beat"
       FM_SECONDMATE_LIVENESS_SECS=99999999 "$WATCH" >>"$out" 2>>"$err" &
       pid=$!
+      fm_test_track_child "$pid"
       first=0
       mark=0
     fi
@@ -956,8 +960,23 @@ exec "$(dirname "$0")/tmux-alive" "$@"
 SH
   chmod +x "$fakebin/tmux"
   mkfifo "$fifo"
-  ( exec 3> "$fifo"; : > "$dir/capture-blocked"; exec sleep 30 ) &
+  python3 - "$fifo" "$dir/capture-blocked" <<'PYTHON' &
+import errno, os, pathlib, sys, time
+until = time.monotonic() + 30
+while True:
+    try:
+        fd = os.open(sys.argv[1], os.O_WRONLY | os.O_NONBLOCK)
+        break
+    except OSError as error:
+        if error.errno != errno.ENXIO or time.monotonic() >= until:
+            raise
+        time.sleep(0.02)
+pathlib.Path(sys.argv[2]).touch()
+time.sleep(30)
+os.close(fd)
+PYTHON
   holder=$!
+  fm_test_track_child "$holder"
 
   printf '1002\n' > "$dir/now"
   touch "$state/.secondmate-liveness-tick"
@@ -968,6 +987,7 @@ SH
     FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
     "$WATCH" > "$out" 2>&1 &
   pid=$!
+  fm_test_track_child "$pid"
   i=0
   while [ ! -e "$dir/capture-blocked" ] && [ "$i" -lt 300 ]; do
     sleep 0.1
@@ -3102,6 +3122,7 @@ run_liveness_leg() {
     FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
     "$@" "$WATCH" > "$dir/watch-$tag.out" 2> "$dir/watch-$tag.err" &
   LIVENESS_PID=$!
+  fm_test_track_child "$LIVENESS_PID"
 }
 
 # kill_liveness_leg <pid>: end a leg that must have stayed quiet.
@@ -3477,6 +3498,7 @@ test_secondmate_liveness_tick_skips_mate_whose_lock_is_held() {
   ( STATE="$state" bash -c '. "$1" && fm_lock_acquire_wait "$2" && sleep 30' \
       _ "$ROOT/bin/fm-wake-lib.sh" "$state/.control-sm1.lock" ) &
   holder=$!
+  fm_test_track_child "$holder"
   local i=0
   while [ ! -d "$state/.control-sm1.lock" ] && [ "$i" -lt 100 ]; do
     sleep 0.05

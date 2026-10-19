@@ -196,8 +196,22 @@ fm_test_track_child() {
 export -f fm_test_track_child
 
 fm_test_reap_children() {
-  local pid birth signal
+  local pid birth signal children child pending registered
   [ -f "$FM_TEST_CHILD_REGISTRY" ] || return 0
+  registered=$(cat "$FM_TEST_CHILD_REGISTRY")
+  children=$("$FM_TEST_CHILD_PS" -axo pid=,ppid=)
+  while IFS=$'\t' read -r pid birth; do
+    [ -n "$pid" ] && [ "$birth" = "$(LC_ALL=C "$FM_TEST_CHILD_PS" -p "$pid" -o lstart= 2>/dev/null)" ] || continue
+    pending=$pid
+    while [ -n "$pending" ]; do
+      child=${pending%% *}
+      if [ "$pending" = "$child" ]; then pending=; else pending=${pending#* }; fi
+      for child in $(printf '%s\n' "$children" | awk -v p="$child" '$2 == p {print $1}'); do
+        fm_test_track_child "$child" || true
+        pending="${pending:+$pending }$child"
+      done
+    done
+  done <<< "$registered"
   for signal in TERM KILL; do
     while IFS=$'\t' read -r pid birth; do
       [ -n "$pid" ] && [ -n "$birth" ] || continue
@@ -767,6 +781,7 @@ fm_agent_standin_alive() {  # <path>
   local pid
   "$1" 60 >/dev/null 2>&1 &
   pid=$!
+  fm_test_track_child "$pid"
   sleep 0.2
   kill -0 "$pid" 2>/dev/null || { wait "$pid" 2>/dev/null; return 1; }
   kill "$pid" 2>/dev/null || true

@@ -161,6 +161,7 @@ test_a_descendant_holding_the_output_cannot_outlast_the_bound() {
   # shellcheck disable=SC2016
   out=$(exec_timed "$PERL_ONLY" 1 30 bash -c '
     ( trap "" TERM; exec sleep 300 ) &
+    fm_test_track_child "$!"
     echo $! > "$1"
     wait
   ' _ "$dir/pid") || rc=$?
@@ -193,6 +194,7 @@ test_a_signal_to_the_bounding_process_reaches_the_command() {
     ' _ "$dir/pid" "$dir/term"
   ) 2>/dev/null &
   watchdog=$!
+  fm_test_track_child "$watchdog"
   wait_for_file "$dir/pid"
   kill -TERM "$watchdog" || fail "could not signal the bounding process"
   wait "$watchdog" || rc=$?
@@ -211,6 +213,7 @@ test_a_named_owner_that_is_gone_ends_the_command() {
   mkdir -p "$dir"
   sleep 0 &
   gone=$!
+  fm_test_track_child "$gone"
   wait "$gone" 2>/dev/null || true
   started=$SECONDS
   (
@@ -240,10 +243,12 @@ test_an_owner_that_dies_during_startup_ends_the_command() {
   PATH=$PERL_ONLY bash -c '
     . "$1/bin/fm-timeout-lib.sh"
     (
+      fm_test_track_child "${BASHPID:-$$}"
       perl -e "print getppid(), qq(\\n)" > "$2/watchdog"
       while kill -0 "$$" 2>/dev/null; do sleep 0.05; done
       fm_exec_timed 60 1 bash -c "echo \$\$ > \"\$1\"; exec sleep 300" _ "$2/pid"
     ) >/dev/null 2>&1 &
+    fm_test_track_child "$!"
     exit 0
   ' _ "$ROOT" "$dir"
   wait_for_file "$dir/watchdog"
@@ -273,11 +278,14 @@ test_a_top_level_parent_that_dies_during_startup_ends_the_command() {
   PATH=$PERL_ONLY bash -c '
     bash -c '\''
       . "$1/bin/fm-timeout-lib.sh"
+      fm_test_track_child "$$"
       echo "$$" > "$2/watchdog"
       while kill -0 "$PPID" 2>/dev/null; do sleep 0.05; done
       fm_exec_timed 60 1 bash -c "echo \$\$ > \"\$1\"; exec sleep 300" _ "$2/pid"
     '\'' _ "$1" "$2" >/dev/null 2>&1 &
-    while [ ! -s "$2/watchdog" ]; do sleep 0.02; done
+    fm_test_deadline=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+    while [ ! -s "$2/watchdog" ] && [ "$SECONDS" -lt "$fm_test_deadline" ]; do sleep 0.02; done
+    [ "$SECONDS" -lt "$fm_test_deadline" ] || exit 1
     exit 0
   ' _ "$ROOT" "$dir"
   wait_for_file "$dir/watchdog"
