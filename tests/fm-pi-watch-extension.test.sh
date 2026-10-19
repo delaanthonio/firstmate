@@ -4971,6 +4971,7 @@ test_opencode_slow_cleanup_completes_before_adapter_retirement() {
   mkdir -p "$repo/bin" "$home/state" "$home/config"
   git init -q "$repo"
   : > "$repo/AGENTS.md"
+  cp "$ROOT/bin/fm-supervision-lib.sh" "$repo/bin/fm-supervision-lib.sh"
   : > "$home/state/task.meta"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
