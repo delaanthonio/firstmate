@@ -1425,6 +1425,37 @@ unit_supervision_host_quiet_fallback() {
 # quiet-check and a quiet enter refuse and name it, whatever state/.afk says,
 # until the return archives it. Covered with the attended host ready, and over
 # a quiet daemon that fell back because the dialog mirror was missing.
+unit_quiet_checks_away_return_before_every_harness_shortcut() {
+  local st harness out rc
+  st=$(mktemp -d "${TMPDIR:-/tmp}/fm-quiet-return-all.XXXXXX")
+  mkdir -p "$st/state" "$st/config"
+  : > "$st/config/supervision-host-off"
+  for harness in pi pi-signed claude cursor opencode omp grok codex kimi; do
+    FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$CONTRACT" enter --words "hold until my return" >/dev/null || fail "$harness: fixture entry failed"
+    cp "$st/state/.afk-contract" "$st/before"
+    out=$(FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_CONFIG_OVERRIDE="$st/config" FM_TEST_HARNESS="$harness" "$LAUNCH" quiet-check); rc=$?
+    [ "$rc" -eq 2 ] || fail "$harness: quiet-check skipped the away return (rc=$rc): $out"
+    out=$(FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_CONFIG_OVERRIDE="$st/config" FM_TEST_HARNESS="$harness" FM_AFK_MODE=quiet "$LAUNCH" enter --words quiet); rc=$?
+    [ "$rc" -eq 3 ] || fail "$harness: quiet entry overwrote an away record (rc=$rc): $out"
+    cmp -s "$st/before" "$st/state/.afk-contract" || fail "$harness: away record was changed"
+    FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$CONTRACT" archive >/dev/null || fail "fixture archive failed"
+    printf 'away\n100\n' > "$st/state/.afk"
+    out=$(FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_CONFIG_OVERRIDE="$st/config" FM_TEST_HARNESS="$harness" "$LAUNCH" quiet-check); rc=$?
+    [ "$rc" -eq 2 ] || fail "$harness: quiet-check skipped a legacy away flag (rc=$rc): $out"
+    out=$(FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_CONFIG_OVERRIDE="$st/config" FM_TEST_HARNESS="$harness" FM_AFK_MODE=quiet "$LAUNCH" enter --words quiet); rc=$?
+    [ "$rc" -eq 3 ] && [ ! -e "$st/state/.afk-contract" ] || fail "$harness: quiet entry skipped a legacy away return"
+    rm "$st/state/.afk"
+    : > "$st/state/.afk-return-catchup"
+    out=$(FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_CONFIG_OVERRIDE="$st/config" FM_TEST_HARNESS="$harness" "$LAUNCH" quiet-check); rc=$?
+    [ "$rc" -eq 2 ] || fail "$harness: quiet-check skipped pending catch-up (rc=$rc): $out"
+    rm "$st/state/.afk-return-catchup"
+    out=$(FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_CONFIG_OVERRIDE="$st/config" FM_TEST_HARNESS="$harness" "$LAUNCH" quiet-check); rc=$?
+    [ "$rc" -eq 1 ] || fail "$harness: quiet-check did not resume its ordinary path (rc=$rc): $out"
+  done
+  rm -rf "$st"
+  pass "quiet checks every harness for an away record and unfinished return before choosing its path"
+}
+
 unit_supervision_host_quiet_after_afk() {
   local st out rc
   st=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-quiet-away.XXXXXX")
@@ -1432,9 +1463,9 @@ unit_supervision_host_quiet_after_afk() {
   refuses_under_away_record() {  # <case>
     cp "$st/state/.afk-contract" "$st/away-record"
     out=$(quiet_in "$st" "$LAUNCH" quiet-check); rc=$?
-    quiet_expect 2 'away record (state/.afk-contract) is live' "$1: quiet-check under a live away record must refuse and name it"
+    quiet_expect 2 'away return is unfinished' "$1: quiet-check under a live away record must refuse and name it"
     out=$(quiet_in "$st" env FM_AFK_MODE=quiet "$LAUNCH" enter --words "stay quiet"); rc=$?
-    quiet_expect 3 'away record (state/.afk-contract) is live' "$1: a quiet enter under a live away record must refuse and name it"
+    quiet_expect 3 'away return is unfinished' "$1: a quiet enter under a live away record must refuse and name it"
     cmp -s "$st/state/.afk-contract" "$st/away-record" || fail "$1: a refused quiet enter must leave the away record untouched"
   }
 
@@ -1989,6 +2020,7 @@ unit_daemon_quiet_entry_holds_nothing_for_a_return
 unit_supervision_host_quiet_statement
 unit_supervision_host_quiet_fallback
 unit_supervision_host_quiet_after_afk
+unit_quiet_checks_away_return_before_every_harness_shortcut
 unit_supervision_host_quiet_failed_start
 unit_native_entry_preserves_prepared_state
 unit_close_failure_preserves_record

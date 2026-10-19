@@ -885,12 +885,13 @@ github_checks_not_green() {
         | if .__typename == "CheckRun" then
             {
               kind: "check_run",
+              app_id: (.app.id // null),
               name: (.name // ""),
               completed: (.status == "COMPLETED"),
               ok: (.status == "COMPLETED" and (.conclusion == "SUCCESS" or .conclusion == "NEUTRAL" or .conclusion == "SKIPPED")),
               at: (.startedAt | settled_at)
             }
-            | . + {group: (if .name == "" then ["", $i] else [.name, -1] end)}
+            | . + {group: (if .name == "" then ["", $i] else [.name, .app_id] end)}
           else
             {kind: "status_context", name: (.context // ""), ok: (.state == "SUCCESS")}
           end
@@ -1013,7 +1014,7 @@ github_required_checks_missing() {
 # the usual 1, when mergeable=UNKNOWN is the only failing condition, so the
 # caller can retry a still-computing mergeability read instead of refusing.
 github_verify_mergeable() {
-  local json fields line red name covered missing unreported producers runs
+  local json check_json fields line red name covered missing unreported producers runs
   local total=0 named=0 refusals='' mergeable_refusal=''
   local state='' draft='' mergeable='' merge_state='' live_head='' base=''
 
@@ -1059,7 +1060,35 @@ FIELDS
     echo "error: could not read the GitHub pull request head commit before merging" >&2
     return 1
   fi
-  if ! red=$(github_checks_not_green "$json"); then
+  if ! github_read_required_contexts "$base"; then
+    while IFS= read -r line; do
+      refusals="$refusals  - $line, so a required check that has not reported cannot be ruled out
+"
+    done <<EOF
+$FM_PR_GITHUB_REQUIRED_ERROR
+EOF
+  fi
+  producers='[]'
+  if printf '%s' "$FM_PR_GITHUB_REQUIRED" | jq -e 'any(.[]; .app_id != null)' >/dev/null; then
+    if ! runs=$(gh api --paginate "repos/$PR_OWNER/$PR_REPO/commits/$live_head/check-runs" 2>/dev/null) \
+      || [ -z "$runs" ] \
+      || ! producers=$(printf '%s' "$runs" | jq -sc --arg head "$live_head" '
+        [ .[] | if (.check_runs | type) == "array" then .check_runs[] else error("invalid check runs") end
+          | if (.name | type) == "string" and (.app.id | type) == "number" and .head_sha == $head
+            then . else error("invalid check producer") end ]' 2>/dev/null); then
+      producers='[]'
+      refusals="$refusals  - required check producers at head $live_head could not be read
+"
+    fi
+  fi
+  if ! check_json=$(printf '%s' "$json" | jq -c --argjson required "$FM_PR_GITHUB_REQUIRED" --argjson producers "$producers" '
+      if (.statusCheckRollup | type) != "array" then error("no check rollup") else . end
+      | .statusCheckRollup += [ $producers[] | . as $run
+        | select(any($required[]; .context == $run.name and .app_id == $run.app.id))
+        | {__typename: "CheckRun", name, app,
+           status: ((.status // "") | ascii_upcase),
+           conclusion: ((.conclusion // "") | ascii_upcase), startedAt: .started_at} ]' 2>/dev/null) \
+    || ! red=$(github_checks_not_green "$check_json"); then
     echo "error: could not read the GitHub pull request state before merging" >&2
     return 1
   fi
@@ -1100,27 +1129,6 @@ $red
 EOF
 
   unreported=''
-  if ! github_read_required_contexts "$base"; then
-    while IFS= read -r line; do
-      refusals="$refusals  - $line, so a required check that has not reported cannot be ruled out
-"
-    done <<EOF
-$FM_PR_GITHUB_REQUIRED_ERROR
-EOF
-  fi
-  producers='[]'
-  if printf '%s' "$FM_PR_GITHUB_REQUIRED" | jq -e 'any(.[]; .app_id != null)' >/dev/null; then
-    if ! runs=$(gh api --paginate "repos/$PR_OWNER/$PR_REPO/commits/$live_head/check-runs" 2>/dev/null) \
-      || [ -z "$runs" ] \
-      || ! producers=$(printf '%s' "$runs" | jq -sc --arg head "$live_head" '
-        [ .[] | if (.check_runs | type) == "array" then .check_runs[] else error("invalid check runs") end
-          | if (.name | type) == "string" and (.app.id | type) == "number" and .head_sha == $head
-            then . else error("invalid check producer") end ]' 2>/dev/null); then
-      producers='[]'
-      refusals="$refusals  - required check producers at head $live_head could not be read
-"
-    fi
-  fi
   if ! missing=$(github_required_checks_missing "$json" "$FM_PR_GITHUB_REQUIRED" "$producers"); then
     refusals="$refusals  - the GitHub pull request check rollup could not be read
 "

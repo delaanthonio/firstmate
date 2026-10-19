@@ -21,14 +21,14 @@ For captain-held rechecks under quiet, see [architecture](../../../docs/architec
 
 ## What it does
 
-0. **First check whether quiet mode needs anything here.**
-   On Pi or pi-signed, enter nothing: the attended branch already keeps routine wakes out of this conversation (the `afk` skill's step 2); tell the captain so.
-   Everywhere else run `bin/fm-afk-launch.sh quiet-check`; its header's QUIET MODE owns what each result means.
+0. **Run `bin/fm-afk-launch.sh quiet-check` before every shortcut or entry, including on Pi and pi-signed.**
+   Its header's QUIET MODE owns what each result means.
    - Exit 0: enter nothing - no record, no flag, no daemon, and `/quiet off` then needs nothing either.
      Tell the captain in `AGENTS.md` section 9 language that supervision here already works that way: routine fleet events stay off this conversation, while decisions, failures, credentials, and review-ready work still reach them.
      When its line says the supervision session is paused, say instead that routine updates reach them until it recovers, and when it next retries.
-   - Exit 2: an away record is live, so the captain has returned: run the `afk` skill's return and clear its catch-up gate, then run `quiet-check` again and follow its new result.
-   - Exit 1: go on to step 1; if it printed a line, first tell the captain plainly what keeps supervision from already being quiet here.
+   - Exit 2: complete the `afk` skill's return and clear its catch-up gate before continuing, then run `quiet-check` again and follow its new result.
+   - Exit 1: on Pi or pi-signed, enter nothing and tell the captain that the attended branch already keeps routine wakes out of this conversation (the `afk` skill's step 2).
+     Everywhere else, go on to step 1; if it printed a line, first tell the captain plainly what keeps supervision from already being quiet here.
 
 1. **Enter the lifecycle through `bin/fm-afk-launch.sh`, exactly as `/afk`
    does, with `FM_AFK_MODE=quiet` set first.**

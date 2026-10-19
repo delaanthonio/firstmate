@@ -4082,7 +4082,7 @@ test_required_producer_identity() {
       fi
       app=42
       [ "$variant" != correct ] || app=15368
-      printf '{"check_runs":[{"name":"ci","app":{"id":%s},"head_sha":"%s"}]}\n' \
+      printf '{"check_runs":[{"name":"ci","app":{"id":%s},"head_sha":"%s","status":"completed","conclusion":"success","started_at":"2026-09-01T10:01:00Z"}]}\n' \
         "$app" "$head" > "$case_dir/github-runs.json"
       case "$variant" in
         unreadable) rm "$case_dir/github-runs.json" ;;
@@ -4116,6 +4116,60 @@ test_required_producer_identity() {
 # A commit status carries no app id to compare, so an app-bound required context
 # that arrives as a green status matches by name, while the same context left
 # unreported still refuses.
+test_required_producer_green_and_rerun_ordering() {
+  local case_dir head kind variant expected
+  head=a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8
+  for kind in classic ruleset; do
+    for variant in failed queued running success neutral skipped rerun tied undated red-waiver missing-waiver; do
+      case_dir=$(make_case "producer-green-$kind-$variant")
+      add_gh_mocks "$case_dir" "$head"
+      write_github_required "$case_dir" "$kind:ci"
+      if [ "$kind" = classic ]; then
+        jq '.protection.required_status_checks.checks[0].app_id = 15368' \
+          "$case_dir/github-branch.json" > "$case_dir/updated.json"
+        mv "$case_dir/updated.json" "$case_dir/github-branch.json"
+      else
+        jq '.[1].parameters.required_status_checks[0].integration_id = 15368' \
+          "$case_dir/github-required-rules.json" > "$case_dir/updated.json"
+        mv "$case_dir/updated.json" "$case_dir/github-required-rules.json"
+      fi
+      write_github_rollup_json "$case_dir" "$head" \
+        "$(check_run ci COMPLETED FAILURE 2026-09-01T10:00:00Z)" \
+        "$(check_run ci COMPLETED SUCCESS 2026-09-01T10:01:00Z)"
+      jq -n --arg head "$head" --arg variant "$variant" '
+        {check_runs: [
+          {name:"ci", app:{id:15368}, head_sha:$head, status:"completed", conclusion:"failure", started_at:"2026-09-01T10:00:00Z"},
+          {name:"ci", app:{id:42}, head_sha:$head, status:"completed", conclusion:"success", started_at:"2026-09-01T10:01:00Z"}]}
+        | if $variant == "queued" then .check_runs[0] += {status:"queued", conclusion:null}
+          elif $variant == "running" then .check_runs[0] += {status:"in_progress", conclusion:null}
+          elif ($variant == "success" or $variant == "neutral" or $variant == "skipped") then .check_runs[0].conclusion = $variant
+          elif ($variant == "rerun" or $variant == "tied" or $variant == "undated") then
+            .check_runs += [(.check_runs[0] + {conclusion:"success", started_at:(if $variant == "tied" then "2026-09-01T10:00:00Z" else "2026-09-01T10:02:00Z" end)})]
+            | if $variant == "undated" then .check_runs[0].started_at = null else . end
+          else . end' > "$case_dir/github-runs.json"
+      expected=1
+      case "$variant" in
+        success|neutral|skipped|rerun) expected=0 ;;
+      esac
+      case "$variant" in
+        red-waiver)
+          run_required_case "$case_dir" 113 --attended-override --allow-red ci -- --admin
+          expected=0 ;;
+        missing-waiver) run_required_case "$case_dir" 113 --attended-override --allow-missing ci -- --admin ;;
+        *) run_required_case "$case_dir" 113 --attended-override -- --admin ;;
+      esac
+      expect_code "$expected" "$RC" "$kind/$variant: $(cat "$case_dir/stderr")"
+      if [ "$expected" = 0 ]; then
+        assert_grep 'pr merge' "$case_dir/gh.log" "$kind/$variant did not merge"
+      else
+        assert_grep "check 'ci' is not green" "$case_dir/stderr" "$kind/$variant lost the required producer failure"
+        assert_no_grep 'pr merge' "$case_dir/gh.log" "$kind/$variant reached merge"
+      fi
+    done
+  done
+  pass "required producers must be green, with supersession and waivers scoped correctly"
+}
+
 test_app_bound_required_status_context_matches_by_name() {
   local case_dir head kind variant
   head=a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7
@@ -4644,6 +4698,7 @@ test_allow_missing_waives_only_the_named_unreported_check
 test_allow_missing_follows_the_allow_red_rules
 
 test_required_producer_identity
+test_required_producer_green_and_rerun_ordering
 test_app_bound_required_status_context_matches_by_name
 test_required_partial_reads_report_all_failures
 test_allow_red_refused_on_forgejo

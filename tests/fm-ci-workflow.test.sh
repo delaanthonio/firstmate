@@ -327,14 +327,16 @@ test_heavy_tier_keeps_a_step_tripwire_under_a_job_backstop() {
     || fail "heavy tier backstop ($heavy) must exceed the normal tier ($normal)"
   [ "$heavy" -ge 60 ] && [ "$heavy" -le 75 ] \
     || fail "heavy tier backstop must stay a 60-75 minute last resort, got $heavy"
-  step=$(ruby -ryaml -e '
+  step=$(ruby -ryaml -e "$EXPRESSION_RUBY" -e '
 steps = YAML.load_file(ARGV[0]).fetch("jobs").fetch(ARGV[1]).fetch("steps")
 index = steps.index { |s| s["id"] == "run-real-herdr-family" }
 raise "no run-real-herdr-family step" unless index
 teardown = steps.index { |s| s["id"] == "cleanup-herdr-lab-sessions" }
 raise "no cleanup-herdr-lab-sessions step" unless teardown
 raise "teardown must follow the family-run step" unless teardown > index
-raise "teardown must run under always()" unless steps[teardown]["if"].to_s.strip == "always()"
+%w[success failure cancelled].each do |status|
+  raise "teardown must run after #{status}" unless Expression.condition(steps[teardown]["if"], "needs.status" => status)
+end
 puts steps[index].fetch("timeout-minutes", "none")
 ' "$CI_WORKFLOW" tests-herdr) || fail "could not read the Herdr family-run step"
   case "$step" in ''|*[!0-9]*) fail "the Herdr family-run step needs its own timeout-minutes, got $step" ;; esac

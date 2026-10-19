@@ -35,8 +35,8 @@
 # broken-session latch holds, that the session is paused and when it retries;
 # either way a quiet `enter` refuses (exit 3) before writing anything, so quiet
 # mode never leaves a record that would park a present captain's main. While
-# an away record (one without the quiet mode a quiet entry records) is live on
-# that home, whatever state/.afk says, `quiet-check` (exit 2) and a quiet
+# an away record or legacy away flag is live, or return catch-up is pending,
+# in any harness, `quiet-check` (exit 2) and a quiet
 # `enter` (exit 3) refuse and name it: the captain's return
 # (bin/fm-afk-return.sh and its catch-up gate) comes first. Where the attended
 # host lacks one of those parts, `quiet-check` names it and quiet mode enters
@@ -255,7 +255,7 @@ fm_afk_launch_requested_mode() {
 }
 
 # Whether /quiet needs anything here (the header's QUIET MODE): 0 when it needs
-# nothing; 2 while an away record is live on a home that runs the host;
+# nothing; 2 while an away return is unfinished;
 # otherwise 1, with FM_AFK_LAUNCH_QUIET_WHY naming what the attended host
 # lacks on a home that runs it, or empty where quiet mode is the daemon's as
 # it is without the host (no host, another primary, or quiet mode already
@@ -263,12 +263,17 @@ fm_afk_launch_requested_mode() {
 fm_afk_launch_quiet_needs_nothing() {
   local harness config
   FM_AFK_LAUNCH_QUIET_WHY=
+  if fm_afk_contract_away_present "$FM_AFK_LAUNCH_STATE" \
+    || { ! fm_afk_contract_present "$FM_AFK_LAUNCH_STATE" \
+      && [ -e "$FM_AFK_LAUNCH_STATE/.afk" ] && [ "$(fm_afk_mode "$FM_AFK_LAUNCH_STATE")" = away ]; } \
+    || [ -e "$FM_AFK_LAUNCH_STATE/.afk-return-catchup" ]; then
+    return 2
+  fi
   harness=$(fm_afk_launch_primary_harness)
   fm_afk_launch_host_primary "$harness" || return 1
   config=${FM_CONFIG_OVERRIDE:-$FM_HOME/config}
   fm_supervision_host_enabled "$config" "$harness" || return 1
   if fm_afk_contract_present "$FM_AFK_LAUNCH_STATE"; then
-    fm_afk_launch_record_quiet || return 2
     return 1
   fi
   [ ! -e "$FM_AFK_LAUNCH_STATE/.afk" ] || return 1
@@ -287,7 +292,7 @@ fm_afk_launch_quiet_check() {
   fm_afk_launch_quiet_needs_nothing
   rc=$?
   if [ "$rc" -eq 2 ]; then
-    printf 'Quiet mode starts nothing on this home while its away record (state/.afk-contract) is live: the captain has returned, so run the /afk return (bin/fm-afk-return.sh), pass its catch-up gate, then run quiet-check again.\n'
+    printf 'Quiet mode starts nothing on this home while an away return is unfinished: the captain has returned, so run the /afk return (bin/fm-afk-return.sh), pass its catch-up gate, then run quiet-check again.\n'
     return 2
   fi
   if [ "$rc" -ne 0 ]; then
@@ -378,7 +383,7 @@ fm_afk_launch_enter() {
         fm_afk_launch_log "quiet mode writes no away-posture record on this home, whose attended supervision host already is quiet mode; run bin/fm-afk-launch.sh quiet-check"
         return 3 ;;
       2)
-        fm_afk_launch_log "quiet mode refuses while this home's away record (state/.afk-contract) is live; run the /afk return (bin/fm-afk-return.sh) and pass its catch-up gate, then run bin/fm-afk-launch.sh quiet-check"
+        fm_afk_launch_log "quiet mode refuses while this home's away return is unfinished; run the /afk return (bin/fm-afk-return.sh) and pass its catch-up gate, then run bin/fm-afk-launch.sh quiet-check"
         return 3 ;;
     esac
   fi

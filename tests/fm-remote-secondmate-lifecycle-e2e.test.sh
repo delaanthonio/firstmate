@@ -372,9 +372,9 @@ if [ "\${1:-}" = clone ]; then
       printf 'clone\n' >> "$TMP_ROOT/provision-clones"
       if mkdir "$TMP_ROOT/provision-first" 2>/dev/null; then
         touch "$TMP_ROOT/provision.entered"
-        fm_test_deadline=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
-        while [ ! -f "$TMP_ROOT/provision.release" ] && [ "$SECONDS" -lt "$fm_test_deadline" ]; do sleep 0.02; done
-        [ "$SECONDS" -lt "$fm_test_deadline" ] || exit 1
+        fm_test_deadline=\$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+        while [ ! -f "$TMP_ROOT/provision.release" ] && [ "\$SECONDS" -lt "\$fm_test_deadline" ]; do sleep 0.02; done
+        [ "\$SECONDS" -lt "\$fm_test_deadline" ] || exit 1
       fi
       ;;
   esac
@@ -399,9 +399,9 @@ if [ "\${1:-}" = clone ] && [ -n "\${FM_FAKE_CLONE_HOLD_DIR:-}" ] \
     sleep 0.005
   done
   touch "$TMP_ROOT/race-clone.held"
-  fm_test_deadline=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
-  while [ ! -f "$TMP_ROOT/race-clone.release" ] && [ -d "$TMP_ROOT" ] && [ "$SECONDS" -lt "$fm_test_deadline" ]; do sleep 0.02; done
-  [ "$SECONDS" -lt "$fm_test_deadline" ] || exit 1
+  fm_test_deadline=\$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
+  while [ ! -f "$TMP_ROOT/race-clone.release" ] && [ -d "$TMP_ROOT" ] && [ "\$SECONDS" -lt "\$fm_test_deadline" ]; do sleep 0.02; done
+  [ "\$SECONDS" -lt "\$fm_test_deadline" ] || exit 1
   kill -CONT "\$hold_git" 2>/dev/null || true
   wait "\$hold_git"
   exit \$?
