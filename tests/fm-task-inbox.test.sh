@@ -596,6 +596,68 @@ test_fire_and_forget_retry_is_owed_once() {
   pass "inbox: a fire-and-forget record whose ring did not land is owed exactly one retry"
 }
 
+test_retry_cleanup_preserves_a_concurrent_publication() {
+  local action state first newer cleaner publisher i
+  for action in clear due; do
+    state="$TMP_ROOT/retry-race-$action/state"
+    mkdir -p "$state" "${state%/*}/config"
+    : > "${state%/*}/config/wait-no-turns"
+    first=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 old fire-and-forget)
+    newer=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 new fire-and-forget)
+    inbox_lib "$state" fm_task_inbox_mark_retry "$state" t1 "$first"
+    [ "$action" != due ] || mv "$first" "$state/t1.inbox/handled/"
+    RACE_STATE="$state" FM_CONFIG_OVERRIDE="${state%/*}/config" bash -c '
+      fm_test_track_child "$$"
+      . "$1"
+      cat() {
+        local value deadline=$((SECONDS + 10))
+        value=$(command cat "$@") || return $?
+        if [ "$*" = "$RACE_STATE/t1.inbox/.retry-ring" ]; then
+          : > "$RACE_STATE/read"
+          while [ ! -e "$RACE_STATE/release" ]; do
+            [ "$SECONDS" -lt "$deadline" ] || return 1
+            sleep 0.01
+          done
+        fi
+        printf "%s\n" "$value"
+      }
+      if [ "$3" = clear ]; then
+        fm_task_inbox_clear_retry "$2" t1 "$4"
+      else
+        fm_task_inbox_due_action "$2" t1
+      fi
+    ' _ "$ROOT/bin/fm-task-inbox-lib.sh" "$state" "$action" "$first" > "$state/result" &
+    cleaner=$!
+    fm_test_track_child "$cleaner"
+    for ((i=0; i<300; i++)); do
+      [ ! -e "$state/read" ] || break
+      kill -0 "$cleaner" 2>/dev/null || fail "retry cleaner exited before reading"
+      sleep 0.01
+    done
+    assert_present "$state/read" "retry cleaner did not read its marker"
+    bash -c '
+      fm_test_track_child "$$"
+      . "$1"
+      : > "$2/publishing"
+      fm_task_inbox_mark_retry "$2" t1 "$3"
+    ' _ "$ROOT/bin/fm-task-inbox-lib.sh" "$state" "$newer" &
+    publisher=$!
+    fm_test_track_child "$publisher"
+    for ((i=0; i<300; i++)); do
+      [ ! -e "$state/publishing" ] || break
+      kill -0 "$publisher" 2>/dev/null || fail "retry publisher exited before publication"
+      sleep 0.01
+    done
+    assert_present "$state/publishing" "retry publisher did not start"
+    sleep 0.2
+    : > "$state/release"
+    wait "$cleaner" || fail "retry cleanup failed"
+    wait "$publisher" || fail "retry publication failed"
+    assert_equals "${newer##*/}" "$(cat "$state/t1.inbox/.retry-ring")" "$action cleanup erased a newer retry"
+    pass "retry $action cleanup preserves a concurrent publication"
+  done
+}
+
 # A retry mark is ignored while config/wait-no-turns is absent.
 test_fire_and_forget_retry_is_quiet_without_the_flag() {
   local state fire action
@@ -1194,6 +1256,7 @@ test_writer_retries_after_a_vanished_lock_collision
 test_ladder_writes_ignore_vanished_inbox
 test_fire_and_forget_records_never_enter_the_ladder
 test_fire_and_forget_retry_is_owed_once
+test_retry_cleanup_preserves_a_concurrent_publication
 test_fire_and_forget_retry_is_quiet_without_the_flag
 test_ring_ladder_policy
 test_watcher_rerings_idle_pane_quietly

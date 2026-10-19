@@ -112,6 +112,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 BUILDER_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 LAB_HOME_HELPER="$SCRIPT_DIR/fm-lab-home.sh"
 CLAUDE_TRUST="$SCRIPT_DIR/fm-claude-trust.sh"
+. "$SCRIPT_DIR/fm-backend-hometag-lib.sh"
 RECORD_NAME=.fm-live-lab
 RECORD_TOKEN='fm-live-lab v1'
 PI_TRUST_STORE="$HOME/.pi/agent/trust.json"
@@ -743,7 +744,7 @@ NODE
 
 cmd_down() {
   load_lab "${1:-}"
-  local rc=0 pids pairs pid start survivors n removed added id meta dir home_hash groups pgid own_group caller_group details
+  local rc=0 pids pairs pid start survivors n removed added id meta dir home_hash home_tag groups pgid own_group caller_group details
   local -a ids=()
   pids=$(lab_pids)
   pairs='' groups=''
@@ -789,9 +790,7 @@ cmd_down() {
     die "refusing to remove the lab: its processes did not exit (pid ppid pgid state command): $details"
   fi
   echo "stopped: lab tmux server and lab processes"
-  # A spawn keeps /tmp/fm-<id> and /tmp/fm-<id>+<sha256 of the spawning home>.
-  # The second is scoped to this lab home for any task it spawned; the first is
-  # removed only for the lab's own unique ids, since another home may share it.
+  home_tag=$(fm_backend_tag_for_path "$LAB") || die "cannot resolve the lab home tag"
   home_hash=$(printf '%s' "$LAB" | shasum -a 256 | awk '{print $1}')
   ids=("$MATE_ID" "$WORKER_ID")
   for meta in "$LAB"/state/*.meta; do
@@ -799,7 +798,7 @@ cmd_down() {
   done
   for id in "${ids[@]}"; do
     [ -n "$id" ] || continue
-    for dir in "/tmp/fm-$id+$home_hash" "/tmp/fm-$id"; do
+    for dir in "/tmp/fm-$home_tag/$id" "/tmp/fm-$id+$home_hash" "/tmp/fm-$id"; do
       [ "$dir" != "/tmp/fm-$id" ] || [ "$id" = "$MATE_ID" ] || [ "$id" = "$WORKER_ID" ] || continue
       if [ -d "$dir" ] && [ ! -L "$dir" ] && [ -O "$dir" ]; then
         rm -rf "$dir" && echo "removed: task temp $dir"

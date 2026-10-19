@@ -80,8 +80,13 @@ case "${1:-}" in
         /exit|/quit)
           printf 'zsh' > "$D/command"
           if [ -f "$D/pause-exit" ]; then
+            fm_test_track_child "$$"
+            deadline=$((SECONDS + 15))
             : > "$D/exit-paused"
-            while [ ! -e "$D/release-exit" ]; do /bin/sleep 0.01; done
+            while [ ! -e "$D/release-exit" ]; do
+              [ "$SECONDS" -lt "$deadline" ] || exit 1
+              /bin/sleep 0.01
+            done
           fi
           [ -z "${FM_FAKE_EXIT_TRANSPORT_FAIL_AFTER_STOP:-}" ] || exit 1
           ;;
@@ -252,7 +257,7 @@ run_control() {  # <case-dir> <args...>
     FM_FAKE_TRACE_RELEASE="${FM_FAKE_TRACE_RELEASE:-}" \
     FM_FAKE_META_WRITER_READY="${FM_FAKE_META_WRITER_READY:-}" \
     FM_FAKE_TRACE_EXPORTED="${FM_FAKE_TRACE_EXPORTED:-}" \
-    "$CONTROL" "$@" 2>&1
+    bash -c 'fm_test_track_child "$$"; exec "$@"' _ "$CONTROL" "$@" 2>&1
 }
 
 run_spawn() {  # <case-dir> <args...>
@@ -513,6 +518,7 @@ test_relaunch_serializes_concurrent_durable_metadata_publication() {
     FM_FAKE_TRACE_RELEASE="$launch_release" \
     run_control "$dir" rl28 relaunch --note "continue after publication" > "$dir/control.out" &
   control_pid=$!
+  fm_test_track_child "$control_pid"
   while [ ! -e "$prepare" ] && [ "$i" -lt 500 ]; do
     /bin/sleep 0.01
     i=$((i + 1))

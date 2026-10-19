@@ -26,7 +26,7 @@ run_inbox() {
   local home=$1
   shift
   FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    FM_CONFIG_OVERRIDE="$home/config" "$INBOX_BIN" "$@"
+    FM_CONFIG_OVERRIDE="$home/config" bash -c 'fm_test_track_child "$$"; exec "$@"' _ "$INBOX_BIN" "$@"
 }
 
 run_lock() {
@@ -298,6 +298,27 @@ assert_equals "0" "$(count_wakes "$home")" \
   "an acknowledged note never gets a repair wake"
 pass "repair and replay do not wake firstmate for an already-acknowledged note"
 
+home=$(make_home announced-acked)
+created=$(run_inbox "$home" note --json --request-id announced-acked 'already processed')
+acked_id=$(printf '%s' "$created" | json_get id)
+run_inbox "$home" drain --ack "$acked_id" >/dev/null
+for receipt in note announce; do
+  if [ "$receipt" = note ]; then
+    result=$(run_inbox "$home" note --json --request-id announced-acked 'already processed')
+    human=$(run_inbox "$home" note --request-id announced-acked 'already processed')
+  else
+    result=$(run_inbox "$home" announce --json "$acked_id")
+    human=$(run_inbox "$home" announce "$acked_id")
+  fi
+  assert_equals True "$(printf '%s' "$result" | json_get acknowledged)" "$receipt retains acknowledgement alongside the announcement"
+  assert_equals True "$(printf '%s' "$result" | json_get announced)" "$receipt retains announcement evidence"
+  assert_equals "$home/state/inbox/handled/$acked_id.note" "$(printf '%s' "$result" | json_get path)" "$receipt points to handled state"
+  assert_contains "$human" acknowledged "$receipt reports completed processing"
+  assert_not_contains "$human" 'will pick this up' "$receipt must not promise future processing"
+done
+assert_equals 1 "$(count_wakes "$home")" "acknowledged replays append no wake"
+pass "announced acknowledged notes preserve both independent receipt states"
+
 # --- bounded receipts JSON, omission disclosure, reply cursor ---------------
 
 json_len() {  # <key>
@@ -421,6 +442,7 @@ for representation in pending handled; do
   mkdir -p "$home/fakebin"
   cat > "$home/fakebin/python3" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
 if [ "${1:-}" = - ] && [ "${2:-}" = "$RACE_INBOX" ]; then
   shift
   exec "$RACE_PYTHON" -c '
@@ -431,7 +453,10 @@ def snapshot(folder, pattern):
     paths = list(original_glob(folder, pattern))
     if str(folder) == os.environ["RACE_FOLDER"] and pattern == "*.note":
         Path(os.environ["RACE_READY"]).touch()
+        deadline = time.monotonic() + 15
         while not Path(os.environ["RACE_RELEASE"]).exists():
+            if time.monotonic() >= deadline:
+                raise TimeoutError("receipts fixture release timed out")
             time.sleep(0.01)
     return iter(paths)
 Path.glob = snapshot
@@ -445,6 +470,7 @@ SH
     RACE_FOLDER="$folder" RACE_READY="$home/listed" RACE_RELEASE="$home/release" \
     PATH="$home/fakebin:$PATH" run_inbox "$home" receipts > "$home/first-poll.json" &
   reader=$!
+  fm_test_track_child "$reader"
   waited=0
   while [ ! -e "$home/listed" ] && [ "$waited" -lt 200 ]; do
     sleep 0.01
@@ -463,6 +489,7 @@ SH
     : > "$home/replied"
   ) &
   writer=$!
+  fm_test_track_child "$writer"
   waited=0
   while [ ! -e "$home/replied" ] && [ "$waited" -lt 200 ]; do
     sleep 0.01

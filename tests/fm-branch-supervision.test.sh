@@ -956,7 +956,7 @@ test_unmarked_main_honors_a_live_branch_lease() {
 # A lease file engages the guard's claim serialization for an unmarked caller
 # too, so the branch cannot claim between that caller's check and its mutation.
 test_unmarked_guard_with_a_lease_file_holds_exclusivity_through_mutation() {
-  local home operation_pid claim_pid claim_status
+  local home operation_pid claim_pid claim_status attempt
   home="$TMP_ROOT/unmarked-guard-mutation-home"
   mkdir -p "$home/state"
   printf '%s\n' "$$" > "$home/state/.lock"
@@ -968,6 +968,7 @@ test_unmarked_guard_with_a_lease_file_holds_exclusivity_through_mutation() {
   # assertion below cannot leave it holding the suite open.
   env -u PI_CODING_AGENT -u FM_SUPERVISION_ACTOR CLAUDECODE=1 STATE="$home/state" \
     FM_TEST_READY="$home/operation-ready" FM_TEST_RELEASE="$home/operation-release" bash -c '
+      fm_test_track_child "$$"
       . "$1"
       fm_lease_guard task-race "probe"
       trap "fm_lease_guard_release" EXIT
@@ -976,12 +977,19 @@ test_unmarked_guard_with_a_lease_file_holds_exclusivity_through_mutation() {
       while [ ! -e "$FM_TEST_RELEASE" ] && [ "$i" -lt 1500 ]; do sleep 0.01; i=$((i + 1)); done
     ' _ "$ROOT/bin/fm-lease-lib.sh" >/dev/null 2>&1 &
   operation_pid=$!
-  while [ ! -e "$home/operation-ready" ]; do sleep 0.01; done
+  fm_test_track_child "$operation_pid"
+  for ((attempt=0; attempt<500; attempt++)); do
+    [ ! -e "$home/operation-ready" ] || break
+    kill -0 "$operation_pid" 2>/dev/null || fail "the guarded operation exited before readiness"
+    sleep 0.01
+  done
+  assert_present "$home/operation-ready" "the guarded operation did not become ready"
   [ ! -e "$home/state/.lease-task-race" ] || fail "the unmarked guard kept the dead session's lease"
 
   env -u PI_CODING_AGENT FM_HOME="$home" FM_SUPERVISION_ACTOR=branch FM_LEASE_HOLDER_PID=$$ \
     "$ROOT/bin/fm-lease.sh" claim task-race --actor branch >/dev/null 2>&1 &
   claim_pid=$!
+  fm_test_track_child "$claim_pid"
   sleep 0.2
   kill -0 "$claim_pid" 2>/dev/null \
     || fail "the branch claimed while the unmarked guarded mutation was still running"
@@ -1002,7 +1010,7 @@ test_unmarked_guard_with_a_lease_file_holds_exclusivity_through_mutation() {
 # file opts out; another primary needs the file (bin/fm-supervision-engine-lib.sh
 # owns the gate, and FM_TEST_HARNESS pins the primary it judges).
 test_host_home_unmarked_guard_excludes_the_first_claim() {
-  local home operation_pid claim_pid claim_status out harness line
+  local home operation_pid claim_pid claim_status attempt out harness line
   home="$TMP_ROOT/host-first-claim-home"
   mkdir -p "$home/state" "$home/config"
   printf '%s\n' "$$" > "$home/state/.lock"
@@ -1012,6 +1020,7 @@ test_host_home_unmarked_guard_excludes_the_first_claim() {
   probe_lock() {  # <harness>
     # shellcheck disable=SC2016
     env -u PI_CODING_AGENT -u FM_SUPERVISION_ACTOR CLAUDECODE=1 FM_TEST_HARNESS="$1" FM_HOME="$home" STATE="$home/state" bash -c '
+      fm_test_track_child "$$"
       . "$1"
       fm_lease_guard task-first "probe"
       if [ -e "$STATE/.fm-lease-command.lock" ]; then echo lock-taken; else echo no-lock; fi
@@ -1036,6 +1045,7 @@ test_host_home_unmarked_guard_excludes_the_first_claim() {
   # shellcheck disable=SC2016
   env -u PI_CODING_AGENT -u FM_SUPERVISION_ACTOR CLAUDECODE=1 FM_HOME="$home" STATE="$home/state" \
     FM_TEST_READY="$home/operation-ready" FM_TEST_RELEASE="$home/operation-release" bash -c '
+      fm_test_track_child "$$"
       . "$1"
       fm_lease_guard task-first "probe"
       trap "fm_lease_guard_release" EXIT
@@ -1044,12 +1054,19 @@ test_host_home_unmarked_guard_excludes_the_first_claim() {
       while [ ! -e "$FM_TEST_RELEASE" ] && [ "$i" -lt 1500 ]; do sleep 0.01; i=$((i + 1)); done
     ' _ "$ROOT/bin/fm-lease-lib.sh" >/dev/null 2>&1 &
   operation_pid=$!
-  while [ ! -e "$home/operation-ready" ]; do sleep 0.01; done
+  fm_test_track_child "$operation_pid"
+  for ((attempt=0; attempt<500; attempt++)); do
+    [ ! -e "$home/operation-ready" ] || break
+    kill -0 "$operation_pid" 2>/dev/null || fail "the guarded operation exited before readiness"
+    sleep 0.01
+  done
+  assert_present "$home/operation-ready" "the guarded operation did not become ready"
   [ ! -e "$home/state/.lease-task-first" ] || fail "the guard created a lease for an unleased task"
 
   env -u PI_CODING_AGENT FM_HOME="$home" FM_SUPERVISION_ACTOR=branch FM_LEASE_HOLDER_PID=$$ \
     "$ROOT/bin/fm-lease.sh" claim task-first --actor branch >/dev/null 2>&1 &
   claim_pid=$!
+  fm_test_track_child "$claim_pid"
   sleep 0.2
   kill -0 "$claim_pid" 2>/dev/null \
     || fail "the host branch took the first claim while main's guarded mutation was still running"
@@ -1226,25 +1243,37 @@ SH
 }
 
 test_guard_holds_exclusivity_through_mutation() {
-  local home operation_pid claim_pid claim_status
+  local home operation_pid claim_pid claim_status attempt
   home="$TMP_ROOT/guard-mutation-home"
   mkdir -p "$home/state"
   printf '%s\n' "$$" > "$home/state/.lock"
 
   PI_CODING_AGENT=true STATE="$home/state" FM_TEST_READY="$home/operation-ready" \
     FM_TEST_RELEASE="$home/operation-release" bash -c '
+      fm_test_track_child "$$"
       . "$1"
       fm_lease_guard task-race "probe"
       trap "fm_lease_guard_release" EXIT
       : > "$FM_TEST_READY"
-      while [ ! -e "$FM_TEST_RELEASE" ]; do sleep 0.01; done
+      deadline=$((SECONDS + 15))
+      while [ ! -e "$FM_TEST_RELEASE" ]; do
+        [ "$SECONDS" -lt "$deadline" ] || exit 1
+        sleep 0.01
+      done
     ' _ "$ROOT/bin/fm-lease-lib.sh" &
   operation_pid=$!
-  while [ ! -e "$home/operation-ready" ]; do sleep 0.01; done
+  fm_test_track_child "$operation_pid"
+  for ((attempt=0; attempt<500; attempt++)); do
+    [ ! -e "$home/operation-ready" ] || break
+    kill -0 "$operation_pid" 2>/dev/null || fail "the guarded operation exited before readiness"
+    sleep 0.01
+  done
+  assert_present "$home/operation-ready" "the guarded operation did not become ready"
 
   PI_CODING_AGENT=true FM_HOME="$home" FM_SUPERVISION_ACTOR=branch FM_LEASE_HOLDER_PID=$$ \
     "$ROOT/bin/fm-lease.sh" claim task-race --actor branch >/dev/null 2>&1 &
   claim_pid=$!
+  fm_test_track_child "$claim_pid"
   sleep 0.2
   kill -0 "$claim_pid" 2>/dev/null \
     || fail "the other actor claimed while the guarded mutation was still running"

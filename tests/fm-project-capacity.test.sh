@@ -612,15 +612,21 @@ SH
     . "$1/bin/fm-wake-lib.sh"
     lock=$(fm_treehouse_project_lock_path "$2") || exit 1
     fm_lock_try_acquire "$lock" || exit 1
+    fm_test_track_child "$$"
+    deadline=$((SECONDS + 15))
     : > "$3.held"
-    while [ ! -f "$3.release" ]; do sleep 0.05; done
+    while [ ! -f "$3.release" ]; do
+      [ "$SECONDS" -lt "$deadline" ] || exit 1
+      sleep 0.05
+    done
     fm_lock_release "$lock"
   ' _ "$ROOT" "$case_dir/project" "$case_dir/holder" &
   holder=$!
+  fm_test_track_child "$holder"
   i=0
   while [ ! -f "$case_dir/holder.held" ]; do
     i=$((i + 1))
-    [ "$i" -lt 200 ] || fail "the lock holder never took the project lock"
+    kill -0 "$holder" 2>/dev/null && [ "$i" -lt 200 ] || fail "the lock holder never took the project lock"
     sleep 0.05
   done
   out=$(run_spawn "$case_dir" "$home" "$case_dir/unused" task-o "$case_dir/project" \

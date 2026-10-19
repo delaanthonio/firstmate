@@ -18,6 +18,7 @@ KIMI_HOOK="$ROOT/bin/fm-kimi-turnend-hook.sh"
 TMP_ROOT=$(fm_test_tmproot fm-kimi-harness)
 KIMI_RUNTIME_TASK_TMP=
 KIMI_RUNTIME_LAUNCH_DIR=
+KIMI_FOREIGN_LAUNCH_DIR=
 PYTHON_BIN=$(python3 -c 'import sys; print(sys.executable)') || fail "test needs python3"
 PYTHON_BIN_DIR=$(dirname "$PYTHON_BIN")
 JQ_BIN=$(command -v jq) || fail "test needs jq"
@@ -33,6 +34,7 @@ task_inbox_export() {  # <home> <id>
 cleanup_kimi_harness() {
   [ -z "$KIMI_RUNTIME_TASK_TMP" ] || fm_test_remove_tree "$KIMI_RUNTIME_TASK_TMP"
   [ -z "$KIMI_RUNTIME_LAUNCH_DIR" ] || fm_test_remove_tree "$KIMI_RUNTIME_LAUNCH_DIR"
+  [ -z "$KIMI_FOREIGN_LAUNCH_DIR" ] || fm_test_remove_tree "$KIMI_FOREIGN_LAUNCH_DIR"
   fm_test_remove_tree "$TMP_ROOT"
 }
 trap cleanup_kimi_harness EXIT
@@ -735,7 +737,9 @@ test_kimi_teardown_removes_pointer_and_registry_token() {
   read_spawn_record "$rec"
   launch_dir=$(kimi_launch_dir "$id" "$HOME_DIR")
   KIMI_RUNTIME_LAUNCH_DIR=$launch_dir
-  foreign_dir="/tmp/fm-$id+zzzzzzzz"
+  mkdir -p "$CASE_DIR/foreign-home"
+  foreign_dir=$(kimi_launch_dir "$id" "$CASE_DIR/foreign-home")
+  KIMI_FOREIGN_LAUNCH_DIR=$foreign_dir
   out=$(run_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id")
   rc=$?
   expect_code 0 "$rc" "Kimi spawn should succeed before teardown"

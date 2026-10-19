@@ -1764,6 +1764,8 @@ test_pi_confirm_failure_spares_a_newer_arm() {
   plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
+deadline=$((SECONDS + 15))
 if [ "${1:-}" = --handling-delivered ]; then
   printf 'refused generation=%s watcher=%s\n' "$2" "$4" >> "${FM_ARM_LOG:?}"
   exit 1
@@ -1777,20 +1779,24 @@ if [ "$count" -eq 1 ]; then
 fi
 if [ "$count" -eq 2 ]; then
   sleep 0 & dead=$!; wait "$dead" 2>/dev/null || true
-  (
-    while [ ! -e "${FM_GO_FILE:?}" ]; do sleep 0.02; done
-    printf 'watcher: started pid=%s (beacon fresh) recovery-generation=fixture-stale\n' "$dead"
-    while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.05; done
-  ) &
+  bash -c '
+    fm_test_track_child "$$"
+    deadline=$((SECONDS + 15))
+    while [ ! -e "${FM_GO_FILE:?}" ]; do [ "$SECONDS" -lt "$deadline" ] || exit 1; sleep 0.02; done
+    printf "watcher: started pid=%s (beacon fresh) recovery-generation=fixture-stale\n" "$1"
+    while [ ! -e "$FM_STOP_FILE" ]; do [ "$SECONDS" -lt "$deadline" ] || exit 1; sleep 0.05; done
+  ' _ "$dead" &
+  fm_test_track_child "$!"
   exit 0
 fi
 printf 'watcher: started pid=%s (beacon fresh) recovery-generation=fixture-newer\n' "$$"
 trap 'printf "retired\n" > "${FM_RETIRED_FILE:?}"; exit 0' TERM INT
-while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+while [ ! -e "$FM_STOP_FILE" ]; do [ "$SECONDS" -lt "$deadline" ] || exit 1; sleep 0.02; done
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
   out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_STOP_FILE="$stop" FM_GO_FILE="$go" FM_RETIRED_FILE="$retired" node --input-type=module 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+setTimeout(() => process.exit(1), 25000).unref();
 import { pathToFileURL } from "node:url";
 
 let tool = null;
@@ -2152,11 +2158,15 @@ test_pi_repair_starts_fresh_arm_over_dead_child() {
   plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
   cat > "$holder" <<'SH'
 #!/usr/bin/env bash
-while [ ! -e "${1:?}" ]; do sleep 0.05; done
+fm_test_track_child "$$"
+deadline=$((SECONDS + 15))
+while [ ! -e "${1:?}" ]; do [ "$SECONDS" -lt "$deadline" ] || exit 1; sleep 0.05; done
 SH
   chmod +x "$holder"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
+deadline=$((SECONDS + 15))
 printf 'arm=%s predecessor=%s\n' "$$" "${FM_WATCH_PREDECESSOR_ARM_PID:-none}" >> "${FM_ARM_LOG:?}"
 count=$(grep -c '^arm=' "$FM_ARM_LOG")
 if [ "$count" -eq 1 ]; then
@@ -2166,11 +2176,12 @@ if [ "$count" -eq 1 ]; then
 fi
 printf 'watcher: started pid=%s (beacon fresh) recovery-generation=fixture-generation\n' "$$"
 trap 'exit 0' TERM INT
-while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+while [ ! -e "$FM_STOP_FILE" ]; do [ "$SECONDS" -lt "$deadline" ] || exit 1; sleep 0.02; done
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
   out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_STOP_FILE="$stop" FM_HOLDER="$holder" node --input-type=module 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+setTimeout(() => process.exit(1), 25000).unref();
 import { pathToFileURL } from "node:url";
 
 let tool = null;
@@ -2252,23 +2263,28 @@ test_pi_scheduled_retry_starts_fresh_arm_over_dead_child() {
   plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
+deadline=$((SECONDS + 15))
 printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
 count=$(grep -c '^arm=' "$FM_ARM_LOG")
 printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
 if [ "$count" -eq 1 ]; then
-  (while [ ! -e "${FM_RELEASE_FILE:?}" ]; do sleep 0.02; done) &
+  bash -c 'fm_test_track_child "$$"; deadline=$((SECONDS + 15)); while [ ! -e "${FM_RELEASE_FILE:?}" ]; do [ "$SECONDS" -lt "$deadline" ] || exit 1; sleep 0.02; done' &
+  fm_test_track_child "$!"
   exit 0
 fi
 if [ "$count" -eq 2 ]; then
-  (while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.05; done) &
+  bash -c 'fm_test_track_child "$$"; deadline=$((SECONDS + 15)); while [ ! -e "$FM_STOP_FILE" ]; do [ "$SECONDS" -lt "$deadline" ] || exit 1; sleep 0.05; done' &
+  fm_test_track_child "$!"
   exit 0
 fi
 trap 'exit 0' TERM INT
-while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+while [ ! -e "$FM_STOP_FILE" ]; do [ "$SECONDS" -lt "$deadline" ] || exit 1; sleep 0.02; done
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
   out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_STOP_FILE="$stop" FM_RELEASE_FILE="$release" FM_WATCH_REARM_RETRY_BASE_MS=20 node --input-type=module 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+setTimeout(() => process.exit(1), 25000).unref();
 import { pathToFileURL } from "node:url";
 
 let tool = null;
@@ -2341,6 +2357,8 @@ test_pi_deferred_close_starts_fresh_arm_over_dead_child() {
   plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+fm_test_track_child "$$"
+deadline=$((SECONDS + 15))
 if [ "${1:-}" = --handling-delivered ]; then
   exit 0
 fi
@@ -2353,20 +2371,22 @@ if [ "$count" -eq 1 ]; then
 fi
 if [ "$count" -eq 2 ]; then
   printf 'watcher: started pid=%s (beacon fresh) recovery-generation=fixture-generation\n' "$$"
-  while [ ! -e "${FM_RELEASE_FILE:?}" ]; do sleep 0.02; done
+  while [ ! -e "${FM_RELEASE_FILE:?}" ]; do [ "$SECONDS" -lt "$deadline" ] || exit 1; sleep 0.02; done
   exit 0
 fi
 printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
 if [ "$count" -eq 3 ]; then
-  (while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.05; done) &
+  bash -c 'fm_test_track_child "$$"; deadline=$((SECONDS + 15)); while [ ! -e "$FM_STOP_FILE" ]; do [ "$SECONDS" -lt "$deadline" ] || exit 1; sleep 0.05; done' &
+  fm_test_track_child "$!"
   exit 0
 fi
 trap 'exit 0' TERM INT
-while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+while [ ! -e "$FM_STOP_FILE" ]; do [ "$SECONDS" -lt "$deadline" ] || exit 1; sleep 0.02; done
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
   out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_STOP_FILE="$stop" FM_RELEASE_FILE="$release" FM_WATCH_REARM_RETRY_BASE_MS=20 node --input-type=module 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+setTimeout(() => process.exit(1), 25000).unref();
 import { pathToFileURL } from "node:url";
 
 let tool = null;
