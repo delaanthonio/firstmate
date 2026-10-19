@@ -58,6 +58,12 @@ count_wakes() {
   fi
 }
 
+home=$(make_home empty-receipts)
+empty=$(run_inbox "$home" receipts)
+assert_equals "[]" "$(printf '%s' "$empty" | json_get replies)" "a fresh home has no replies"
+assert_equals "0" "$(count_wakes "$home")" "reading empty receipts must not enqueue a wake"
+pass "empty receipts return without creating a wake"
+
 # --- human note path is unchanged without the new flags ---------------------
 
 home=$(make_home human)
@@ -368,6 +374,79 @@ set -e
 expect_code 1 "$conflict_code" "a second reply for the same note is refused"
 assert_contains "$conflict" "already recorded" "the refusal names the existing record"
 pass "the reply channel is durable and its cursor is a strict order"
+
+for representation in pending handled; do
+  home=$(make_home "receipt-race-$representation")
+  first=$(run_inbox "$home" note --json --request-id snapshot-a 'snapshot A')
+  first_id=$(printf '%s' "$first" | json_get id)
+  folder="$home/state/inbox"
+  if [ "$representation" = handled ]; then
+    run_inbox "$home" drain --ack "$first_id" >/dev/null
+    folder="$folder/handled"
+  fi
+  mkdir -p "$home/fakebin"
+  cat > "$home/fakebin/python3" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = - ] && [ "${2:-}" = "$RACE_INBOX" ]; then
+  shift
+  exec "$RACE_PYTHON" -c '
+import os, sys, time
+from pathlib import Path
+original_glob = Path.glob
+def snapshot(folder, pattern):
+    paths = list(original_glob(folder, pattern))
+    if str(folder) == os.environ["RACE_FOLDER"] and pattern == "*.note":
+        Path(os.environ["RACE_READY"]).touch()
+        while not Path(os.environ["RACE_RELEASE"]).exists():
+            time.sleep(0.01)
+    return iter(paths)
+Path.glob = snapshot
+exec(compile(sys.stdin.read(), "<receipts>", "exec"))
+' "$@"
+fi
+exec "$RACE_PYTHON" "$@"
+SH
+  chmod +x "$home/fakebin/python3"
+  RACE_PYTHON="$(python3 -c 'import sys; print(sys.executable)')" RACE_INBOX="$home/state/inbox" \
+    RACE_FOLDER="$folder" RACE_READY="$home/listed" RACE_RELEASE="$home/release" \
+    PATH="$home/fakebin:$PATH" run_inbox "$home" receipts > "$home/first-poll.json" &
+  reader=$!
+  waited=0
+  while [ ! -e "$home/listed" ] && [ "$waited" -lt 200 ]; do
+    sleep 0.01
+    waited=$((waited + 1))
+  done
+  if [ ! -e "$home/listed" ]; then
+    : > "$home/release"
+    wait "$reader" || true
+    fail "the receipts fixture did not reach its note snapshot"
+  fi
+  second=$(run_inbox "$home" note --json --request-id snapshot-b 'snapshot B')
+  second_id=$(printf '%s' "$second" | json_get id)
+  (
+    run_inbox "$home" reply "$second_id" 'reply B' >/dev/null
+    run_inbox "$home" reply "$first_id" 'reply A' >/dev/null
+    : > "$home/replied"
+  ) &
+  writer=$!
+  waited=0
+  while [ ! -e "$home/replied" ] && [ "$waited" -lt 200 ]; do
+    sleep 0.01
+    waited=$((waited + 1))
+  done
+  : > "$home/release"
+  wait "$reader" || fail "receipts snapshot failed"
+  wait "$writer" || fail "concurrent replies failed"
+  cursor=$(json_get reply_cursor < "$home/first-poll.json")
+  run_inbox "$home" receipts --after "$cursor" > "$home/second-poll.json"
+  python3 - "$home/first-poll.json" "$home/second-poll.json" "$first_id" "$second_id" <<'PYTHON'
+import json, sys
+first, second = [json.load(open(path)) for path in sys.argv[1:3]]
+seen = [reply["id"] for poll in (first, second) for reply in poll["replies"]]
+assert sorted(seen) == sorted(sys.argv[3:5]), (seen, first, second)
+PYTHON
+  pass "incremental receipts retain both concurrent replies across the $representation snapshot"
+done
 
 # A lost sequence counter must not move the cursor backwards: the next reply
 # still sorts after every reply a client has already read.

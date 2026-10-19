@@ -14,7 +14,7 @@ set -u
 # shellcheck source=tests/fixtures.sh
 . "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
 
-fm_live_gate opt-in FM_POLYTOKEN_SIGNALS_LIVE polytoken tmux jq curl git
+fm_live_gate opt-in FM_POLYTOKEN_SIGNALS_LIVE polytoken tmux jq curl git ruby
 
 # shellcheck source=bin/fm-polytoken-lib.sh
 . "$ROOT/bin/fm-polytoken-lib.sh"
@@ -95,8 +95,8 @@ git -C "$WT" checkout -qb polytoken-live || fail "could not branch the scratch c
 mkdir -p "$U/.config/polytoken" "$U/.local/share/polytoken" "$LAB/bin"
 # Keep provider/model configuration, but do not start operator MCP services
 # from a disposable lab (those services may write outside the isolated HOME).
-awk '/^[^[:space:]#][^:]*:/ {skip=($0 ~ /^mcp_servers:/)} !skip {print}' \
-  "$GLOBAL_CFG" > "$U/.config/polytoken/config.yaml" || fail "could not stage the polytoken config copy"
+ruby "$ROOT/tests/polytoken-config-stage.rb" "$GLOBAL_CFG" "$U/.config/polytoken/config.yaml" \
+  || fail "could not stage the polytoken config copy"
 chmod 600 "$U/.config/polytoken/config.yaml"
 cp "$LICENSE_ACCEPT" "$U/.local/share/polytoken/license-acceptance.json" \
   || fail "could not stage the operator license acceptance copy"

@@ -154,8 +154,12 @@ writer_in_scope() {
   fm_primary_scope_matches "$FM_ROOT" "$STATE" && fm_session_lock_owned_by_self "$STATE"
 }
 
+# shellcheck source=bin/fm-operational-input.sh
+. "$SCRIPT_DIR/fm-operational-input.sh"
+
 operational() {  # <text>
-  printf '%s' "$1" | "$SCRIPT_DIR/fm-operational-input.sh" classify >/dev/null 2>&1
+  local kind
+  fm_operational_input_classify "$1" kind || fm_operational_doorbell_kind "$1" "$STATE" kind
 }
 
 # Append one entry. The caller holds nothing; this takes the mirror lock.

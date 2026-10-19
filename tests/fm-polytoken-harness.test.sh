@@ -359,6 +359,23 @@ abort "expected #{expected.inspect}, got #{actual.inspect}" unless actual == exp
 RUBY
 }
 
+test_polytoken_lab_config_excludes_normalized_mcp_keys() {
+  local rec case_dir spelling before
+  rec=$(make_wiring_case lab-config)
+  case_dir=$rec
+  for spelling in mcp_servers '"mcp_servers"' "'mcp_servers'" '"mcp_\u0073ervers"'; do
+    printf 'version: 4\nproviders:\n  zai:\n    auth: {type: static_key, key: fixture}\nmodels: {zai/glm-5.3-flash: {enabled: true}}\n%s: {operator-service: {command: touch, args: [outside-lab]}}\n' \
+      "$spelling" > "$case_dir/source.yaml"
+    before=$(cksum "$case_dir/source.yaml")
+    ruby "$ROOT/tests/polytoken-config-stage.rb" "$case_dir/source.yaml" "$case_dir/staged.yaml" \
+      || fail "the lab config must stage without operator MCP definitions"
+    assert_generated_yaml "$case_dir/staged.yaml" \
+      '{"version":4,"providers":{"zai":{"auth":{"type":"static_key","key":"fixture"}}},"models":{"zai/glm-5.3-flash":{"enabled":true}}}'
+    [ "$(cksum "$case_dir/source.yaml")" = "$before" ] || fail "staging modified the operator config"
+  done
+  pass "the Polytoken lab strips plain, quoted, and escaped MCP keys while preserving providers and models"
+}
+
 test_polytoken_write_config_enforces_the_unattended_posture() {
   local rec case_dir home cfgdir out rc
   rec=$(make_wiring_case config)
@@ -1196,6 +1213,7 @@ test_polytoken_busy_footer_needs_the_pinned_running_row
 test_polytoken_composer_is_the_verified_separated_shape
 test_polytoken_busy_queued_enter_converts_like_opencode
 test_polytoken_tmux_submit_is_acknowledged_by_its_running_row
+test_polytoken_lab_config_excludes_normalized_mcp_keys
 test_polytoken_write_config_enforces_the_unattended_posture
 test_polytoken_write_facet_carries_the_role_contract_without_a_model_pin
 test_polytoken_busy_writer_dispatches_without_argv_and_never_fails

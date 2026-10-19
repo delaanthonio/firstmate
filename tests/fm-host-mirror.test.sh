@@ -157,9 +157,9 @@ test_writers_are_inert_on_a_home_that_opted_out() {
 test_operational_foreign_and_unowned_input_is_dropped() {
   local home other
   home=$(make_home dropped)
-  as_session "$home" '
-    printf "%s" "{\"hook_event_name\":\"UserPromptSubmit\",\"prompt\":\"\342\201\243FIRSTMATE_OP: v1 watcher: signal: demo.status\"}" \
-      | FM_ROOT_OVERRIDE="$PRIMARY_ROOT" "$MIRROR" hook claude
+  as_session "$home" "$SAY"'
+    message=$(printf "\342\201\243FIRSTMATE_OP: v1 watcher: signal: demo.status")
+    say captain "$message" operational
     printf "%s" "{\"hook_event_name\":\"UserPromptSubmit\",\"prompt\":\"from cursor\",\"cursor_version\":\"x\"}" \
       | FM_ROOT_OVERRIDE="$PRIMARY_ROOT" "$MIRROR" hook claude
     printf "%s" "{\"hook_event_name\":\"PreToolUse\",\"prompt\":\"not dialog\"}" \
@@ -180,6 +180,40 @@ test_operational_foreign_and_unowned_input_is_dropped() {
   kill "$(cat "$other/state/.lock")" 2>/dev/null || true
   assert_absent "$other/state/.host-mirror.jsonl" "a session that does not hold the fleet lock must mirror nothing"
   pass "mirror: operational input, a harness-started turn, a foreign host's payload, other events, and a session without the lock are never mirrored"
+}
+
+test_home_bound_operational_doorbells_are_not_dialog() {
+  local home other foreign out harness
+  other=$(make_home foreign-doorbell)
+  foreign=$(printf 'foreign wake' | FM_HOME="$other" "$ROOT/bin/fm-operational-input.sh" record watcher)
+  for harness in claude cursor; do
+    home=$(make_home "doorbell-$harness")
+    out=$(FOREIGN_DOORBELL="$foreign" MIRROR_HARNESS="$harness" as_session "$home" '
+      say() {
+        if [ "$MIRROR_HARNESS" = claude ]; then event=UserPromptSubmit; else event=beforeSubmitPrompt; fi
+        jq -cn --arg event "$event" --arg text "$1" "{hook_event_name: \$event, prompt: \$text}" \
+          | FM_ROOT_OVERRIDE="$PRIMARY_ROOT" "$MIRROR" hook "$MIRROR_HARNESS"
+      }
+      for kind in watcher away-supervisor; do
+        bell=$(printf "local wake" | "$PRIMARY_ROOT/bin/fm-operational-input.sh" record "$kind")
+        say "$bell"
+      done
+      say "$FOREIGN_DOORBELL"
+      . "$PRIMARY_ROOT/bin/fm-operational-input.sh"
+      missing=$(printf "missing wake" | "$PRIMARY_ROOT/bin/fm-operational-input.sh" record watcher)
+      fm_operational_doorbell_path "$missing" record
+      rm "$record"
+      say "$missing"
+      say "ordinary captain text"
+      "$MIRROR" feed fixture-session new
+    ') || fail "doorbell mirroring failed for $harness"
+    assert_equals 3 "$(jq -s length "$home/state/.host-mirror.jsonl")" \
+      "only foreign, missing, and ordinary messages may be mirrored"
+    assert_contains "$out" '[captain] ordinary captain text' "ordinary dialog must reach the supervision feed"
+    assert_not_contains "$out" 'local wake' "local operational records must stay out of the feed"
+    assert_contains "$out" "$foreign" "a foreign record must not be treated as home-bound operational input"
+  done
+  pass "Claude and Cursor drop validated local operational doorbells and preserve foreign or missing records as dialog"
 }
 
 # Dialog is recorded as said: a line ending in spaces, blank lines, and
@@ -463,6 +497,7 @@ test_only_proven_writers_are_verified
 test_home_that_opted_out_is_untouched
 test_home_without_the_file_mirrors_only_claude
 test_operational_foreign_and_unowned_input_is_dropped
+test_home_bound_operational_doorbells_are_not_dialog
 test_internal_whitespace_is_recorded_verbatim
 test_entries_are_deduplicated_and_capped
 test_a_different_reply_under_the_same_id_is_recorded

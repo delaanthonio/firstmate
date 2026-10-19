@@ -159,8 +159,8 @@ test_claude_pin_selects_the_root_and_sheds_ambient_credentials() {
   assert_grep "account=$CASE/work" "$HOME_DIR/state/$id.meta" "the task record should carry the pinned account"
   [ "$(cat "$CASE/claude-checks")" = "$CASE/work" ] \
     || fail "the sign-in check should ask about the pinned root only: $(cat "$CASE/claude-checks")"
-  assert_contains "$(cat "$CASE/work/.claude.json" 2>/dev/null)" "$WT" \
-    "workspace trust should be registered in the pinned root's store"
+  jq -e --arg path "$WT" '.projects[$path].hasTrustDialogAccepted == true' \
+    "$CASE/work/.claude.json" >/dev/null || fail "the pinned store must accept trust for this worktree"
   assert_absent "$CASE/ambient-claude/.claude.json" "the ambient Claude store must not receive the trust entry"
   run_pane
   assert_grep "CLAUDE_CONFIG_DIR=$CASE/work" "$CASE/claude-worker" "the worker should run under the pinned root"
@@ -196,8 +196,8 @@ test_claude_ordinary_pin_unsets_the_config_root() {
   assert_contains "$out" "account=ordinary" "the spawn should report the ordinary account"
   [ "$(cat "$CASE/claude-checks")" = unset ] \
     || fail "the ordinary check must run with CLAUDE_CONFIG_DIR unset: $(cat "$CASE/claude-checks")"
-  assert_contains "$(cat "$HOME_DIR/user-home/.claude.json" 2>/dev/null)" "$WT" \
-    "ordinary trust should land in the default ~/.claude.json store"
+  jq -e --arg path "$WT" '.projects[$path].hasTrustDialogAccepted == true' \
+    "$HOME_DIR/user-home/.claude.json" >/dev/null || fail "the ordinary store must accept trust for this worktree"
   assert_absent "$CASE/ambient-claude/.claude.json" "the ambient Claude store must not receive the trust entry"
   run_pane
   assert_grep "CLAUDE_CONFIG_DIR=unset" "$CASE/claude-worker" \

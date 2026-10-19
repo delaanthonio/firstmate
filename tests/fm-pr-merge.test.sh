@@ -2390,6 +2390,35 @@ test_forgejo_combined_status_reads_every_page() {
   pass "fm-pr-merge reads every Forgejo combined-status page before merging"
 }
 
+test_forgejo_invalid_status_pages_refuse() {
+  local page payload case_dir rc n=0
+  for page in 2 1; do
+    for payload in '{"message":"upstream failure"}' '{}' '{"state":"success","statuses":null}' \
+      '{"state":"success","statuses":{}}' '{"statuses":[]}' '{"state":null,"statuses":[]}' \
+      '{"state":"failure","statuses":[]}' '{"state":"","statuses":[{}]}' \
+      '{"state":"success\ncount=0","statuses":[{}]}'; do
+      n=$((n + 1))
+      case_dir=$(make_forgejo_case "forgejo-invalid-status-$n")
+      if [ "$page" = 1 ]; then
+        printf '%s\n' "$payload" > "$case_dir/tea-status.json"
+      else
+        printf '%s\n' "$payload" > "$case_dir/tea-status-page2.json"
+      fi
+      rc=0
+      run_pr_merge "$case_dir" task-x1 "$FJ_URL" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+      expect_code 1 "$rc" "invalid status page $page must refuse: $payload"
+      assert_grep 'the combined commit status is "unreadable", not success' "$case_dir/stderr" \
+        "invalid status page must be unreadable"
+      [ -z "$(tea_merge_line "$case_dir/tea.log")" ] || fail "invalid status page authorized a merge"
+    done
+  done
+  case_dir=$(make_forgejo_case forgejo-empty-success-page)
+  printf '{"state":"success","statuses":[]}\n' > "$case_dir/tea-status-page2.json"
+  run_pr_merge "$case_dir" task-x1 "$FJ_URL" > "$case_dir/stdout" 2> "$case_dir/stderr" \
+    || fail "a valid empty successful termination page must remain accepted"
+  pass "Forgejo malformed first and later status pages refuse while valid empty pages terminate"
+}
+
 test_forgejo_stale_recorded_head_is_reported() {
   local case_dir rc merge_line
   case_dir=$(make_forgejo_case forgejo-stale-head)
@@ -2982,6 +3011,7 @@ test_forgejo_refuses_when_login_is_ambiguous
 test_forgejo_each_condition_refuses_independently
 test_forgejo_unconfigured_ci_refuses_as_none
 test_forgejo_combined_status_reads_every_page
+test_forgejo_invalid_status_pages_refuse
 test_forgejo_stale_recorded_head_is_reported
 test_forgejo_invalid_head_refuses
 test_forgejo_missing_tool_refuses_before_recording
