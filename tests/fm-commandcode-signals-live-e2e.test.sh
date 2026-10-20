@@ -66,7 +66,15 @@ ln -s "$COMMANDCODE_BIN" "$fakebin/commandcode"
 FM_FAKE_LAUNCH_LOG="$LAB/launch.sh" fm_test_run_spawn "$H" "$WT" "$fakebin" "$ID" "$PROJ" \
   --scout --harness commandcode --model "$MODEL" --effort low > "$LAB/spawn.log" 2>&1 \
   || fail "fm-spawn failed: $(cat "$LAB/spawn.log")"
-grep -q -- "--effort 'low'" "$LAB/launch.sh" || fail 'the verified low effort was not passed'
+launch=$(cat "$LAB/launch.sh") || fail 'could not read the captured launch command'
+case "$MODEL" in
+  deepseek/deepseek-v4.1-flash)
+    assert_contains "$launch" "--effort 'low'" 'the verified low effort was not passed'
+    ;;
+  *)
+    assert_not_contains "$launch" '--effort' 'an unverified model received an effort flag'
+    ;;
+esac
 # Route every backend read/write to this guard's own socket only.
 printf '#!/bin/sh\nexec "%s" -S "%s" "$@"\n' "$REAL_TMUX" "$SOCKET" > "$LAB/bin/tmux"
 chmod +x "$LAB/bin/tmux"
