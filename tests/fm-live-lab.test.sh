@@ -34,6 +34,65 @@ live_lab_cleanup() {
 }
 trap live_lab_cleanup EXIT
 
+. "$ROOT/bin/fm-timeout-lib.sh"
+
+test_live_lab_option_values() {
+  local dir fakebin command option out rc
+  dir="$TMP_ROOT/parser"; fakebin="$dir/fakebin"
+  mkdir -p "$fakebin" "$dir/lab/home" "$dir/user"
+  printf 'fm-live-lab v1\nhome=%s\ntmux_dir=%s\n' "$dir/lab/home" "$dir/tmux" > "$dir/lab/.fm-live-lab"
+  cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FM_PARSER_LOG"
+case "$1" in
+  list-windows) printf 'main\t@7\n' ;;
+  capture-pane) printf 'fixture pane\n' ;;
+  send-keys) ;;
+  *) exit 91 ;;
+esac
+SH
+  printf '#!/bin/sh\nprintf "unexpected herdr call\\n" >> "$FM_PARSER_LOG"\nexit 91\n' > "$fakebin/herdr"
+  chmod +x "$fakebin/tmux" "$fakebin/herdr"
+  while read -r command option; do
+    if [ "$command" = up ]; then set -- up "$option"
+    else set -- "$command" "$dir/lab" "$option"; fi
+    rc=0
+    out=$(HOME="$dir/user" PATH="$fakebin:$PATH" FM_PARSER_LOG="$dir/backend.log" \
+      fm_run_timed 3 bash "$LIVE_LAB" "$@" 2>&1) || rc=$?
+    [ "$rc" -eq 1 ] || fail "$command $option did not promptly refuse its missing value (status $rc)"
+    assert_contains "$out" "$option requires a value" "$command did not name its missing option value"
+    [ ! -e "$dir/backend.log" ] || fail "$command $option reached a backend before rejecting invalid input"
+  done <<'ROWS'
+up --harness
+up --model
+up --effort
+up --supervision-host
+up --expect-host
+up --source
+up --ref
+up --timeout
+pane --window
+pane --lines
+say --window
+ROWS
+  out=$(HOME="$dir/user" PATH="$fakebin:$PATH" FM_PARSER_LOG="$dir/backend.log" \
+    fm_run_timed 3 bash "$LIVE_LAB" up --harness pi --model fixture --effort low \
+    --supervision-host off --expect-host no --source "$dir" --ref HEAD --timeout 3 --help) \
+    || fail "valid up option values did not reach help"
+  assert_contains "$out" 'Usage:' "valid up options lost the help output"
+  [ ! -e "$dir/backend.log" ] || fail "up help reached a backend"
+  out=$(HOME="$dir/user" PATH="$fakebin:$PATH" FM_PARSER_LOG="$dir/backend.log" \
+    bash "$LIVE_LAB" pane "$dir/lab" --window main --lines 7) || fail "valid pane options failed"
+  [ "$out" = 'fixture pane' ] || fail "valid pane options lost the captured output"
+  grep -Fx 'capture-pane -p -J -t @7 -S -7' "$dir/backend.log" >/dev/null || fail "pane did not consume its option values"
+  HOME="$dir/user" PATH="$fakebin:$PATH" FM_PARSER_LOG="$dir/backend.log" \
+    bash "$LIVE_LAB" say "$dir/lab" --window main 'fixture message' || fail "valid say window failed"
+  grep -Fx 'send-keys -t @7 -l fixture message' "$dir/backend.log" >/dev/null || fail "say did not consume its window value"
+  pass "live-lab value-taking options reject missing arguments before backend calls"
+}
+
+test_live_lab_option_values
+
 command -v tmux >/dev/null 2>&1 || { echo "ok - skipped: tmux is not installed"; exit 0; }
 
 FAKE_HOME="$TMP_ROOT/fakehome"

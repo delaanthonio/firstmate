@@ -2079,7 +2079,9 @@ surface_nonterminal_stale() {  # <window> <hash> [dialog-name] [terminal-receipt
   task=$(window_to_task "$win" "$STATE")
   last=$(status_declared_wait_line "$STATE/$task.status")
   STALE_WAIT_DECLARATION=
-  if status_is_paused "$last"; then
+  if [ -n "$receipt" ]; then
+    declared=0
+  elif status_is_paused "$last"; then
     declared=0
     bounded=0
     STALE_WAIT_DECLARATION=$(stale_wait_declaration "$task")
@@ -3381,13 +3383,9 @@ EOF
               paused)
                 handle_paused_stale "$w" "$task" "$h"
                 ;;
-              terminal:*:*)
-                clear_pause_state "$key"
-                surface_nonterminal_stale "$w" "$h" "$dialog" "$pause_class"
-                ;;
               terminal:*)
                 clear_pause_state "$key"
-                surface_nonterminal_stale "$w" "$h"
+                surface_nonterminal_stale "$w" "$h" "$dialog" "$pause_class"
                 ;;
               *)
                 surface_nonterminal_stale "$w" "$h" "$dialog"
@@ -3412,7 +3410,7 @@ EOF
                          fi ;;
                 terminal:*)
                          clear_pause_state "$key"
-                         surface_nonterminal_stale "$w" "$h" ;;
+                         surface_nonterminal_stale "$w" "$h" "$dialog" "$pause_class" ;;
                 *)       if [ -e "$STATE/.paused-resurfaced-$key" ]; then
                            handle_paused_stale "$w" "$task" "$h"
                          else

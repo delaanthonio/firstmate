@@ -2620,7 +2620,10 @@ test_unchanged_hash_terminal_run_newer_than_pause_surfaces_once() {
   window="test:fm-paused-run-failed"
   printf 'idle after terminal run failure\n' > "$capture_file"
   printf 'window=%s\nkind=ship\n' "$window" > "$state/paused-run-failed.meta"
-  printf 'paused: waiting for upstream\n' > "$state/paused-run-failed.status"
+  printf 'paused [key=wait]: waiting for upstream until %s\nresolved [key=other]: unrelated answer\n' \
+    "$(iso_utc_at "$(( $(date +%s) + 3600 ))")" > "$state/paused-run-failed.status"
+  [ "$(status_paused_until "$(status_declared_wait_line "$state/paused-run-failed.status")")" -gt "$(date +%s)" ] \
+    || fail "fixture did not recover the unresolved future pause"
   sig=$(seen_sig "$state/paused-run-failed.status"); printf '%s' "$sig" > "$state/.seen-paused-run-failed_status"
   key=$(printf '%s' "$window" | tr ':/.' '___')
   pane_hash=$(hash_text "idle after terminal run failure")
@@ -2636,6 +2639,7 @@ test_unchanged_hash_terminal_run_newer_than_pause_surfaces_once() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_PAUSE_RESURFACE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
+  fm_test_track_child "$pid"
   wait_for_exit "$pid" 40 || fail "unchanged pane hash absorbed a terminal run newer than the pause"
   grep -Fx "stale: $window" "$out" >/dev/null || fail "newer terminal run did not surface through unchanged-hash pause reconciliation"
   [ "$(cat "$state/.paused-rechecked-$key" 2>/dev/null || true)" = 'terminal:failed:run:01RUN:outcome:failed' ] \
@@ -2651,7 +2655,8 @@ test_unchanged_hash_terminal_run_newer_than_pause_surfaces_once() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_PAUSE_RESURFACE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  if ! wait_live "$pid" 30; then
+  fm_test_track_child "$pid"
+  if ! wait_poll_cycle "$state" "$pid"; then
     reap "$pid"; fail "already-surfaced terminal state replayed on the unchanged pane hash: $(cat "$out")"
   fi
   [ ! -s "$out" ] || { reap "$pid"; fail "already-surfaced terminal state printed another wake: $(cat "$out")"; }
@@ -2665,6 +2670,7 @@ test_unchanged_hash_terminal_run_newer_than_pause_surfaces_once() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_PAUSE_RESURFACE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
+  fm_test_track_child "$pid"
   wait_for_exit "$pid" 40 || fail "a second failed run with the same state label was absorbed"
   grep -Fx "stale: $window" "$out" >/dev/null || fail "a distinct same-label failure did not surface"
   [ "$(cat "$state/.paused-rechecked-$key" 2>/dev/null || true)" = 'terminal:failed:run:02RUN:outcome:failed' ] \
@@ -2680,7 +2686,10 @@ test_changed_hash_terminal_event_surfaces_once() {
   window="test:fm-paused-changed-terminal"
   printf 'idle after changed-hash terminal failure\n' > "$capture_file"
   printf 'window=%s\nkind=ship\n' "$window" > "$state/paused-changed-terminal.meta"
-  printf 'paused: waiting for upstream\n' > "$state/paused-changed-terminal.status"
+  printf 'paused [key=wait]: waiting for upstream until %s\nresolved [key=other]: unrelated answer\n' \
+    "$(iso_utc_at "$(( $(date +%s) + 3600 ))")" > "$state/paused-changed-terminal.status"
+  [ "$(status_paused_until "$(status_declared_wait_line "$state/paused-changed-terminal.status")")" -gt "$(date +%s)" ] \
+    || fail "fixture did not recover the unresolved future pause"
   sig=$(seen_sig "$state/paused-changed-terminal.status"); printf '%s' "$sig" > "$state/.seen-paused-changed-terminal_status"
   key=$(printf '%s' "$window" | tr ':/.' '___')
   pane_hash=$(hash_text "idle after changed-hash terminal failure")
@@ -2696,6 +2705,7 @@ test_changed_hash_terminal_event_surfaces_once() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_PAUSE_RESURFACE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
+  fm_test_track_child "$pid"
   wait_for_exit "$pid" 80 || fail "changed-hash terminal event did not surface: $(cat "$out")"
   grep -Fx "stale: $window" "$out" >/dev/null || fail "changed-hash terminal event omitted its wake"
   [ "$(cat "$state/.paused-rechecked-$key" 2>/dev/null || true)" = 'terminal:failed:run:04RUN:outcome:failed' ] \
@@ -2709,13 +2719,72 @@ test_changed_hash_terminal_event_surfaces_once() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_PAUSE_RESURFACE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  if ! wait_live "$pid" 30; then
+  fm_test_track_child "$pid"
+  if ! wait_poll_cycle "$state" "$pid"; then
     reap "$pid"; fail "changed-hash terminal event replayed on the identical next cycle: $(cat "$out")"
   fi
   [ ! -s "$out" ] || { reap "$pid"; fail "identical changed-hash terminal event printed another wake: $(cat "$out")"; }
   [ ! -s "$state/.wake-queue" ] || { reap "$pid"; fail "identical changed-hash terminal event enqueued another wake"; }
   reap "$pid"
   pass "a changed-hash terminal event surfaces exactly once"
+}
+
+test_terminal_wake_append_failure_remains_retryable() {
+  local event dir state fakebin window key capture_file out sig pane_hash pid rc attempt
+  for event in 'run:05RUN:outcome:failed' ''; do
+    dir=$(make_case "terminal-append-failure-${event:+identified}"); state="$dir/state"; fakebin="$dir/fakebin"
+    [ "$(PATH="$fakebin:$PATH" command -v tmux)" = "$fakebin/tmux" ] || fail "terminal retry did not select its fake backend"
+    window=test:fm-terminal-retry; key=test_fm-terminal-retry
+    capture_file="$dir/pane.txt"; out="$dir/watch.out"
+    printf 'idle after failure\n' > "$capture_file"
+    printf 'window=%s\nkind=ship\n' "$window" > "$state/terminal-retry.meta"
+    printf 'paused [key=wait]: waiting until %s\nresolved [key=other]: unrelated answer\n' \
+      "$(iso_utc_at "$(( $(date +%s) + 3600 ))")" > "$state/terminal-retry.status"
+    [ "$(status_paused_until "$(status_declared_wait_line "$state/terminal-retry.status")")" -gt "$(date +%s)" ] \
+      || fail "fixture did not recover the unresolved future pause"
+    sig=$(seen_sig "$state/terminal-retry.status"); printf '%s' "$sig" > "$state/.seen-terminal-retry_status"
+    pane_hash=$(hash_text 'idle after failure')
+    printf '%s' "$pane_hash" > "$state/.hash-$key"
+    printf '1\n' > "$state/.count-$key"
+    mv "$fakebin/fm-crew-state.sh" "$fakebin/fm-crew-state-result.sh"
+    cat > "$fakebin/fm-crew-state.sh" <<'SH'
+#!/usr/bin/env bash
+if [ -f "$FM_STATE_OVERRIDE/.test-fail-terminal-append" ]; then
+  rm -f "$FM_STATE_OVERRIDE/.test-fail-terminal-append" "$FM_STATE_OVERRIDE/.wake-queue"
+  mkdir "$FM_STATE_OVERRIDE/.wake-queue" || exit 1
+fi
+exec "$(dirname "$0")/fm-crew-state-result.sh" "$@"
+SH
+    chmod +x "$fakebin/fm-crew-state.sh"
+    : > "$state/.test-fail-terminal-append"
+    for attempt in failure retry; do
+      PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+        FM_FAKE_TMUX_CURRENT_COMMAND=zsh FM_FAKE_CREW_STATE="state: failed · source: run-step · validation failed${event:+ · event: $event}" \
+        FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_POLL=1 FM_SIGNAL_GRACE=1 \
+        FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" 2> "$dir/watch.err" &
+      pid=$!
+      fm_test_track_child "$pid"
+      rc=0
+      wait_for_exit "$pid" 100 || rc=$?
+      [ "$rc" -ne 124 ] || fail "terminal $attempt did not exit"
+      if [ "$attempt" = failure ]; then
+        [ "$rc" -ne 0 ] || fail "terminal queue failure reported success: $(cat "$out" "$dir/watch.err")"
+        [ ! -e "$state/.paused-rechecked-$key" ] || fail "an undelivered terminal event recorded a receipt"
+        [ ! -e "$state/.stale-$key" ] || fail "an undelivered terminal event advanced stale suppression"
+        rmdir "$state/.wake-queue" || fail "could not release queue failure fixture"
+        ack_stopped_cycle "$state" || fail "could not acknowledge the failed watcher cycle"
+      else
+        [ "$rc" -eq 0 ] || fail "terminal retry failed: $(cat "$dir/watch.err")"
+        grep -Fx "stale: $window" "$out" >/dev/null || fail "terminal retry omitted the wake"
+        FM_STATE_OVERRIDE="$state" "$DRAIN" > "$dir/drain.out" 2>/dev/null || fail "terminal retry drain failed"
+        grep "$(printf '\tstale\t')" "$dir/drain.out" | grep -F "$window" >/dev/null \
+          || fail "terminal retry was not durably queued"
+        [ "$(cat "$state/.paused-rechecked-$key")" = "terminal:failed${event:+:$event}" ] \
+          || fail "terminal retry did not record its delivered receipt"
+      fi
+    done
+  done
+  pass "failed terminal enqueue records no receipt and retries despite an older wait"
 }
 
 test_same_run_later_done_transition_surfaces() {
@@ -7385,6 +7454,7 @@ test_declared_pause_absorbs_hash_churn
 test_terminal_status_newer_than_pause_still_surfaces
 test_unchanged_hash_terminal_run_newer_than_pause_surfaces_once
 test_changed_hash_terminal_event_surfaces_once
+test_terminal_wake_append_failure_remains_retryable
 test_same_run_later_done_transition_surfaces
 test_exited_declared_pause_is_bounded_but_live_gate_surfaces
 test_own_work_wait_keeps_first_alert_then_long_cadence
