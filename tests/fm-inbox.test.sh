@@ -151,6 +151,102 @@ assert_contains "$replay_human" "replay $first_id" \
 assert_equals "1" "$(count_notes "$home")" "human replay still does not duplicate"
 pass "the same request id returns the original note as a distinguishable replay"
 
+test_interrupted_request_claim_retries() {
+  local home point capturer rc i retry id reserved_id
+  for point in before after; do
+    home=$(make_home "interrupted-claim-$point")
+    cat > "$home/claim-env.sh" <<'SH'
+claim_barrier() {
+  builtin printf 'ready\n' > "$CLAIM_HOME/claim-ready"
+  local deadline=$((SECONDS + 10))
+  while [ "$SECONDS" -lt "$deadline" ]; do sleep 0.02; done
+  return 91
+}
+printf() {
+  if [ "$CLAIM_POINT" = before ] && [ "$#" -eq 2 ] && [ "$1" = '%s\n' ] \
+      && [[ "$2" =~ ^[0-9]+-[A-Za-z0-9]+$ ]] && [ -d "$CLAIM_HOME/state/inbox/.requests" ]; then
+    claim_barrier
+    return $?
+  fi
+  builtin printf "$@"
+}
+rm() {
+  if [ "$CLAIM_POINT" = after ] && [ -f "$CLAIM_HOME/state/inbox/.requests/interrupted" ]; then
+    claim_barrier
+    return $?
+  fi
+  command rm "$@"
+}
+SH
+    FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" FM_CONFIG_OVERRIDE="$home/config" \
+      CLAIM_HOME="$home" CLAIM_POINT="$point" BASH_ENV="$home/claim-env.sh" \
+      perl -e 'setpgrp(0,0); exec @ARGV' bash -c 'fm_test_track_child "$$"; exec "$@"' _ \
+      "$INBOX_BIN" note --request-id interrupted --json 'interrupted body' > "$home/first.json" 2> "$home/first.err" &
+    capturer=$!
+    fm_test_track_child "$capturer"
+    for i in $(seq 1 300); do
+      [ -s "$home/claim-ready" ] && break
+      kill -0 "$capturer" 2>/dev/null || fail "capture exited before its $point claim barrier: $(cat "$home/first.err")"
+      sleep 0.01
+    done
+    [ -s "$home/claim-ready" ] || fail "capture never reached its $point claim barrier"
+    kill -KILL -- "-$capturer"
+    rc=0
+    wait "$capturer" 2>/dev/null || rc=$?
+    [ "$rc" -ne 0 ] || fail "interrupted capture unexpectedly succeeded"
+    reserved_id=''
+    if [ "$point" = before ]; then
+      assert_absent "$home/state/inbox/.requests/interrupted" "interruption exposed an incomplete request reservation"
+    else
+      reserved_id=$(cat "$home/state/inbox/.requests/interrupted")
+      [ -n "$reserved_id" ] || fail "published claim has no recoverable note identity"
+    fi
+    retry=$(run_inbox "$home" note --request-id interrupted --json 'retry body') \
+      || fail "retry after an interrupted claim did not recover"
+    id=$(printf '%s' "$retry" | json_get id)
+    if [ "$point" = before ]; then
+      assert_equals created "$(printf '%s' "$retry" | json_get outcome)" "an unpublished claim must remain claimable"
+    else
+      assert_equals replay "$(printf '%s' "$retry" | json_get outcome)" "a completed claim must replay its original identity"
+      assert_equals "$reserved_id" "$id" "retry replaced the published claim identity"
+    fi
+    assert_equals "$id" "$(cat "$home/state/inbox/.requests/interrupted")" "the reservation must contain the complete saved identity"
+    assert_equals 1 "$(count_notes "$home")" "claim retry must publish exactly one note"
+    assert_equals 1 "$(count_wakes "$home")" "claim retry must announce exactly once"
+    assert_grep 'retry body' "$home/state/inbox/$id.note" "claim retry lost its body"
+  done
+  pass "interruption before or after claim publication leaves the request ID retryable"
+}
+
+test_concurrent_request_claims_share_one_identity() {
+  local home n pids='' pid
+  home=$(make_home concurrent-claim)
+  for n in 1 2 3 4; do
+    run_inbox "$home" note --request-id concurrent --json 'same request' > "$home/$n.json" &
+    pid=$!
+    fm_test_track_child "$pid"
+    pids="$pids $pid"
+  done
+  for pid in $pids; do wait "$pid" || fail "a concurrent request claimant failed"; done
+  python3 - "$home" <<'PYTEST' || fail "concurrent claims did not preserve their shared identity"
+import json, sys
+from pathlib import Path
+home = Path(sys.argv[1])
+receipts = [json.loads((home / f'{n}.json').read_text()) for n in range(1, 5)]
+ids = {receipt['id'] for receipt in receipts}
+assert len(ids) == 1, receipts
+assert sum(receipt['outcome'] == 'created' for receipt in receipts) == 1, receipts
+assert all(receipt['saved'] and receipt['announced'] for receipt in receipts), receipts
+assert (home / 'state/inbox/.requests/concurrent').read_text().strip() == next(iter(ids))
+PYTEST
+  assert_equals 1 "$(count_notes "$home")" "concurrent claims must publish exactly one note"
+  assert_equals 1 "$(count_wakes "$home")" "concurrent claims must announce exactly once"
+  pass "concurrent request claims retain one complete reservation, note, and wake"
+}
+
+test_interrupted_request_claim_retries
+test_concurrent_request_claims_share_one_identity
+
 # --- crash window: reservation exists, note not yet published ---------------
 
 home=$(make_home crash-reserve)

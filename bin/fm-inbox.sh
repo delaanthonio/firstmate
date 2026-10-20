@@ -410,13 +410,24 @@ finish_note_result() {  # <outcome> <id> <request-id> <json> <strict-exit> <summ
 }
 
 claim_request_id() {  # <request-id> <note-id>  -> 0 claimed, 1 already exists
-  local request_id=$1 note_id=$2 reserved
+  local request_id=$1 note_id=$2 reserved staged rc=0
   reserved="$REQUESTS/$request_id"
+  need_python
   mkdir -p "$REQUESTS"
-  if ( set -C; printf '%s\n' "$note_id" >"$reserved" ) 2>/dev/null; then
-    return 0
+  staged=$(mktemp "$REQUESTS/.claim-XXXXXX") || return 1
+  if ! printf '%s\n' "$note_id" > "$staged"; then
+    rm -f "$staged"
+    return 1
   fi
-  return 1
+  python3 - "$staged" "$reserved" <<'PYCLAIM' || rc=$?
+import os, sys
+try:
+    os.link(sys.argv[1], sys.argv[2])
+except FileExistsError:
+    sys.exit(1)
+PYCLAIM
+  rm -f "$staged"
+  return "$rc"
 }
 
 publish_from_reservation() {  # <request-id> <source> <body> <extra>
