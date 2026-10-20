@@ -385,6 +385,95 @@ run_bootstrap() {  # <fakebin> <home> <pane-cmd> <call-log> [extra env...] -> st
     env "$@" "$ROOT/bin/fm-bootstrap.sh" 2>&1
 }
 
+test_initial_startup_excludes_recovery() {
+  local w fb tmuxfb log out starter deadline spawn_out launch
+  w=$(new_world initial-startup)
+  add_sm_home "$w" sm1 firstmate:fm-sm1 codex
+  rm "$w/home/state/sm1.meta"
+  fb=$(make_toolchain "$w"); tmuxfb=$(make_liveness_tmux "$w")
+  fm_fake_exit0 "$fb" codex claude
+  log="$w/calls.log"; : > "$log"
+  spawn_out="$w/spawn.out"; launch="$w/launch.log"
+  mv "$tmuxfb/tmux" "$tmuxfb/tmux-base"
+  cat > "$tmuxfb/tmux" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = send-keys ] && [ -n "${FM_TEST_START_BARRIER:-}" ] \
+    && [ -f "$FM_HOME/state/sm1.meta" ] && [ ! -e "$FM_TEST_START_BARRIER/delivered" ]; then
+  : > "$FM_TEST_START_BARRIER/ready"
+  deadline=$((SECONDS + 45))
+  while [ ! -e "$FM_TEST_START_BARRIER/release" ] && [ "$SECONDS" -lt "$deadline" ]; do sleep 0.02; done
+  [ -e "$FM_TEST_START_BARRIER/release" ] || exit 91
+  : > "$FM_TEST_START_BARRIER/delivered"
+fi
+exec "$(dirname "$0")/tmux-base" "$@"
+SH
+  chmod +x "$tmuxfb/tmux"
+  [ "$(PATH="$tmuxfb:$fb:$BASE_PATH" command -v tmux)" = "$tmuxfb/tmux" ] || fail "startup did not select fake tmux"
+  mkdir -p "$w/barrier" "$w/user-home"
+  PATH="$tmuxfb:$fb:$BASE_PATH" HOME="$w/user-home" TMUX='' FM_BACKEND=tmux \
+    FM_HOME="$w/home" FM_ROOT_OVERRIDE='' FM_STATE_OVERRIDE='' FM_DATA_OVERRIDE='' FM_CONFIG_OVERRIDE='' FM_PROJECTS_OVERRIDE='' \
+    FM_TEST_PANE_CMD=missing FM_TMUX_CALL_LOG="$log" FM_TEST_START_BARRIER="$w/barrier" \
+    FM_FAKE_LAUNCH_LOG="$launch" FM_SPAWN_NO_GUARD=1 \
+    "$ROOT/bin/fm-spawn.sh" sm1 "$w/sm1" --secondmate --harness codex > "$spawn_out" 2>&1 &
+  starter=$!
+  fm_test_track_child "$starter"
+  deadline=$((SECONDS + 30))
+  while [ ! -e "$w/barrier/ready" ] && [ "$SECONDS" -lt "$deadline" ]; do
+    kill -0 "$starter" 2>/dev/null || fail "startup exited before publication: $(cat "$spawn_out")"
+    sleep 0.02
+  done
+  [ -e "$w/barrier/ready" ] || fail "startup did not reach its published endpoint"
+  out=$(run_bootstrap "$tmuxfb:$fb" "$w/home" zsh "$log")
+  assert_contains "$out" 'secondmate sm1: skipped: another liveness check is already in progress' \
+    "recovery did not skip the secondmate still starting"
+  if grep -q '^kill-window ' "$log"; then fail "recovery killed an endpoint during initial startup"; fi
+  assert_equals 1 "$(grep -c '^new-window ' "$log")" "recovery created another startup endpoint"
+  [ ! -e "$w/home/state/.secondmate-relaunch-sm1" ] || fail "startup was counted as a recovery attempt"
+  : > "$w/barrier/release"
+  wait "$starter" || fail "initial startup failed: $(cat "$spawn_out")"
+  [ -s "$launch" ] || fail "initial startup did not deliver its command"
+  [ ! -e "$w/home/state/.control-sm1.lock" ] || fail "successful startup retained its lifecycle lock"
+  pass "initial secondmate startup excludes recovery until its command is delivered"
+}
+
+test_timed_recovery_borrows_its_lifecycle_lock() {
+  local w fb tmuxfb log out
+  w=$(new_world timed-recovery-lock)
+  add_sm_home "$w" sm1 firstmate:fm-sm1
+  fb=$(make_toolchain "$w"); tmuxfb=$(make_liveness_tmux "$w")
+  log="$w/calls.log"; : > "$log"
+  out=$(PATH="$tmuxfb:$fb:$BASE_PATH" FM_HOME="$w/home" FM_BACKEND=tmux \
+    FM_ROOT="$ROOT" FM_TEST_PANE_CMD=zsh FM_TMUX_CALL_LOG="$log" STATE="$w/home/state" bash -c '
+      . "$1/bin/fm-secondmate-liveness-lib.sh"
+      fm_secondmate_liveness_lock sm1 || exit 1
+      trap "fm_secondmate_liveness_unlock sm1" EXIT
+      fm_secondmate_liveness_probe "$2" sm1 poll
+      fm_secondmate_liveness_relaunch "$2" sm1 15 || { echo "$FM_SM_LIVE_OUT"; exit 1; }
+      [ -e "$STATE/.control-sm1.lock" ] || exit 2
+    ' _ "$ROOT" "$w/home/state/sm1.meta") || fail "timed recovery failed to retain its inherited lock: $out"
+  assert_grep 'new-window ' "$log" "timed recovery did not create its replacement"
+  assert_grep 'relaunched' "$w/home/state/.secondmate-relaunch-sm1" "timed recovery was not recorded"
+  [ ! -e "$w/home/state/.control-sm1.lock" ] || fail "recovery caller did not release its lifecycle lock"
+  pass "timed recovery retains its ancestor-owned lifecycle lock through spawn"
+}
+
+test_failed_initial_startup_releases_lifecycle_lock() {
+  local w fb tmuxfb log out rc=0
+  w=$(new_world failed-initial-startup)
+  add_sm_home "$w" sm1 firstmate:fm-sm1 codex
+  rm "$w/home/state/sm1.meta"
+  fb=$(make_toolchain "$w"); tmuxfb=$(make_liveness_tmux "$w")
+  log="$w/calls.log"; : > "$log"
+  out=$(PATH="$tmuxfb:$fb:$BASE_PATH" FM_HOME="$w/home" FM_BACKEND=tmux FM_SPAWN_NO_GUARD=1 \
+    FM_TEST_PANE_CMD=missing FM_TMUX_CALL_LOG="$log" FM_TEST_FAIL_NEW_WINDOW=1 \
+    "$ROOT/bin/fm-spawn.sh" sm1 "$w/sm1" --secondmate --harness codex 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "failing fake endpoint unexpectedly launched"
+  assert_grep 'new-window ' "$log" "startup did not reach its intended endpoint failure"
+  [ ! -e "$w/home/state/.control-sm1.lock" ] || fail "failed startup retained its lifecycle lock"
+  [ ! -e "$w/home/state/.task-set.lock" ] || fail "failed startup retained its task-set lock"
+  pass "failed initial startup releases lifecycle and task-set locks"
+}
+
 test_sweep_respawns_confirmed_dead_secondmate() {
   local w fb tmuxfb log out
   w=$(new_world sweep-dead)
@@ -848,6 +937,9 @@ test_tmux_agent_state_classifies
 test_tmux_agent_state_rejects_malformed_targets_before_probe
 test_herdr_agent_state_preserves_husk_classifier
 test_agent_state_dispatcher_and_compatibility
+test_initial_startup_excludes_recovery
+test_timed_recovery_borrows_its_lifecycle_lock
+test_failed_initial_startup_releases_lifecycle_lock
 test_sweep_respawns_confirmed_dead_secondmate
 test_sweep_recovers_the_durable_secondmate_account
 test_sweep_serializes_distinct_secondmate_relaunches

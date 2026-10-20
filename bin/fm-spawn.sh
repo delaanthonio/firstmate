@@ -2053,6 +2053,18 @@ if [ "$KIND" = secondmate ]; then
   fi
   [ "$remote_spawn_rc" -eq 3 ] || exit "$remote_spawn_rc"
 fi
+if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" = secondmate ]; then
+  SPAWN_CONTROL_LOCK="$STATE/.control-$ID.lock"
+  control_owner=$(cat "$SPAWN_CONTROL_LOCK/pid" 2>/dev/null || true)
+  if fm_pid_alive "$control_owner" && fm_pid_descends_from "$PPID" "$control_owner"; then
+    SPAWN_CONTROL_PARENT=1
+  elif fm_lock_try_acquire "$SPAWN_CONTROL_LOCK"; then
+    SPAWN_CONTROL_LOCK_HELD=1
+  else
+    echo "error: another lifecycle action is already running for task $ID" >&2
+    exit 1
+  fi
+fi
 # Backend selection (data/fm-backend-design-d7): explicit --backend, else
 # FM_BACKEND env, else config/backend, else runtime auto-detection, else
 # default tmux (fm_backend_name). fm_backend_validate_spawn refuses unknown or
