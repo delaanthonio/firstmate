@@ -14,9 +14,10 @@
 #       the old gen are rejected as stale from then on.
 #
 #   apply <state-dir> <id> <busy|idle|unknown> (--gen G | --current-gen)
-#         --source S --event E [--turn-ended]
+#         --source S --event E [--turn-ended] [--expect-seq N]
 #       Append one lifecycle event: validate the gen against the armed
-#       sidecar, advance seq under the lock, atomically replace the record.
+#       sidecar and optional --expect-seq under the lock, advance seq, and
+#       atomically replace the record.
 #       --turn-ended also touches state/<id>.turn-ended, the watcher
 #       notification, under the same lock, so a writer whose gen was refused,
 #       or whose incarnation is replaced right after, never signals the
@@ -48,7 +49,7 @@ usage() {
   cat >&2 <<'EOF'
 usage:
   fm-busy-event.sh arm <state-dir> <id> [--state busy|idle|unknown] [--source S] [--event E]
-  fm-busy-event.sh apply <state-dir> <id> <busy|idle|unknown> (--gen G | --current-gen) --source S --event E [--turn-ended]
+  fm-busy-event.sh apply <state-dir> <id> <busy|idle|unknown> (--gen G | --current-gen) --source S --event E [--turn-ended] [--expect-seq N]
   fm-busy-event.sh progress <state-dir> <id> --gen G
   fm-busy-event.sh retire <state-dir> <id> (--gen G | --current-gen)
 See the header comment for the full contract.
@@ -77,6 +78,7 @@ NEW_STATE=
 GEN=
 USE_CURRENT_GEN=0
 TURN_ENDED=0
+EXPECT_SEQ=
 SOURCE=
 EVENT=
 if [ "$CMD" = apply ]; then
@@ -94,6 +96,12 @@ while [ $# -gt 0 ]; do
     --current-gen) USE_CURRENT_GEN=1; shift ;;
     --source) SOURCE=${2:-}; shift 2 || usage ;;
     --event) EVENT=${2:-}; shift 2 || usage ;;
+    --expect-seq)
+      [ "$CMD" = apply ] && [ "$#" -ge 2 ] || usage
+      EXPECT_SEQ=$2
+      case "$EXPECT_SEQ" in ''|*[!0-9]*) usage ;; esac
+      shift 2
+      ;;
     --turn-ended) [ "$CMD" = apply ] || usage; TURN_ENDED=1; shift ;;
     *) usage ;;
   esac
@@ -243,6 +251,12 @@ if [ -f "$REC" ]; then
       esac
       ;;
   esac
+fi
+if [ -n "$EXPECT_SEQ" ] && [ "$EXPECT_SEQ" != "$OLD_SEQ" ]; then
+  lock_release
+  umask "$old_umask"
+  echo "error: stale busy-state sequence for $ID (event rejected)" >&2
+  exit 1
 fi
 write_record "$GEN" $((OLD_SEQ + 1)) || {
   lock_release

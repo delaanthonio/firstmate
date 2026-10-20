@@ -424,7 +424,8 @@ make_isolated_bin() {  # <name> <register-exit-code>
   mkdir -p "$bin"
   cp "$ROOT/bin/fm-startup-growth-check.sh" "$ROOT/bin/fm-pr-lib.sh" \
     "$ROOT/bin/fm-startup-memory-budget-lib.sh" "$ROOT/bin/fm-line-cap-lib.sh" \
-    "$ROOT/bin/fm-check-lib.sh" "$ROOT/bin/fm-startup-memory-budget.sh" "$bin/"
+    "$ROOT/bin/fm-check-lib.sh" "$ROOT/bin/fm-startup-memory-budget.sh" \
+    "$ROOT/bin/fm-wake-lib.sh" "$ROOT/bin/fm-path-lib.sh" "$bin/"
   if [ "$code" = 0 ]; then
     cp "$ROOT/bin/fm-check-register.sh" "$bin/fm-check-register.sh"
   else
@@ -604,6 +605,58 @@ test_arm_and_disarm_use_authenticated_custom_check() {
   assert_absent "$home/state/startup-growth.check-trust" "disarm left the trust binding"
 }
 
+test_growth_delivery_precedes_suppression() {
+  local rec root home result before fakebin delivered status=0
+  rec=$(make_world durable-growth)
+  root=${rec%%|*}; home=${rec#*|}
+  run_check "$root" "$home" 1000 >/dev/null
+  before=$(cat "$home/state/.startup-growth-check")
+  add_bytes "$root/AGENTS.md" 2500
+  add_bytes "$home/data/learnings.md" 900
+  mkdir "$home/state/.wake-queue"
+  result=$(run_check "$root" "$home" 87401)
+  [ "$(status_part "$result")" != 0 ] || fail "growth committed without a durable delivery"
+  assert_equals "$before" "$(cat "$home/state/.startup-growth-check")" "failed enqueue advanced suppression state"
+  rmdir "$home/state/.wake-queue"
+  fakebin=$(fm_fakebin "$TMP_ROOT/growth-commit-interruption")
+  cat > "$fakebin/mv" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  if [ "$arg" = "$FM_HOME/state/.startup-growth-check" ]; then
+    kill -TERM "$PPID"
+    exit 1
+  fi
+done
+exec /bin/mv "$@"
+SH
+  chmod +x "$fakebin/mv"
+  PATH="$fakebin:$PATH" FM_ROOT_OVERRIDE="$root" FM_HOME="$home" FM_STARTUP_GROWTH_NOW=87401 \
+    "$CHECK" check > "$home/capture" 2>/dev/null || status=$?
+  [ "$status" != 0 ] || fail "the interrupted record publication unexpectedly succeeded"
+  rm "$home/capture"
+  assert_equals "$before" "$(cat "$home/state/.startup-growth-check")" "interruption committed suppression state"
+  assert_grep 'tracked startup surface growth AGENTS.md +2500 bytes' "$home/state/.wake-queue" "interrupted growth notification was lost"
+  assert_grep 'memory growth data/learnings.md +300 estimated_tokens' "$home/state/.wake-queue" "interrupted memory notification was lost"
+  add_bytes "$root/AGENTS.md" 1000
+  result=$(run_check "$root" "$home" 87401)
+  [ "$(status_part "$result")" = 0 ] || fail "growth retry failed"
+  assert_contains "$(output_part "$result")" 'growth AGENTS.md +3500 bytes' "retry lost the retained baseline"
+  result=$(run_check "$root" "$home" 87402)
+  [ -z "$(output_part "$result")" ] || fail "successful retry did not suppress duplicate evaluation"
+  assert_grep 'growth AGENTS.md +2500 bytes' "$home/state/.wake-queue" "committed growth has no durable delivery"
+  add_bytes "$root/AGENTS.md" 3000
+  result=$(run_check "$root" "$home" 173802)
+  [ "$(status_part "$result")" = 0 ] || fail "later growth evaluation failed"
+  delivered=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" bash -c \
+    '. "$1/bin/fm-wake-lib.sh"; fm_wake_print_deduped "$STATE/.wake-queue"' _ "$ROOT")
+  assert_contains "$delivered" 'growth AGENTS.md +2500 bytes' "delivery coalesced away the first evaluation"
+  assert_contains "$delivered" 'growth AGENTS.md +3500 bytes' "delivery coalesced evaluations at the same timestamp"
+  assert_contains "$delivered" 'growth AGENTS.md +3000 bytes' "delivery lost the later evaluation"
+  assert_contains "$delivered" 'memory growth data/learnings.md +300 estimated_tokens' "delivery coalesced away the earlier memory growth"
+  pass "growth delivery survives interruption and enqueue failures cannot advance suppression state"
+}
+
+test_growth_delivery_precedes_suppression
 test_initial_baseline_is_silent_and_records_metadata
 test_same_day_poll_does_not_touch_surfaces
 test_due_growth_reports_once_and_dedupes

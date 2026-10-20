@@ -3920,6 +3920,52 @@ if [ -n "${FM_TEST_ONLY:-}" ]; then
   exit 0
 fi
 
+test_poll_notifications_survive_capture_interruption() {
+  local home event_id other_event out delivered status=0
+  home=$(make_home durable-poll)
+  seed_commitment "$home" pf-durable req-durable discord main work-durable
+  emit_terminal "$home" "$home" pf-durable main work-durable >/dev/null || fail "emit failed"
+  seed_repro_commitment "$home" pf-reject-durable req-reject-durable main work-reject-durable
+  event_id=$(publish_raw_event "$home/state/public-followup/events" pf-reject-durable main \
+    work-reject-durable report-ready '{"report_path":"/abs/data/work-reject-durable/report.md"}') \
+    || fail "could not publish refused event"
+  seed_repro_commitment "$home" pf-reject-other req-reject-other main work-reject-other
+  other_event=$(publish_raw_event "$home/state/public-followup/events" pf-reject-other main \
+    work-reject-other report-ready '{"report_path":"/abs/data/work-reject-other/report.md"}') \
+    || fail "could not publish second refused event"
+  out=$(run_pf "$home" consume) || true
+  assert_contains "$out" "rejected $event_id" "the rejection fixture was not consumed"
+  assert_contains "$out" "rejected $other_event" "the second rejection was not consumed"
+  emit_terminal "$home" "$home" pf-durable main work-durable >/dev/null || fail "second emit failed"
+  mkdir "$home/state/.wake-queue"
+  run_poll "$home" > "$home/failed-capture" 2>/dev/null || true
+  assert_present "$home/state/public-followup/rejection-wakes/$event_id" "failed enqueue discarded rejection"
+  assert_absent "$home/state/public-followup/surfaced" "failed enqueue suppressed terminal results"
+  rmdir "$home/state/.wake-queue"
+  cat > "$home/fakebin/curl" <<'SH'
+#!/usr/bin/env bash
+kill -TERM "$TEST_POLL_PID"
+exit 1
+SH
+  chmod +x "$home/fakebin/curl"
+  PATH="$home/fakebin:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" \
+    bash -c 'export TEST_POLL_PID=$$; exec "$1"' _ "$POLL" > "$home/capture" 2>/dev/null || status=$?
+  [ "$status" != 0 ] || fail "the poll was not interrupted during capture"
+  rm "$home/capture"
+  assert_grep "public-followup rejected $event_id" "$home/state/.wake-queue" "interrupted rejection was lost with captured stdout"
+  assert_grep 'public-followup terminal results are waiting' "$home/state/.wake-queue" "interrupted terminal notification was lost"
+  delivered=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" bash -c \
+    '. "$1/bin/fm-wake-lib.sh"; fm_wake_print_deduped "$STATE/.wake-queue"' _ "$ROOT")
+  assert_contains "$delivered" "public-followup rejected $event_id" "delivery coalesced away the first rejection"
+  assert_contains "$delivered" "public-followup rejected $other_event" "delivery coalesced away the second rejection"
+  assert_contains "$delivered" 'public-followup terminal results are waiting' "delivery coalesced away terminal results"
+  assert_absent "$home/state/public-followup/rejection-wakes/$event_id" "durably queued rejection was not consumed"
+  make_fake_curl "$home" >/dev/null
+  out=$(run_poll "$home")
+  assert_not_contains "$out" 'public-followup' "successfully queued notifications were offered again"
+  pass "terminal and rejection notifications survive discarded poll capture and retry failed enqueue"
+}
+
 test_ambient_tasks_axi_env_never_reaches_a_real_backlog
 test_outcome_text_is_bounded_without_corrupting_characters
 test_restart_e2e_delivers_exactly_once
@@ -3951,6 +3997,7 @@ test_cleanup_refuses_while_a_public_reply_is_owed
 test_relay_disabled_home_pays_nothing
 test_relay_enabled_empty_state_makes_no_calls
 test_exhausted_binding_is_not_retried
+test_poll_notifications_survive_capture_interruption
 test_relay_poll_stays_inert_and_surfaces_once
 test_session_start_surfaces_only_when_owed
 test_typed_records_exclude_raw_public_material

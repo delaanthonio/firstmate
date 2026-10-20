@@ -626,6 +626,33 @@ test_turn_ended_notification_is_generation_bound() {
   pass "the turn-ended notification rides the apply generation check"
 }
 
+test_conditional_apply_checks_sequence_under_the_writer_lock() {
+  local state gen fakebin writer_path rc=0
+  state=$(new_state_dir conditional-apply)
+  gen=$("$EV" arm "$state" t1) || fail "arm failed"
+  "$EV" apply "$state" t1 idle --gen "$gen" --expect-seq 1 \
+    --source fm-interrupt --event interrupt || fail "unchanged sequence refused"
+  fakebin=$(fm_fakebin "$TMP_ROOT/conditional-writer")
+  cat > "$fakebin/mkdir" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = "$TEST_BUSY_STATE/t1.busy-state.lock" ]; then
+  PATH="$TEST_BUSY_PATH" "$TEST_BUSY_EV" apply "$TEST_BUSY_STATE" t1 busy --gen "$TEST_BUSY_GEN" \
+    --source polytoken-hook --event pre-model-turn || exit 1
+fi
+exec /bin/mkdir "$@"
+SH
+  chmod +x "$fakebin/mkdir"
+  writer_path=$PATH
+  PATH="$fakebin:$writer_path" TEST_BUSY_STATE="$state" TEST_BUSY_PATH="$writer_path" TEST_BUSY_EV="$EV" TEST_BUSY_GEN="$gen" \
+    "$EV" apply "$state" t1 idle --gen "$gen" --expect-seq 2 \
+      --source fm-interrupt --event interrupt --turn-ended >/dev/null 2>&1 || rc=$?
+  [ "$rc" -ne 0 ] || fail "a changed sequence was accepted"
+  assert_equals 'busy polytoken-hook pre-model-turn 3' "$(fm_busy_record_read "$state" t1)" "conditional close overwrote the latest event"
+  [ ! -e "$state/t1.turn-ended" ] || fail "refused conditional close emitted turn-ended"
+  pass "conditional apply checks sequence inside the busy writer lock"
+}
+
+test_conditional_apply_checks_sequence_under_the_writer_lock
 test_progress_is_generation_bound_and_not_semantic_state
 test_turn_ended_notification_is_generation_bound
 

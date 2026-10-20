@@ -1256,6 +1256,25 @@ test_polytoken_spawn_arms_the_busy_contract() {
 
 # ---------------------------------------------------------------------------
 
+test_polytoken_interrupt_close_preserves_events_after_settle() (
+  local event dir state gen out
+  for event in pre-user-prompt pre-model-turn; do
+    dir=$(make_wiring_case "close-after-settle-$event")
+    state="$dir/state"
+    gen=$("$ROOT/bin/fm-busy-event.sh" arm "$state" task) || fail "arm failed"
+    fm_polytoken_interrupt() { printf cancelled; }
+    fm_polytoken_turn_settled() {
+      "$ROOT/bin/fm-busy-event.sh" apply "$state" task busy --gen "$gen" \
+        --source polytoken-hook --event "$event" || fail "queued hook failed"
+    }
+    out=$(fm_polytoken_interrupt_task "$ROOT/bin" "$state" task 1 stub-token) || fail "interrupt failed"
+    assert_equals cancelled "$out" "interrupt outcome changed"
+    assert_equals "busy polytoken-hook $event 2" "$(fm_busy_record_read "$state" task)" \
+      "interrupt overwrote a hook after its settled observation"
+  done
+  pass "interrupt, exit, and relaunch's shared close preserves hooks arriving after settle"
+)
+
 test_polytoken_ancestry_detects_the_native_command_name
 test_polytoken_ancestry_rejects_unrelated_mentions
 test_polytoken_claims_no_inherited_launcher_marker
@@ -1274,6 +1293,7 @@ test_polytoken_busy_writer_dispatches_without_argv_and_never_fails
 test_polytoken_write_hooks_binds_the_three_events
 test_polytoken_model_ref_composes_and_refuses
 test_polytoken_model_ref_unreachable_listing_refuses
+test_polytoken_interrupt_close_preserves_events_after_settle
 test_polytoken_rest_interrupt_settles_the_turn
 test_polytoken_interrupt_close_spares_a_reopened_turn
 test_polytoken_turn_settled_reads_the_typed_sync_verdict

@@ -270,7 +270,7 @@ evaluate_budget() {
 }
 
 run_check() {
-  local now reported_previous
+  local now reported_previous wake_line
   if ! now=$(check_due); then
     return 0
   fi
@@ -301,7 +301,11 @@ run_check() {
 
   if [ -n "$FINDINGS" ]; then
     if [ "$FINDINGS" != "$reported_previous" ]; then
-      fm_cap_line "startup-growth: $FINDINGS" "$MAX_LINE"
+      wake_line=$(fm_cap_line "startup-growth: $FINDINGS" "$MAX_LINE")
+      . "$SCRIPT_DIR/fm-wake-lib.sh"
+      fm_wake_append check "startup-growth:$now:${NEW_RECORD##*.}" "check: startup-growth: $wake_line" \
+        || fail "could not queue growth findings"
+      printf '%s\n' "$wake_line"
     fi
     printf '%s\t%s\n' reported "$FINDINGS" >> "$NEW_RECORD" || exit 1
   fi

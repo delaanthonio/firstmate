@@ -51,6 +51,8 @@ fmx_load_config
 # Hard no-op when X mode is off: this is what keeps the check shim inert.
 [ -n "$FMX_TOKEN" ] || exit 0
 
+. "$SCRIPT_DIR/fm-wake-lib.sh"
+
 # Unreconciled terminal results for a public commitment are actionable even when
 # the relay has no new mention, and they outlive any session, so surface them
 # first. The signature compare keeps this to one wake per new result set instead
@@ -60,7 +62,8 @@ if fm_pf_has_events "$STATE"; then
   PF_SIG=$(fm_pf_events_signature "$STATE" 2>/dev/null) || PF_SIG=
   if [ -n "$PF_SIG" ] \
     && [ "$(cat "$PF_ROOT/$FM_PF_SURFACED_BASENAME" 2>/dev/null || true)" != "$PF_SIG" ]; then
-    if printf '%s\n' "$PF_SIG" \
+    if fm_wake_append check x-watch:public-followup 'check: x-watch: public-followup terminal results are waiting to be reconciled' \
+      && printf '%s\n' "$PF_SIG" \
       | fmx_private_artifact_publish_stdin "$PF_ROOT" "$FM_PF_SURFACED_BASENAME" 600 2>/dev/null; then
       printf 'public-followup terminal results are waiting to be reconciled\n'
     fi
@@ -70,7 +73,7 @@ fi
 # A terminal result consume refused is a promised reply that will never become
 # ready on its own, so each refusal wakes this home with its specific reason.
 # The queued line is removed only once it has been read AND written to this
-# poll's stdout, which is the wake: a read that fails, a line that comes back
+# durable wake queue and then this poll's stdout: a read that fails, a line that comes back
 # empty, or a write that fails all leave the line queued for the next cycle. The
 # read is its own step because a pipeline would report the status of its last
 # stage, not of the read. Dropping a raised line is best-effort, so this wake is
@@ -83,6 +86,7 @@ if fm_pf_dir_has_entry "$PF_WAKES"; then
     PF_WAKE_LINE=$(sed -n '1p' "$PF_WAKE" 2>/dev/null) || continue
     PF_WAKE_LINE=$(printf '%s\n' "$PF_WAKE_LINE" | fm_pf_bound_bytes 800)
     [ -n "$PF_WAKE_LINE" ] || continue
+    fm_wake_append check "x-watch:public-followup-rejected:${PF_WAKE##*/}" "check: x-watch: $PF_WAKE_LINE" || continue
     printf '%s\n' "$PF_WAKE_LINE" || continue
     rm -f -- "$PF_WAKE" 2>/dev/null || true
   done
