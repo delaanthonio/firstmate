@@ -617,7 +617,7 @@ unit_recovery_rejects_stale_owner_and_retargets_primary() {
   printf 'away-lifecycle\n' > "$st/state/.afk"
   printf 'pending-after-primary-restart\n' > "$st/state/.subsuper-escalations"
   printf 'none\t-\tnative\n' > "$st/state/.afk-daemon-terminal"
-  confirm_posture "$st" || fail "primary restart: could not confirm fixture posture"
+  enter_posture "$st" || fail "primary restart: could not enter fixture posture"
   FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" \
     FM_SUPERVISOR_TARGET=new-primary-pane FM_SUPERVISOR_BACKEND=tmux bash -c '
       printf "%s\n" "$$" > "$FM_STATE_OVERRIDE/.supervise-daemon.lock/pid"
@@ -758,7 +758,7 @@ unit_failed_recovery_preserves_readiness_mutations() {
   printf 'old-delivery\n' > "$staged/state/.subsuper-escalations"
   printf 'old-since\n' > "$staged/state/.subsuper-escalations.since"
   printf 'old-wedge\n' > "$staged/state/.subsuper-inject-wedged"
-  confirm_posture "$staged" || fail "failed recovery readiness: could not confirm staged fixture posture"
+  enter_posture "$staged" || fail "failed recovery readiness: could not enter staged fixture posture"
   FM_HOME="$staged" FM_STATE_OVERRIDE="$staged/state" FM_SUPERVISOR_TARGET=unused \
     FM_SUPERVISOR_BACKEND=tmux bash -c '
       . "$1"
@@ -789,7 +789,7 @@ unit_failed_recovery_preserves_readiness_mutations() {
   printf 'submitted-delivery\n' > "$cleared/state/.subsuper-escalations"
   printf 'submitted-since\n' > "$cleared/state/.subsuper-escalations.since"
   printf 'submitted-wedge\n' > "$cleared/state/.subsuper-inject-wedged"
-  confirm_posture "$cleared" || fail "failed recovery readiness: could not confirm cleared fixture posture"
+  enter_posture "$cleared" || fail "failed recovery readiness: could not enter cleared fixture posture"
   FM_HOME="$cleared" FM_STATE_OVERRIDE="$cleared/state" FM_SUPERVISOR_TARGET=unused \
     FM_SUPERVISOR_BACKEND=tmux bash -c '
       . "$1"

@@ -1262,7 +1262,9 @@ test_polytoken_interrupt_close_preserves_events_after_settle() (
     dir=$(make_wiring_case "close-after-settle-$event")
     state="$dir/state"
     gen=$("$ROOT/bin/fm-busy-event.sh" arm "$state" task) || fail "arm failed"
+    # shellcheck disable=SC2329 # Callback invoked by fm_polytoken_interrupt_task.
     fm_polytoken_interrupt() { printf cancelled; }
+    # shellcheck disable=SC2329 # Callback invoked by fm_polytoken_interrupt_task.
     fm_polytoken_turn_settled() {
       "$ROOT/bin/fm-busy-event.sh" apply "$state" task busy --gen "$gen" \
         --source polytoken-hook --event "$event" || fail "queued hook failed"

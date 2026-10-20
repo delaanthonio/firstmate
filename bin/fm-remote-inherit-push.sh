@@ -43,6 +43,7 @@ REMOTE=$(secondmate_registry_field "$DATA/secondmates.md" "$ID" remote 2>/dev/nu
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/fm-remote-inherit-push.XXXXXX") || die "cannot create inheritance staging directory"
 pids=()
 results=()
+# shellcheck disable=SC2329 # Invoked by the EXIT trap.
 cleanup() {
   local pid owned children signal
   owned=$(printf '%s\n' "${pids[@]:-}" | awk 'NF { printf "%s ", $0 }')
@@ -159,8 +160,8 @@ while [ "$next" -le "$N" ] || [ "$running" -gt 0 ]; do
         running=$((running + 1))
       else
         wait "${pids[$i]}" 2>/dev/null || true
-        pids[$i]=
-        results[$i]=1
+        pids[i]=
+        results[i]=1
         if [ -s "$TMP/item.$i.rc" ]; then
           read -r "results[$i]" < "$TMP/item.$i.rc" || true
         fi
@@ -172,10 +173,10 @@ while [ "$next" -le "$N" ] || [ "$running" -gt 0 ]; do
   if [ "$stop" -eq 0 ] && [ "$next" -le "$N" ] && [ "$running" -lt "$JOBS" ]; then
     launched=$next
     if [ "$(cut -d' ' -f1 "$TMP/item.$next.plan")" = skip ]; then
-      results[$next]=0
+      results[next]=0
     else
       send_item "$next" &
-      pids[$next]=$!
+      pids[next]=$!
       running=$((running + 1))
     fi
     next=$((next + 1))

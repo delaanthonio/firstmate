@@ -360,6 +360,7 @@ report_requires_wake() {  # <state>
 
 queue_result_wake() {  # <state>
   local deadline=${DELIVERY_DEADLINE:-$(now)}
+  # shellcheck disable=SC2016 # The child shell expands its positional arguments.
   fm_run_timed "$(seconds_until "$deadline")" env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
     FM_ROOT_OVERRIDE="$FM_ROOT" bash -c '. "$1"; fm_wake_append check startup-network "$2"' \
     _ "$SCRIPT_DIR/fm-wake-lib.sh" \

@@ -51,6 +51,9 @@ fmx_load_config
 # Hard no-op when X mode is off: this is what keeps the check shim inert.
 [ -n "$FMX_TOKEN" ] || exit 0
 
+# The wake library creates state before relay artifacts are published.
+umask 077
+# shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 
 # Unreconciled terminal results for a public commitment are actionable even when

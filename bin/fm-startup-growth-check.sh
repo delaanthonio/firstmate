@@ -302,6 +302,7 @@ run_check() {
   if [ -n "$FINDINGS" ]; then
     if [ "$FINDINGS" != "$reported_previous" ]; then
       wake_line=$(fm_cap_line "startup-growth: $FINDINGS" "$MAX_LINE")
+      # shellcheck source=bin/fm-wake-lib.sh
       . "$SCRIPT_DIR/fm-wake-lib.sh"
       fm_wake_append check "startup-growth:$now:${NEW_RECORD##*.}" "check: startup-growth: $wake_line" \
         || fail "could not queue growth findings"

@@ -112,6 +112,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 BUILDER_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 LAB_HOME_HELPER="$SCRIPT_DIR/fm-lab-home.sh"
 CLAUDE_TRUST="$SCRIPT_DIR/fm-claude-trust.sh"
+# shellcheck source=bin/fm-backend-hometag-lib.sh
 . "$SCRIPT_DIR/fm-backend-hometag-lib.sh"
 RECORD_NAME=.fm-live-lab
 RECORD_TOKEN='fm-live-lab v1'

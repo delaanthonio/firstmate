@@ -1221,6 +1221,7 @@ start_hook_session() {  # <home>
               | "$FM_HOME/bin/fm-claude-stop-autoarm.sh" > "$FM_HOME/hook.out" 2> "$FM_HOME/hook.err"
             printf "%s\n" "$?" > "$FM_HOME/hook.rc"
           fi
+          until=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
         fi
         sleep 0.1
       done
@@ -2727,6 +2728,7 @@ start_session() {  # <home>
           done
           "$0" park > "$FM_HOME/host.out" 2>&1
           printf "%s\n" "$?" > "$FM_HOME/host.rc"
+          until=$((SECONDS + FM_TEST_STUB_MAX_BLOCK_SECONDS))
         fi
         sleep 0.1
       done
@@ -2739,6 +2741,23 @@ park_again() {  # <home>
   : > "$1/park.go"
   wait_until 150 watcher_live "$1" \
     || fail "the next park never started a watcher cycle: $(cat "$1/host.out"; tail -n 5 "$1/state/.supervision-host.log" 2>/dev/null)"
+}
+
+test_session_idle_bound_does_not_include_an_active_park() {
+  local home host
+  home=$(make_home session-idle-bound attended)
+  FM_TEST_STUB_MAX_BLOCK_SECONDS=3 start_session "$home"
+  park_again "$home"
+  # The fake main is executing the real host, rather than waiting for work.
+  sleep 4
+  host=$(awk -F '\t' '$1 == "host" { print $2 }' "$home/state/.supervision-host")
+  kill -TERM "$host"
+  wait_until 200 host_exited "$home" || fail "idle bound: the active park did not stop"
+  rm -f "$home/host.rc"
+  : > "$home/park.go"
+  wait_until 100 test ! -e "$home/park.go" \
+    || fail "idle bound: active park time expired the fake main before its next park"
+  pass "fixture session bounds idle waiting without expiring across an active park"
 }
 
 # Let the latch's cooldown pass, as the clock would, by moving its persisted
@@ -3053,6 +3072,7 @@ test_unrecorded_successor_is_stopped_rather_than_left_for_main
 test_primary_without_a_verified_mirror_runs_away_only
 test_attended_wake_carries_the_dialog_mirror
 test_dialog_bearing_files_are_owner_only
+test_session_idle_bound_does_not_include_an_active_park
 test_undelivered_dialog_is_fed_again_on_the_next_turn
 test_attended_wake_with_an_unreadable_mirror_reaches_main
 test_away_wake_is_handled_on_the_engine_and_never_reaches_main

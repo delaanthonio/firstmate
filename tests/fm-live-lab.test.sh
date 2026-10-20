@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016 # Embedded fixture scripts expand their own variables.
 # Behavior tests for bin/fm-live-lab.sh (readiness checks and teardown) and
 # bin/fm-claude-trust.sh --lab-home.
 #
@@ -524,7 +525,6 @@ for ((attempt=0; attempt<100; attempt++)); do
   sleep 0.1
 done
 assert_present "$TMP_ROOT/orphan-child" "orphan-child fixture did not become ready"
-ORPHAN_CHILD=$(cat "$TMP_ROOT/orphan-child")
 record_pid "$ORPHAN" "$ORPHAN_ROOT"
 out=$("$LIVE_LAB" down "$ORPHAN" 2>&1)
 expect_code 0 "$?" "down waits for a reparented child: $out"
