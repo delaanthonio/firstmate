@@ -291,8 +291,8 @@ run_spawn() {
 }
 
 run_spawn_empty_home() {
-  local case_dir=$1 home=$2 proj=$3 wt=$4 fakebin=$5 id=$6
-  HOME="$home" FM_ROOT_OVERRIDE='' FM_HOME='' \
+  local case_dir=$1 home=$2 proj=$3 wt=$4 fakebin=$5 id=$6 spawn_root=$7
+  HOME="$home" FM_ROOT_OVERRIDE="$spawn_root" FM_HOME='' \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
     FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
     FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$wt" TMUX="fake,1,0" \
@@ -378,18 +378,24 @@ test_kimi_launch_then_send_is_verified() {
 }
 
 test_empty_fm_home_uses_distinct_state_override_temp_roots() {
-  local id rec_a rec_b task_tmp_a task_tmp_b
+  local id rec_a rec_b task_tmp_a task_tmp_b spawn_root
   id="kimi-empty-home-shared-id-$$"
+  # Empty FM_HOME uses the code root's state for the shared project lock.
+  # Keep that root common to both spawns and independent of the real checkout.
+  spawn_root="$TMP_ROOT/empty-home-root"
+  fm_git_init_commit "$spawn_root"
+  mkdir -p "$spawn_root/state"
+  ln -s "$ROOT/bin" "$spawn_root/bin"
   rec_a=$(make_spawn_case empty-home-a "$id")
   read_spawn_record "$rec_a"
-  if ! run_spawn_empty_home "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" > "$CASE_DIR/spawn.log"; then
+  if ! run_spawn_empty_home "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$spawn_root" > "$CASE_DIR/spawn.log"; then
     cat "$CASE_DIR/spawn.log" >&2
     fail "first empty-FM_HOME spawn failed"
   fi
   task_tmp_a=$(sed -n 's/^tasktmp=//p' "$HOME_DIR/state/$id.meta" | tail -1)
   rec_b=$(make_spawn_case empty-home-b "$id")
   read_spawn_record "$rec_b"
-  if ! run_spawn_empty_home "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" > "$CASE_DIR/spawn.log"; then
+  if ! run_spawn_empty_home "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$spawn_root" > "$CASE_DIR/spawn.log"; then
     cat "$CASE_DIR/spawn.log" >&2
     fail "second empty-FM_HOME spawn failed"
   fi
