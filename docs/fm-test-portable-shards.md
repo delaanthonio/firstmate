@@ -21,8 +21,12 @@ A failed script's duration is excluded even when its lane uploaded an artifact.
 In particular, run 36664663190's serial 5 finished in 22m15s with an assertion failure, not a timeout; treating that as a healthy whole-lane sample would hide the failure.
 Collect successful per-script measurements for every member before calculating a split.
 
-`tests/fm-supervision-host.test.sh` uses 789123 ms from run 36669175457, after the merged [host runtime fix](https://github.com/kunchenguid/firstmate/pull/6179), rather than its pre-fix maximum of 1065298 ms.
-That post-fix value has only one sample in this baseline, so further green runs must establish its variance.
+The supervision-host cases are partitioned across four serial subjects: `fm-supervision-host.test.sh` (reporting and attended dispatch), `fm-supervision-host-hooks.test.sh`, `fm-supervision-host-dialog.test.sh`, and `fm-supervision-host-recovery.test.sh`.
+They share fixtures and case definitions in `tests/supervision-host-helpers.sh`; each subject runs a distinct case list on its own CI runner.
+Their provisional packing weights are 300000, 300000, 700000, and 850000 ms respectively, replacing the obsolete 789123 ms whole-suite hint.
+These estimates include margin over the corresponding case intervals in [run 39436422798](https://github.com/delaanthonio/firstmate/actions/runs/39436422798), where all host assertions passed but the job reached its cap before cleanup and the remaining subjects finished.
+They are not successful per-subject measurements; refresh them from completed split-subject CI markers and artifacts.
+The ten-runner serial partition keeps these updated weights below the existing twenty-minute packing target without changing the thirty-minute normal-tier timeout.
 The native-Windows-only `tests/fm-pi-windows-shell-invocation.test.sh` retains its separate 5121 ms measurement from 2026-09-06T21:02Z instead of a portable capability skip.
 The 2026-10-07 polytoken adapter tests carry provisional local measurements instead - 21090 ms for `tests/fm-polytoken-harness.test.sh` and the 103 ms live-guard skip for `tests/fm-polytoken-signals-live-e2e.test.sh`, both measured on the adapter-verification macOS host - until the next CI refresh replaces them with Ubuntu measurements, because they postdate the 2026-09-30 baseline.
 The session-start hint retains its pre-optimization maximum until CI measures the shorter fixture-only home-summary bound; do not discount a local speedup from CI packing weights.
@@ -115,7 +119,7 @@ No fast mode, path skips, or paid runner provisioning is part of this layout.
 
 The longer-term performance objective remains a complete green run under fifteen minutes including start delay, but the current watch-triage floor alone exceeds that objective.
 The immediate packing target is the runner's modeled script budget, not a claim that more shards alone can make an indivisible script faster.
-The layout uses fourteen long-lived Linux jobs (nine serial, two parallel, Herdr, two lint), plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
+The layout uses fifteen long-lived Linux jobs (ten serial, two parallel, Herdr, two lint), plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
 Compare complete before/after runs, preserve cancelled and partial-run evidence, and measure a representative normal-run sample before claiming a P95 improvement.
 The workflow retains per-PR supersession without cancelling main pushes or changing the compliance workflow's event semantics.
 
