@@ -382,13 +382,17 @@ test_empty_fm_home_uses_distinct_state_override_temp_roots() {
   id="kimi-empty-home-shared-id-$$"
   rec_a=$(make_spawn_case empty-home-a "$id")
   read_spawn_record "$rec_a"
-  run_spawn_empty_home "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" >/dev/null \
-    || fail "first empty-FM_HOME spawn failed"
+  if ! run_spawn_empty_home "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" > "$CASE_DIR/spawn.log"; then
+    cat "$CASE_DIR/spawn.log" >&2
+    fail "first empty-FM_HOME spawn failed"
+  fi
   task_tmp_a=$(sed -n 's/^tasktmp=//p' "$HOME_DIR/state/$id.meta" | tail -1)
   rec_b=$(make_spawn_case empty-home-b "$id")
   read_spawn_record "$rec_b"
-  run_spawn_empty_home "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" >/dev/null \
-    || fail "second empty-FM_HOME spawn failed"
+  if ! run_spawn_empty_home "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" > "$CASE_DIR/spawn.log"; then
+    cat "$CASE_DIR/spawn.log" >&2
+    fail "second empty-FM_HOME spawn failed"
+  fi
   task_tmp_b=$(sed -n 's/^tasktmp=//p' "$HOME_DIR/state/$id.meta" | tail -1)
   [ -n "$task_tmp_a" ] && [ -d "$task_tmp_a/gotmp" ] || fail "first override-derived temp root was not created"
   [ -n "$task_tmp_b" ] && [ -d "$task_tmp_b/gotmp" ] || fail "second override-derived temp root was not created"
