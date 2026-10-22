@@ -85,6 +85,7 @@ test_projects_path_scoping() {
     projects="$TMP_ROOT/$id projects"
     mkdir -p "$home/data" "$projects/alpha"
     git -C "$projects/alpha" init -q || fail "$label: could not initialize project fixture"
+    git -c user.name=test -c user.email=test@example.com -C "$projects/alpha" commit -q --allow-empty -m init || fail "$label: could not commit project fixture"
     if [ "$use_override" = yes ]; then
       out=$(FM_ROOT_OVERRIDE='' FM_STATE_OVERRIDE='' FM_DATA_OVERRIDE='' FM_CONFIG_OVERRIDE='' \
         FM_HOME="$home" FM_PROJECTS_OVERRIDE="$projects" FM_SPAWN_NO_GUARD=1 \
@@ -92,6 +93,7 @@ test_projects_path_scoping() {
     else
       mkdir -p "$home/projects/alpha"
       git -C "$home/projects/alpha" init -q || fail "$label: could not initialize home project fixture"
+      git -c user.name=test -c user.email=test@example.com -C "$home/projects/alpha" commit -q --allow-empty -m init || fail "$label: could not commit home project fixture"
       out=$(FM_ROOT_OVERRIDE='' FM_STATE_OVERRIDE='' FM_DATA_OVERRIDE='' FM_PROJECTS_OVERRIDE='' FM_CONFIG_OVERRIDE='' \
         FM_HOME="$home" FM_SPAWN_NO_GUARD=1 \
         "$SPAWN" "$id" projects/alpha codex --mode no-mistakes --yolo off 2>&1)
@@ -143,6 +145,45 @@ test_scout_batch_refuses_delivery_flags() {
   pass "scout batch refuses ship delivery flags instead of ignoring them"
 }
 
+test_batch_forwards_upstream_consent() {
+  local home out status form
+  home="$TMP_ROOT/consent-routing"
+  mkdir -p "$home/bin" "$home/config" "$home/state" "$home/data"
+  cat > "$home/bin/fm-spawn.sh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\0' "$@" > "$FM_HOME/$1.argv"
+SH
+  chmod +x "$home/bin/fm-spawn.sh"
+  for form in separate equals; do
+    rm -f "$home/consent-a.argv" "$home/consent-b.argv"
+    if [ "$form" = separate ]; then
+      set -- --upstream-consent GitHub.COM/DELAANTHONIO/Firstmate
+    else
+      set -- --upstream-consent=GitHub.COM/DELAANTHONIO/Firstmate
+    fi
+    status=0
+    out=$(FM_ROOT_OVERRIDE="$home" FM_HOME="$home" FM_STATE_OVERRIDE='' FM_DATA_OVERRIDE='' \
+      FM_PROJECTS_OVERRIDE='' FM_CONFIG_OVERRIDE='' FM_SPAWN_NO_GUARD=1 \
+      "$SPAWN" consent-a=repo-a consent-b=repo-b --harness claude \
+      --mode no-mistakes --yolo off "$@" 2>&1) || status=$?
+    [ "$status" -eq 0 ] || fail "consented batch routing failed: $out"
+    python3 - "$home" <<'PYTEST' || fail "batch children lost the shared consent or delivery contract"
+from pathlib import Path
+import sys
+home = Path(sys.argv[1])
+for task, repo in [('consent-a', 'repo-a'), ('consent-b', 'repo-b')]:
+    args = (home / (task + '.argv')).read_bytes().decode().split('\0')[:-1]
+    assert args[:2] == [task, repo], args
+    options = dict(zip(args[2::2], args[3::2]))
+    assert len(args[2:]) == 2 * len(options), args
+    assert options == {'--harness': 'claude', '--mode': 'no-mistakes', '--yolo': 'off',
+                       '--upstream-consent': 'github.com/delaanthonio/firstmate'}, options
+PYTEST
+  done
+  pass "batch children receive the normalized shared upstream consent"
+}
+
+test_batch_forwards_upstream_consent
 test_batch_dispatches_every_pair
 test_batch_mode_boundaries
 test_batch_requires_the_shared_delivery_contract

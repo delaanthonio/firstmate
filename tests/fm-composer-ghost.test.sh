@@ -479,7 +479,7 @@ test_unproved_empty_geometry_fails_closed() {
           fm_tmux_composer_state "fakepane")
         ;;
       idle)
-        expected=pending-unproven
+        expected='pending-unproven'
         printf '╭────────────╮\n│ idle hint │\n╰────────────╯\n' > "$capture"
         out=$(PATH="$fb:$PATH" FM_FAKE_STYLED="$capture" FM_FAKE_CY=1 \
           FM_COMPOSER_IDLE_RE='^idle hint$' fm_tmux_composer_state "fakepane")

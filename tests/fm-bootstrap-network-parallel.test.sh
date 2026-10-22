@@ -17,6 +17,22 @@ set -u
 BASE_PATH=${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}
 TMP_ROOT=$(fm_test_tmproot fm-bootstrap-network-parallel)
 TMP_ROOT=$(cd "$TMP_ROOT" && pwd)
+MUTATION_GROUPS=()
+cleanup_mutation_groups() {
+  local pid
+  for pid in "${MUTATION_GROUPS[@]:-}"; do
+    [ -n "$pid" ] || continue
+    kill -TERM -- "-$pid" 2>/dev/null || true
+  done
+  [ "${#MUTATION_GROUPS[@]}" -eq 0 ] || sleep 0.1
+  for pid in "${MUTATION_GROUPS[@]:-}"; do
+    [ -n "$pid" ] || continue
+    kill -KILL -- "-$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+  done
+  fm_test_cleanup
+}
+trap cleanup_mutation_groups EXIT
 export FM_BACKEND_CMUX_BUNDLE_BIN="$TMP_ROOT/no-bundled-cmux"
 unset TMUX TMUX_PANE HERDR_ENV HERDR_PANE_ID HERDR_SESSION HERDR_SOCKET_PATH \
   CMUX_WORKSPACE_ID CMUX_SURFACE_ID CMUX_SOCKET_PATH CMUX_TAB_ID CMUX_PANEL_ID \
@@ -64,6 +80,7 @@ print(parts[2] if len(parts) > 2 else "")
 ' "$argv_b64")
 command_name=$(printf '%s\n' "$cmd" | sed -n '1p')
 subcommand=$(printf '%s\n' "$cmd" | sed -n '2p')
+item_rel=$(printf '%s\n' "$cmd" | sed -n '3p')
 slow=0
 case "$command_name" in
   fm-remote-doctor.sh) slow=1 ;;
@@ -123,6 +140,9 @@ case "$command_name" in
     exit 0
     ;;
   fm-remote-inherit.sh)
+    case "$subcommand" in
+      put) printf 'unchanged: %s\n' "$item_rel" ;;
+    esac
     exit 0
     ;;
 esac
@@ -324,6 +344,522 @@ EOF
   pass "bootstrap network ($mode): per-mate output stays intact, fail-closed, and correctly sequenced"
 }
 
+test_remote_inheritance_failure_names_its_own_error_not_an_unchanged_item() {
+  local dir home primary fakebin log out sm_root sm_home line
+  dir="$TMP_ROOT/inherit-failure"
+  home="$dir/home"
+  primary="$dir/primary"
+  mkdir -p "$home/state" "$home/data" "$home/config" "$home/projects" "$primary"
+  git init -q -b main "$primary"
+  cp -R "$ROOT/bin" "$primary/bin"
+  printf 'test primary\n' > "$primary/AGENTS.md"
+  git -C "$primary" add AGENTS.md bin
+  git -C "$primary" commit -qm 'seed primary default branch'
+  fakebin=$(fm_fakebin "$dir")
+  fm_fake_exit0 "$fakebin" gh treehouse tmux node
+  log="$dir/probe.log"
+  : > "$log"
+  install_fake_ssh "$fakebin"
+
+  sm_root="$dir/remote/sm/root"
+  sm_home="$dir/remote/sm/home"
+  mkdir -p "$sm_root" "$sm_home"
+
+  : > "$home/data/secondmates.md"
+  write_remote_registry_line "$home/data/secondmates.md" sm host-sm "$sm_root" "$sm_home"
+  fm_write_secondmate_meta "$home/state/sm.meta" "$sm_home"
+  printf 'remote_host=host-sm\n' >> "$home/state/sm.meta"
+
+  fm_git_init_commit "$home/projects/alpha"
+  fm_git_add_origin "$home/projects/alpha" "$dir/alpha.origin.git"
+
+  printf '{}\n' > "$home/config/crew-dispatch.json"
+  printf 'codex\n' > "$home/config/crew-harness"
+  # Header omits "must not be edited there" so the local check fails before
+  # any ssh call for this item, after the two config items above already
+  # reported "unchanged:" from the (faked) remote.
+  cat > "$home/data/captain-shared.md" <<'EOF'
+# Shared captain preferences
+
+This file is main-authoritative in the main firstmate home.
+In secondmate homes it is read-only in secondmate homes.
+Route new captain-preference discoveries to the main firstmate through marked status or a document pointer.
+EOF
+
+  out=$(
+    PATH="$fakebin:$BASE_PATH" \
+    FM_HOME="$home" \
+    FM_ROOT_OVERRIDE="$primary" \
+    FM_BOOTSTRAP_NETWORK=only \
+    FM_SSH_BIN="$fakebin/fake-ssh" \
+    FM_FAKE_SSH_LOG="$log" \
+    FM_FAKE_SSH_SLEEP=0 \
+    FM_FAKE_GIT_FETCH_SLEEP=0 \
+    FM_INHERITABLE_CONFIG='crew-dispatch.json crew-harness' \
+    FM_FAKE_TREEHOUSE_LEASE_HELP=1 \
+    "$ROOT/bin/fm-bootstrap.sh" 2>&1
+  )
+
+  line=$(printf '%s\n' "$out" | grep '^SECONDMATE_SYNC: secondmate sm: skipped: remote inheritance failed on host-sm:' || true)
+  [ -n "$line" ] || fail "expected a remote inheritance failure line: $out"
+  case "$line" in
+    *"shared captain preferences"*) ;;
+    *) fail "the failure reason should name the shared captain header problem, got: $line" ;;
+  esac
+  case "$line" in
+    *"unchanged:"*) fail "the failure reason must not report an earlier unchanged item, got: $line" ;;
+  esac
+
+  if [ -n "${FM_TEST_EVIDENCE_FILE:-}" ]; then
+    printf '=== inherit-failure bootstrap output ===\n%s\n' "$out" >> "$FM_TEST_EVIDENCE_FILE"
+  fi
+
+  pass "a remote inheritance failure reports its own error line, not an earlier unchanged item"
+}
+
+# install_item_ssh <fakebin>: a fake ssh for the convergence path. Every
+# remote command logs START and END lines; an inheritance item sleeps
+# FM_FAKE_ITEM_SLEEP and answers "unchanged: <item>", or fails when it is
+# FM_FAKE_ITEM_FAIL. A tracked-file sync on FM_FAKE_SYNC_HANG_HOST never
+# answers within the test's budget.
+install_item_ssh() {
+  local fakebin=$1
+  cat > "$fakebin/fake-ssh" <<'SH'
+#!/usr/bin/env bash
+set -u
+fm_test_track_child "$$"
+log=${FM_FAKE_SSH_LOG:?}
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o) shift 2 ;;
+    --) shift; break ;;
+    *) exit 90 ;;
+  esac
+done
+host=${1:-}
+shift 2 || true
+argv_b64=${4:-}
+cmd=$(python3 -c 'import sys, base64
+parts = [p.decode() for p in base64.b64decode(sys.argv[1]).split(b"\0") if p]
+print("\n".join((parts + ["", "", ""])[:3]))' "$argv_b64")
+command_name=$(printf '%s\n' "$cmd" | sed -n '1p')
+subcommand=$(printf '%s\n' "$cmd" | sed -n '2p')
+item_rel=$(printf '%s\n' "$cmd" | sed -n '3p')
+cat > /dev/null
+printf 'START %s %s %s %s\n' "$host" "$command_name" "$subcommand" "$item_rel" >> "$log"
+case "$command_name:$subcommand" in
+  fm-remote-secondmate-control.sh:sync)
+    if [ "$host" = "${FM_FAKE_SYNC_HANG_HOST:-none}" ]; then
+      sleep 120 &
+      child=$!
+      fm_test_track_child "$child"
+      wait "$child"
+    fi
+    printf 'END %s %s %s\n' "$host" "$command_name" "$subcommand" >> "$log"
+    [ "${FM_FAKE_SYNC_UNKNOWN:-0}" != 1 ] || exit 255
+    printf 'current: test\n'
+    exit 0
+    ;;
+  fm-remote-secondmate-control.sh:state) printf 'END %s\n' "$host" >> "$log"; printf 'alive\n'; exit 0 ;;
+  fm-remote-secondmate-control.sh:route) printf 'END %s\n' "$host" >> "$log"; printf 'backend=herdr\n'; exit 0 ;;
+  fm-remote-inherit.sh:*)
+    if [ "$item_rel" = "${FM_FAKE_ITEM_UNKNOWN:-none}" ]; then
+      sleep 0.2
+      exit 255
+    fi
+    # The failing item answers at once, so it settles before any sibling.
+    if [ "$item_rel" = "${FM_FAKE_ITEM_FAIL:-none}" ]; then
+      printf 'END %s %s %s %s\n' "$host" "$command_name" "$subcommand" "$item_rel" >> "$log"
+      printf 'error: synthetic refusal of %s\n' "$item_rel" >&2
+      exit 1
+    fi
+    sleep "${FM_FAKE_ITEM_SLEEP:-0}" &
+    child=$!
+    fm_test_track_child "$child"
+    wait "$child"
+    printf 'END %s %s %s %s\n' "$host" "$command_name" "$subcommand" "$item_rel" >> "$log"
+    if [ "$item_rel" = "${FM_FAKE_ITEM_PUSHED:-none}" ]; then
+      printf 'pushed: %s\n' "$item_rel"
+      exit 0
+    fi
+    printf 'unchanged: %s\n' "$item_rel"
+    exit 0
+    ;;
+esac
+printf 'END %s %s %s\n' "$host" "$command_name" "$subcommand" >> "$log"
+exit 0
+SH
+  chmod +x "$fakebin/fake-ssh"
+}
+
+# convergence_fixture <dir> <mate:host>...: a primary checkout and a home whose
+# registry records each mate as a remote route. Sets CF_HOME, CF_PRIMARY,
+# CF_FAKEBIN, and CF_LOG.
+convergence_fixture() {
+  local dir=$1 spec id host
+  shift
+  CF_HOME="$dir/home"
+  CF_PRIMARY="$dir/primary"
+  mkdir -p "$CF_HOME/state" "$CF_HOME/data" "$CF_HOME/config" "$CF_HOME/projects" "$CF_PRIMARY"
+  git init -q -b main "$CF_PRIMARY"
+  cp -R "$ROOT/bin" "$CF_PRIMARY/bin"
+  printf 'test primary\n' > "$CF_PRIMARY/AGENTS.md"
+  git -C "$CF_PRIMARY" add AGENTS.md bin
+  git -C "$CF_PRIMARY" commit -qm 'seed primary default branch'
+  CF_FAKEBIN=$(fm_fakebin "$dir")
+  fm_fake_exit0 "$CF_FAKEBIN" gh treehouse tmux node
+  CF_LOG="$dir/remote.log"
+  : > "$CF_LOG"
+  install_item_ssh "$CF_FAKEBIN"
+  : > "$CF_HOME/data/secondmates.md"
+  for spec in "$@"; do
+    id=${spec%%:*}
+    host=${spec#*:}
+    mkdir -p "$dir/remote/$id/root" "$dir/remote/$id/home"
+    write_remote_registry_line "$CF_HOME/data/secondmates.md" "$id" "$host" "$dir/remote/$id/root" "$dir/remote/$id/home"
+    fm_write_secondmate_meta "$CF_HOME/state/$id.meta" "$dir/remote/$id/home"
+    printf 'remote_host=%s\n' "$host" >> "$CF_HOME/state/$id.meta"
+  done
+}
+
+run_inherit_push() {  # <id> <generation> -> stdout+stderr; status of the push
+  PATH="$CF_FAKEBIN:$BASE_PATH" \
+    FM_HOME="$CF_HOME" \
+    FM_ROOT_OVERRIDE="$CF_PRIMARY" \
+    FM_SSH_BIN="$CF_FAKEBIN/fake-ssh" \
+    FM_FAKE_SSH_LOG="$CF_LOG" \
+    FM_INHERITABLE_CONFIG='item-a item-b item-c item-d item-e item-f' \
+    "$ROOT/bin/fm-remote-inherit-push.sh" "$@" 2>&1
+}
+
+max_inherit_overlap() {  # <log>: the most inheritance items in flight at once
+  awk '
+    $1 == "START" && $3 == "fm-remote-inherit.sh" { n++; if (n > max) max = n }
+    $1 == "END" && $3 == "fm-remote-inherit.sh" { n-- }
+    END { print max + 0 }
+  ' "$1"
+}
+
+test_inherit_push_overlaps_items_and_replays_in_order() {
+  local out rc order
+  convergence_fixture "$TMP_ROOT/push-overlap" sm:host-sm
+  out=$(FM_FAKE_ITEM_SLEEP=0.4 run_inherit_push sm 1); rc=$?
+  expect_code 0 "$rc" "a clean push should succeed: $out"
+  [ "$(max_inherit_overlap "$CF_LOG")" -ge 2 ] \
+    || fail "inheritance items did not overlap"$'\n'"$(cat "$CF_LOG")"
+  [ "$(max_inherit_overlap "$CF_LOG")" -le 4 ] \
+    || fail "more than the default four inheritance items were in flight"$'\n'"$(cat "$CF_LOG")"
+  order=$(printf '%s\n' "$out" | sed -n 's/^unchanged: //p' | tr '\n' ' ')
+  [ "$order" = "config/item-a config/item-b config/item-c config/item-d config/item-e config/item-f data/captain-shared.md " ] \
+    || fail "the push output was not replayed in allowlist order: $order"$'\n'"$out"
+
+  : > "$CF_LOG"
+  out=$(FM_FAKE_ITEM_SLEEP=0.2 FM_REMOTE_INHERIT_PUSH_JOBS=1 run_inherit_push sm 2); rc=$?
+  expect_code 0 "$rc" "a one-at-a-time push should succeed: $out"
+  [ "$(max_inherit_overlap "$CF_LOG")" -eq 1 ] \
+    || fail "FM_REMOTE_INHERIT_PUSH_JOBS=1 must send one item at a time"$'\n'"$(cat "$CF_LOG")"
+  pass "remote inheritance push: items overlap up to the bound and replay in allowlist order"
+}
+
+test_inherit_push_failure_stops_new_sends() {
+  local out rc
+  convergence_fixture "$TMP_ROOT/push-failure" sm:host-sm
+  out=$(FM_FAKE_ITEM_FAIL=config/item-c FM_REMOTE_INHERIT_PUSH_JOBS=1 run_inherit_push sm 1); rc=$?
+  [ "$rc" -ne 0 ] || fail "a failed item must fail the push: $out"
+  assert_contains "$out" "error: synthetic refusal of config/item-c" "the failed item's own error must be reported"
+  assert_contains "$out" "unchanged: config/item-b" "items sent before the failure are still reported"
+  if grep -q 'START .* config/item-d' "$CF_LOG"; then
+    fail "an item after the failed one was still sent"$'\n'"$(cat "$CF_LOG")"
+  fi
+  assert_not_contains "$out" "config/item-d" "no item after the failure may be reported as sent"
+
+  : > "$CF_LOG"
+  out=$(FM_FAKE_ITEM_FAIL=config/item-a FM_FAKE_ITEM_SLEEP=2 run_inherit_push sm 2); rc=$?
+  [ "$rc" -ne 0 ] || fail "a failed first item must fail a concurrent push: $out"
+  if grep -q 'START .* data/captain-shared.md' "$CF_LOG"; then
+    fail "a concurrent push kept starting items after the first item failed"$'\n'"$(cat "$CF_LOG")"
+  fi
+  pass "remote inheritance push: a failed item fails the push and no later item is started"
+}
+
+test_inherit_push_reaps_a_sender_without_a_published_result() {
+  local out rc=0
+  convergence_fixture "$TMP_ROOT/push-missing-result" sm:host-sm
+  cat > "$CF_FAKEBIN/mv" <<'SH'
+#!/usr/bin/env bash
+case " $* " in *".rc.tmp "*) exit 1 ;; esac
+exec /bin/mv "$@"
+SH
+  chmod +x "$CF_FAKEBIN/mv"
+  . "$ROOT/bin/fm-timeout-lib.sh"
+  export -f run_inherit_push
+  export CF_FAKEBIN CF_HOME CF_PRIMARY CF_LOG BASE_PATH ROOT
+  out=$(FM_REMOTE_INHERIT_PUSH_JOBS=1 fm_run_timed 15 bash -c 'run_inherit_push sm 1') || rc=$?
+  expect_code 1 "$rc" "a sender that cannot publish its result must fail without hanging"
+  assert_contains "$(cat "$CF_LOG")" 'config/item-a' "the first send must execute"
+  assert_not_contains "$(cat "$CF_LOG")" 'config/item-b' "a missing result must stop further sends"
+  pass "inheritance reaps a failed result publisher and stops scheduling"
+}
+
+test_inherit_push_interruption_reaps_only_its_owned_tree() {
+  local push sentinel pid rc=0 i=0 owned
+  convergence_fixture "$TMP_ROOT/push-interrupted-tree" sm:host-sm
+  sleep 600 &
+  sentinel=$!
+  fm_test_track_child "$sentinel"
+  PATH="$CF_FAKEBIN:$BASE_PATH" FM_HOME="$CF_HOME" FM_ROOT_OVERRIDE="$CF_PRIMARY" \
+    FM_SSH_BIN="$CF_FAKEBIN/fake-ssh" FM_FAKE_SSH_LOG="$CF_LOG" FM_FAKE_ITEM_SLEEP=600 \
+    FM_INHERITABLE_CONFIG='item-a item-b item-c item-d item-e item-f' \
+    "$ROOT/bin/fm-remote-inherit-push.sh" sm 1 > "$CF_HOME/push.out" 2>&1 &
+  push=$!
+  fm_test_track_child "$push"
+  while ! grep -q 'START .*fm-remote-inherit.sh' "$CF_LOG" && [ "$i" -lt 200 ]; do
+    sleep 0.05; i=$((i + 1))
+  done
+  grep -q 'START .*fm-remote-inherit.sh' "$CF_LOG" || fail "the interrupted sender never reached its transport"
+  owned=$(ps -axo pid=,ppid= | awk -v root="$push" '
+    BEGIN { seen[root]=1 }
+    { parent[$1]=$2 }
+    END {
+      do {
+        changed=0
+        for (pid in parent) if ((parent[pid] in seen) && !(pid in seen)) { seen[pid]=1; changed=1 }
+      } while (changed)
+      for (pid in seen) print pid
+    }')
+  for pid in $owned; do fm_test_track_child "$pid"; done
+  kill -TERM "$push"
+  wait "$push" || rc=$?
+  expect_code 143 "$rc" "an interrupted sender must preserve its signal status: $(cat "$CF_HOME/push.out")"
+  kill -0 "$sentinel" 2>/dev/null || fail "sender cleanup reached an unrelated process"
+  for pid in $owned; do
+    i=0
+    while [ "$i" -lt 100 ]; do
+      case "$(ps -p "$pid" -o stat= 2>/dev/null)" in ''|Z*) break ;; esac
+      sleep 0.01; i=$((i + 1))
+    done
+    case "$(ps -p "$pid" -o stat= 2>/dev/null)" in
+      ''|Z*) ;;
+      *) fail "interrupted sender left an owned process alive: $pid" ;;
+    esac
+  done
+  kill "$sentinel" 2>/dev/null || true
+  wait "$sentinel" 2>/dev/null || true
+  pass "inheritance interruption reaps its complete tree and preserves an unrelated sentinel"
+}
+
+test_inherit_push_local_refusal_sends_nothing() {
+  local out rc
+  convergence_fixture "$TMP_ROOT/push-refusal" sm:host-sm
+  # item-a is ordinary and comes first; only item-e is unsafe.
+  printf 'local\n' > "$CF_HOME/config/item-a"
+  printf 'local\n' > "$CF_HOME/config/item-e"
+  ln "$CF_HOME/config/item-e" "$TMP_ROOT/push-refusal/item-e.extra-link"
+  out=$(run_inherit_push sm 1); rc=$?
+  [ "$rc" -ne 0 ] || fail "a hardlinked source must refuse the push: $out"
+  assert_contains "$out" "inherited source is hardlinked" "the refusal names the unsafe source"
+  [ ! -s "$CF_LOG" ] || fail "a local refusal must send nothing, even items before it"$'\n'"$(cat "$CF_LOG")"
+  pass "remote inheritance push: a local refusal is decided before any item is sent"
+}
+
+test_convergence_budget_isolates_a_hung_mate() {
+  local out start elapsed
+  convergence_fixture "$TMP_ROOT/convergence-budget" alpha:host-alpha bravo:host-bravo
+  start=$(date +%s)
+  out=$(
+    PATH="$CF_FAKEBIN:$BASE_PATH" \
+    FM_HOME="$CF_HOME" \
+    FM_ROOT_OVERRIDE="$CF_PRIMARY" \
+    FM_BOOTSTRAP_NETWORK=only \
+    FM_SSH_BIN="$CF_FAKEBIN/fake-ssh" \
+    FM_FAKE_SSH_LOG="$CF_LOG" \
+    FM_FAKE_SYNC_HANG_HOST=host-alpha \
+    FM_SECONDMATE_CONVERGENCE_TIMEOUT=15 \
+    FM_INHERITABLE_CONFIG='item-a' \
+    FM_FAKE_TREEHOUSE_LEASE_HELP=1 \
+    "$ROOT/bin/fm-bootstrap.sh" 2>&1
+  )
+  elapsed=$(( $(date +%s) - start ))
+  [ "$elapsed" -lt 90 ] || fail "a hung mate held the network phase for ${elapsed}s past its 15s budget"$'\n'"$out"
+  assert_contains "$out" \
+    "SECONDMATE_SYNC: secondmate alpha: skipped: remote tracked-file sync failed on host-alpha: no answer within the 15s per-mate convergence budget" \
+    "the hung mate must be reported as its own skip"
+  assert_contains "$out" \
+    "SECONDMATE_SYNC: secondmate alpha: skipped: remote inheritance failed on host-alpha: no answer within the 15s per-mate convergence budget" \
+    "an exhausted budget skips the hung mate's inheritance push too"
+  assert_not_contains "$out" "SECONDMATE_SYNC: secondmate bravo:" "the healthy mate must converge without a skip"
+  grep -q 'START host-bravo fm-remote-inherit.sh' "$CF_LOG" \
+    || fail "the healthy mate's inheritance push did not run"$'\n'"$(cat "$CF_LOG")"
+  [ -f "$CF_HOME/state/.secondmate-nudge-pending/alpha.pending" ] \
+    || fail "the hung mate's retry marker must survive so the next session start retries it"
+  assert_grep 'owed=1' "$CF_HOME/state/.secondmate-nudge-pending/alpha.pending" \
+    "a step cut off by the budget may have changed the home, so the re-read must stay owed"
+  [ ! -f "$CF_HOME/state/.secondmate-nudge-pending/bravo.pending" ] \
+    || fail "the converged mate's retry marker must be cleared"
+  pass "per-mate convergence budget: a hung host is that mate's skip, keeps its retry marker, and does not hold the others"
+}
+
+test_partial_push_failure_keeps_the_reread_owed() {
+  local out
+  convergence_fixture "$TMP_ROOT/partial-push-owed" alpha:host-alpha
+  out=$(
+    PATH="$CF_FAKEBIN:$BASE_PATH" \
+    FM_HOME="$CF_HOME" \
+    FM_ROOT_OVERRIDE="$CF_PRIMARY" \
+    FM_BOOTSTRAP_NETWORK=only \
+    FM_SSH_BIN="$CF_FAKEBIN/fake-ssh" \
+    FM_FAKE_SSH_LOG="$CF_LOG" \
+    FM_FAKE_ITEM_PUSHED=config/item-a \
+    FM_FAKE_ITEM_FAIL=config/item-b \
+    FM_REMOTE_INHERIT_PUSH_JOBS=1 \
+    FM_INHERITABLE_CONFIG='item-a item-b' \
+    FM_FAKE_TREEHOUSE_LEASE_HELP=1 \
+    "$ROOT/bin/fm-bootstrap.sh" 2>&1
+  )
+  assert_contains "$out" \
+    "SECONDMATE_SYNC: secondmate alpha: skipped: remote inheritance failed on host-alpha: error: synthetic refusal of config/item-b" \
+    "the failed push must be reported with its own error"
+  assert_grep 'owed=1' "$CF_HOME/state/.secondmate-nudge-pending/alpha.pending" \
+    "an item the failed push already applied changed the home, so the re-read must stay owed"
+  pass "a push that fails after applying an item keeps the mate's re-read owed"
+}
+
+run_nudge_convergence() {
+  PATH="$CF_FAKEBIN:$BASE_PATH" \
+    FM_HOME="$CF_HOME" FM_ROOT_OVERRIDE="$CF_PRIMARY" \
+    FM_BOOTSTRAP_NETWORK=only FM_SSH_BIN="$CF_FAKEBIN/fake-ssh" \
+    FM_FAKE_SSH_LOG="$CF_LOG" FM_INHERITABLE_CONFIG='item-a item-b' \
+    FM_FAKE_TREEHOUSE_LEASE_HELP=1 FM_SEND_SETTLE=0 \
+    FM_BOOTSTRAP_VERBOSE_FACTS=1 \
+    "$ROOT/bin/$1" 2>&1
+}
+
+assert_owed_reread_survives_unchanged_retry() {  # <script> <why>
+  local script=$1 why=$2 marker out
+  marker="$CF_HOME/state/.secondmate-nudge-pending/sm.pending"
+  assert_grep 'owed=1' "$marker" "$why"
+  out=$(run_nudge_convergence "$script")
+  if [ "$script" = fm-config-push.sh ]; then
+    assert_contains "$out" 'config-reread:' "unchanged retry must deliver the owed reread: $out"
+  else
+    case "$out" in
+      *NUDGE_SECONDMATES*) ;;
+      *'BOOTSTRAP_INFO: nudged remote fm-sm'*) ;;
+      *) fail "unchanged retry must attempt the owed reread: $out" ;;
+    esac
+  fi
+}
+
+test_config_push_partial_failure_keeps_the_reread_owed() {
+  local out rc
+  convergence_fixture "$TMP_ROOT/config-push-partial-owed" sm:host-sm
+  out=$(FM_REMOTE_INHERIT_PUSH_JOBS=1 FM_FAKE_ITEM_PUSHED=config/item-a \
+    FM_FAKE_ITEM_FAIL=config/item-b run_nudge_convergence fm-config-push.sh); rc=$?
+  expect_code 1 "$rc" "a push that fails after applying an item must fail: $out"
+  assert_contains "$out" 'pushed: config/item-a' "the applied item must still be reported: $out"
+  assert_owed_reread_survives_unchanged_retry fm-config-push.sh \
+    "an item the failed config-push already applied changed the home, so the re-read must stay owed"
+  pass "config-push: a push that fails after applying an item keeps the mate's re-read owed"
+}
+
+test_unknown_completion_keeps_the_reread_owed() {
+  local out rc
+  convergence_fixture "$TMP_ROOT/bootstrap-sync-unknown" sm:host-sm
+  out=$(FM_FAKE_SYNC_UNKNOWN=1 run_nudge_convergence fm-bootstrap.sh); rc=$?
+  assert_owed_reread_survives_unchanged_retry fm-bootstrap.sh \
+    "an unknown-completion sync must keep the re-read owed: $out"
+
+  convergence_fixture "$TMP_ROOT/bootstrap-push-unknown" sm:host-sm
+  out=$(FM_FAKE_ITEM_UNKNOWN=config/item-a run_nudge_convergence fm-bootstrap.sh); rc=$?
+  assert_owed_reread_survives_unchanged_retry fm-bootstrap.sh \
+    "an unknown-completion push must keep the re-read owed: $out"
+
+  convergence_fixture "$TMP_ROOT/config-push-unknown" sm:host-sm
+  out=$(FM_FAKE_ITEM_UNKNOWN=config/item-a run_nudge_convergence fm-config-push.sh); rc=$?
+  expect_code 1 "$rc" "config-push must report unknown completion as failure: $out"
+  assert_owed_reread_survives_unchanged_retry fm-config-push.sh \
+    "an unknown-completion config-push must keep the re-read owed: $out"
+  pass "unknown-completion sync or push keeps the mate's re-read owed across an unchanged retry"
+}
+
+test_parallel_unknown_completion_overrides_known_failure() {
+  local out rc
+  convergence_fixture "$TMP_ROOT/mixed-failure" sm:host-sm
+  out=$(FM_FAKE_ITEM_UNKNOWN=config/item-b FM_FAKE_ITEM_SLEEP=1 \
+    FM_FAKE_ITEM_FAIL=config/item-a run_inherit_push sm 1); rc=$?
+  expect_code 255 "$rc" "unknown completion must survive another item's refusal: $out"
+  pass "parallel push preserves unknown completion status"
+}
+
+# The startup network bound stops its stage the way `timeout -k 1` does: TERM to
+# the stage's process group, then KILL one second later. The remote call itself
+# runs in its own timed process group, so the stage dies while that call is
+# still in flight and may yet change the home.
+test_kill_during_remote_call_keeps_the_reread_owed() {
+  local script pid marker waited started pg own_pg
+  for script in fm-bootstrap.sh fm-config-push.sh; do
+    convergence_fixture "$TMP_ROOT/kill-$script" sm:host-sm
+    marker="$CF_HOME/state/.secondmate-nudge-pending/sm.pending"
+    if [ "$script" = fm-bootstrap.sh ]; then
+      started='fm-remote-secondmate-control.sh sync'
+      cat > "$CF_FAKEBIN/mktemp" <<SH
+#!/usr/bin/env bash
+case "\$*" in *fm-bootstrap-par.XXXXXX*) exit 1 ;; esac
+exec '$REAL_MKTEMP' "\$@"
+SH
+      chmod +x "$CF_FAKEBIN/mktemp"
+    else
+      started='fm-remote-inherit.sh'
+    fi
+    set -m
+    PATH="$CF_FAKEBIN:$BASE_PATH" \
+      FM_HOME="$CF_HOME" FM_ROOT_OVERRIDE="$CF_PRIMARY" \
+      FM_BOOTSTRAP_NETWORK=only FM_SSH_BIN="$CF_FAKEBIN/fake-ssh" \
+      FM_FAKE_SSH_LOG="$CF_LOG" FM_INHERITABLE_CONFIG='item-a item-b' \
+      FM_FAKE_TREEHOUSE_LEASE_HELP=1 FM_SEND_SETTLE=0 \
+      FM_BOOTSTRAP_VERBOSE_FACTS=1 \
+      FM_FAKE_SYNC_HANG_HOST=host-sm FM_FAKE_ITEM_SLEEP=120 \
+      "$ROOT/bin/$script" >/dev/null 2>&1 &
+    pid=$!
+    MUTATION_GROUPS+=("$pid")
+    fm_test_track_child "$pid"
+    set +m
+    waited=0
+    while ! grep -q "$started" "$CF_LOG" && [ "$waited" -lt 200 ]; do
+      sleep 0.05
+      waited=$((waited + 1))
+    done
+    grep -q "$started" "$CF_LOG" \
+      || fail "$script never started a remote mutation"$'\n'"$(cat "$CF_LOG")"
+    kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+    sleep 1
+    kill -KILL -- "-$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    MUTATION_GROUPS=()
+    own_pg=$(ps -o pgid= -p $$ | tr -d ' ')
+    for pg in $(ps -eo pgid=,args= | awk -v f="$CF_FAKEBIN/fake-ssh" 'index($0, f) { print $1 }' | sort -u); do
+      [ "$pg" = "$own_pg" ] || kill -KILL -- "-$pg" 2>/dev/null || true
+    done
+    assert_grep 'owed=1' "$marker" \
+      "$script killed mid-mutation must keep the re-read owed"
+    assert_owed_reread_survives_unchanged_retry "$script" \
+      "$script killed mid-mutation must keep the re-read owed"
+  done
+  pass "a kill during the remote call keeps the mate's re-read owed"
+}
+
 test_remote_probe_scheduling_keeps_per_mate_lines parallel
 test_remote_probe_scheduling_keeps_per_mate_lines fallback
+test_remote_inheritance_failure_names_its_own_error_not_an_unchanged_item
+test_inherit_push_overlaps_items_and_replays_in_order
+test_inherit_push_failure_stops_new_sends
+test_inherit_push_reaps_a_sender_without_a_published_result
+test_inherit_push_interruption_reaps_only_its_owned_tree
+test_inherit_push_local_refusal_sends_nothing
+test_convergence_budget_isolates_a_hung_mate
+test_partial_push_failure_keeps_the_reread_owed
+test_config_push_partial_failure_keeps_the_reread_owed
+test_unknown_completion_keeps_the_reread_owed
+test_parallel_unknown_completion_overrides_known_failure
+test_kill_during_remote_call_keeps_the_reread_owed
 echo "# all fm-bootstrap-network-parallel tests passed"

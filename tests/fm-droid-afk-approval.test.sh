@@ -280,8 +280,8 @@ test_transferred_hold_wins_and_status_is_never_reopened() {
     'the transferred decision was not filed with its captain hold'
 
   status_text=$(cat "$home/state/review.status")
-  assert_contains "$status_text" 'captain-held [key=route-choice]: tracked by review-decision-route-choice' \
-    'the interrupted status-to-hold transfer was not finished'
+  printf '%s\n' "$status_text" | grep -Eq '^captain-held \[key=route-choice\]( \[at=[0-9]+\])?: tracked by review-decision-route-choice$' \
+    || fail 'the interrupted status-to-hold transfer was not finished'
   [ "$(printf '%s\n' "$status_text" | grep -c '^needs-decision \[key=route-choice\]')" -eq 1 ] \
     || fail "status was reopened for a key its captain hold already owns: $status_text"
   # shellcheck disable=SC1091

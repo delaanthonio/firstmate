@@ -20,6 +20,9 @@
 #   a new set of unreconciled public-followup terminal results -> print one
 #       "public-followup ..." line BEFORE the relay call, so a promised final
 #       reply is surfaced through this same wake path
+#   a terminal result bin/fm-public-followup.sh consume refused -> print its
+#       "public-followup rejected <event-id> ..." line, with the specific
+#       reason, at least once
 #
 # The public-followup line rides here rather than on a new poll of its own: this
 # check only exists in a home that opted into the relay, and it is an O(1)
@@ -48,6 +51,11 @@ fmx_load_config
 # Hard no-op when X mode is off: this is what keeps the check shim inert.
 [ -n "$FMX_TOKEN" ] || exit 0
 
+# The wake library creates state before relay artifacts are published.
+umask 077
+# shellcheck source=bin/fm-wake-lib.sh
+. "$SCRIPT_DIR/fm-wake-lib.sh"
+
 # Unreconciled terminal results for a public commitment are actionable even when
 # the relay has no new mention, and they outlive any session, so surface them
 # first. The signature compare keeps this to one wake per new result set instead
@@ -57,11 +65,34 @@ if fm_pf_has_events "$STATE"; then
   PF_SIG=$(fm_pf_events_signature "$STATE" 2>/dev/null) || PF_SIG=
   if [ -n "$PF_SIG" ] \
     && [ "$(cat "$PF_ROOT/$FM_PF_SURFACED_BASENAME" 2>/dev/null || true)" != "$PF_SIG" ]; then
-    if printf '%s\n' "$PF_SIG" \
+    if fm_wake_append check x-watch:public-followup 'check: x-watch: public-followup terminal results are waiting to be reconciled' \
+      && printf '%s\n' "$PF_SIG" \
       | fmx_private_artifact_publish_stdin "$PF_ROOT" "$FM_PF_SURFACED_BASENAME" 600 2>/dev/null; then
       printf 'public-followup terminal results are waiting to be reconciled\n'
     fi
   fi
+fi
+
+# A terminal result consume refused is a promised reply that will never become
+# ready on its own, so each refusal wakes this home with its specific reason.
+# The queued line is removed only once it has been read AND written to this
+# durable wake queue and then this poll's stdout: a read that fails, a line that comes back
+# empty, or a write that fails all leave the line queued for the next cycle. The
+# read is its own step because a pipeline would report the status of its last
+# stage, not of the read. Dropping a raised line is best-effort, so this wake is
+# at-least-once: a wake directory that cannot be written raises the same refusal
+# again, with the same event id and reason as the quarantine it came from.
+PF_WAKES=$(fm_pf_rejection_wakes_dir "$STATE")
+if fm_pf_dir_has_entry "$PF_WAKES"; then
+  for PF_WAKE in "$PF_WAKES"/*; do
+    [ -f "$PF_WAKE" ] && [ ! -L "$PF_WAKE" ] || continue
+    PF_WAKE_LINE=$(sed -n '1p' "$PF_WAKE" 2>/dev/null) || continue
+    PF_WAKE_LINE=$(printf '%s\n' "$PF_WAKE_LINE" | fm_pf_bound_bytes 800)
+    [ -n "$PF_WAKE_LINE" ] || continue
+    fm_wake_append check "x-watch:public-followup-rejected:${PF_WAKE##*/}" "check: x-watch: $PF_WAKE_LINE" || continue
+    printf '%s\n' "$PF_WAKE_LINE" || continue
+    rm -f -- "$PF_WAKE" 2>/dev/null || true
+  done
 fi
 
 ERROR_FILE="$STATE/x-poll.error"
