@@ -1363,6 +1363,21 @@ FM_STATE_OVERRIDE="$WATCH_STATE" FM_SECONDMATE_LIVENESS_SECS=1 FM_POLL=1 \
   > "$TMP_ROOT/watch-liveness.out" 2> "$TMP_ROOT/watch-liveness.err" &
 watch_pid=$!
 fm_test_track_child "$watch_pid"
+# Recovery can use the watcher's existing 120-second spawn budget. Start the
+# separate exit bound only once a wake is visible, so a slow successful spawn
+# cannot consume the time intended to detect a post-wake cleanup stall.
+watch_recovery_deadline=$((SECONDS + 120))
+while kill -0 "$watch_pid" 2>/dev/null && [ ! -s "$TMP_ROOT/watch-liveness.out" ] \
+  && [ "$SECONDS" -lt "$watch_recovery_deadline" ]; do
+  sleep 0.02
+done
+if kill -0 "$watch_pid" 2>/dev/null && [ ! -s "$TMP_ROOT/watch-liveness.out" ]; then
+  ps -p "$watch_pid" -o pid=,ppid=,pgid=,stat=,comm= >&2 || true
+  watch_trace=$(tail -n 160 "$TMP_ROOT/watch-liveness.err" 2>/dev/null)
+  kill "$watch_pid" 2>/dev/null || true
+  fail "the watcher did not report its auto-relaunch wake within the 120-second recovery bound:
+$watch_trace"
+fi
 watch_wait=0
 while kill -0 "$watch_pid" 2>/dev/null && [ "$watch_wait" -lt 1500 ]; do
   sleep 0.02
@@ -1370,9 +1385,10 @@ while kill -0 "$watch_pid" 2>/dev/null && [ "$watch_wait" -lt 1500 ]; do
 done
 if kill -0 "$watch_pid" 2>/dev/null; then
   ps -p "$watch_pid" -o pid=,ppid=,pgid=,stat=,comm= >&2 || true
+  watch_trace=$(tail -n 160 "$TMP_ROOT/watch-liveness.err" 2>/dev/null)
   kill "$watch_pid" 2>/dev/null || true
   fail "the watcher did not exit on its auto-relaunch wake within the bound: $(cat "$TMP_ROOT/watch-liveness.out" 2>/dev/null)
-$(tail -n 160 "$TMP_ROOT/watch-liveness.err" 2>/dev/null)"
+$watch_trace"
 fi
 wait "$watch_pid" \
   || fail "the liveness watcher leg exited non-zero: $(cat "$TMP_ROOT/watch-liveness.err")"
