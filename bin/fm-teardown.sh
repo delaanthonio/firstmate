@@ -111,6 +111,9 @@
 # name a live quarantined space and is retained for that sweep.
 # data/<id>/ is deliberately left in place: a successor spawn reads brief.md
 # from it.
+# Task temp roots normally match the current home tag. A relocated home's
+# exact tasktmp= record also authorizes its old tag, but only for the same task
+# and namespace prefix, with private owned directories and no symlink escape.
 # Worktree-slot ownership (teardown-slot-collision): a treehouse pool slot is
 # reused across tasks, so a stale, duplicated, or drifted worktree= record can
 # name a slot a DIFFERENT live task now holds. Cleanup kills every process under
@@ -2669,13 +2672,38 @@ safe_rm_rf_child_worktree() {
 
 validate_task_tmp_for_removal() {
   local target=$1 label=${2:-task temp root} task_id=${3:-$ID} task_home=${4:-$FM_HOME}
-  local tmp_base tag expected_logical expected_abs abs_target
+  local task_meta=${5:-$task_home/state/$task_id.meta}
+  local tmp_base tag expected_logical expected_abs abs_target recorded_tmp recorded_tag dir
   [ -n "$target" ] || return 0
   tmp_base=$(cd /tmp && pwd -P) || tmp_base=/tmp
   tag=$(FM_HOME=$task_home FM_ROOT=$task_home fm_backend_hometag)
   expected_logical="/tmp/fm-$tag/$task_id"
   expected_abs="$tmp_base/fm-$tag/$task_id"
   task_tmp_is_legacy_preserve_only "$target" "$task_id" && return 0
+  # The locked task record survives a home move; recomputing its tag does not.
+  # Read all tasktmp fields so an ambiguous record cannot authorize a fallback.
+  recorded_tmp=$(sed -n 's/^tasktmp=//p' "$task_meta" 2>/dev/null) || recorded_tmp=
+  if [ -n "$recorded_tmp" ] && [ "$target" = "$recorded_tmp" ]; then
+    case "$target" in
+      "/tmp/fm-"*"/$task_id"|"$tmp_base/fm-"*"/$task_id")
+        recorded_tag=${target%/*}
+        recorded_tag=${recorded_tag##*/fm-}
+        if [[ "$recorded_tag" =~ ^(firstmate|2ndmate-[A-Za-z0-9._-]+)-[0-9a-f]{8}$ ]] &&
+          [ "${recorded_tag%-*}" = "${tag%-*}" ] && [ "$recorded_tag" != "$tag" ]; then
+          for dir in "${target%/*}" "$target"; do
+            [ -e "$dir" ] || [ -L "$dir" ] || continue
+            if [ -L "$dir" ] || [ ! -d "$dir" ] || [ ! -O "$dir" ] ||
+              [ -n "$(find "$dir" -prune \( -perm -g=w -o -perm -o=w \) -print 2>/dev/null)" ]; then
+              echo "REFUSED: unsafe $label removal target $target is not a private owned task temp root" >&2
+              return 1
+            fi
+          done
+          expected_logical="/tmp/fm-$recorded_tag/$task_id"
+          expected_abs="$tmp_base/fm-$recorded_tag/$task_id"
+        fi
+        ;;
+    esac
+  fi
   case "$target" in
     "$expected_logical"|"$expected_abs") ;;
     *)
@@ -2710,7 +2738,8 @@ task_tmp_is_legacy_preserve_only() {
 
 safe_rm_rf_task_tmp() {
   local target=$1 task_id=${2:-$ID} task_home=${3:-$FM_HOME}
-  validate_task_tmp_for_removal "$target" "task temp root" "$task_id" "$task_home" || return 1
+  local task_meta=${4:-$task_home/state/$task_id.meta}
+  validate_task_tmp_for_removal "$target" "task temp root" "$task_id" "$task_home" "$task_meta" || return 1
   task_tmp_is_legacy_preserve_only "$target" "$task_id" && return 0
   [ -e "$target" ] || return 0
   rm -rf -- "$target"
@@ -3556,7 +3585,7 @@ require_exclusive_task_worktree_slot || exit 1
 require_owned_task_worktree_slot || exit 1
 
 validate_pr_poll_cleanup "$STATE" "$ID" || exit 1
-[ -z "$TASK_TMP" ] || validate_task_tmp_for_removal "$TASK_TMP" "task temp root" "$ID" "$TASK_HOME" >/dev/null || exit 1
+[ -z "$TASK_TMP" ] || validate_task_tmp_for_removal "$TASK_TMP" "task temp root" "$ID" "$TASK_HOME" "$META" >/dev/null || exit 1
 if ! preflight_task_backend_ownership "$FM_HOME" "$FM_ROOT" "$STATE" "$BACKEND" "$T" \
     "$(meta_value "$META" zellij_tab_id)" "$ID"; then
   echo "error: $BACKEND endpoint ownership for $ID is not proven; teardown changed nothing" >&2
@@ -4010,7 +4039,7 @@ remove_kimi_turnend_auth "$STATE" "$ID" || exit 1
 fm_backend_clear_transition "$BACKEND" "$STATE" "$T" || true
 # Remove the validated per-task temp root recorded by spawn.
 # Read before the state-file rm below; empty (pre-fix tasks without tasktmp=) is a no-op.
-[ -n "$TASK_TMP" ] && safe_rm_rf_task_tmp "$TASK_TMP" "$ID" "$TASK_HOME"
+[ -n "$TASK_TMP" ] && safe_rm_rf_task_tmp "$TASK_TMP" "$ID" "$TASK_HOME" "$META"
 if [ "$BACKEND" = zellij ]; then
   ZELLIJ_SESSION_TO_RETIRE=$(meta_value "$META" zellij_session)
   ZELLIJ_FINGERPRINT_TO_RETIRE=$(meta_value "$META" zellij_session_fingerprint)
