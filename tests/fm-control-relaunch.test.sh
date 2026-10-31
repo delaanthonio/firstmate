@@ -922,7 +922,7 @@ test_droid_relaunch_follows_requested_selection() {
     out=$(run_control "$dir" rl-droid-selection relaunch --note "continue after default change"); rc=$?
     expect_code 0 "$rc" "Droid selection relaunch failed"$'\n'"$out"
     expected=$selection
-    [ "$selection" != default ] || expected=new-default
+    [ "$selection" != default ] || expected='new-default'
     [ "$(meta_field "$dir" rl-droid-selection model)" = "$selection" ] || fail 'relaunch changed requested selection'
     [ "$(meta_field "$dir" rl-droid-selection effective_model)" = "$expected" ] || fail 'relaunch retained stale effective-model accounting'
     settings="$dir/home/state/rl-droid-selection.droid-settings.json"
@@ -1236,7 +1236,7 @@ test_turnend_auth_paths_are_owned_by_the_control_adapter() {
 }
 
 test_secondmate_relaunch_picks_up_the_configured_harness_pin() {
-  local dir home out rc settings control_pid waited=0
+  local dir home out rc settings cmd control_pid waited=0
   dir=$(new_case smpin sm3)
   home="$dir/home"
   mkdir -p "$home/config"
@@ -1291,8 +1291,11 @@ test_secondmate_relaunch_picks_up_the_configured_harness_pin() {
   [ "$(journal_field "$dir" sm3 to_effort)" = dynamic ] \
     || fail "the configured effort token should come with the pin"
   settings="$home/state/sm3.droid-settings.json"
-  jq -e '.sessionDefaultSettings == {"reasoningEffort":"dynamic"} and .hooks == null' "$settings" >/dev/null \
+  jq -e '.sessionDefaultSettings == {"reasoningEffort":"dynamic"} and (.hooks.Stop[0].hooks | length == 1)' "$settings" >/dev/null \
     || fail "configured Droid secondmate relaunch did not preserve dynamic effort in runtime settings"
+  cmd=$(jq -er '.hooks.Stop[0].hooks[0].command' "$settings") || fail "Droid accounting hook is missing"
+  printf '{}\n' | bash -c "$cmd" || fail "Droid secondmate accounting hook failed"
+  assert_absent "$home/state/sm3.turn-ended" "Droid secondmate must not install a worker turn-end hook"
   assert_not_contains "$out" "not a verified harness" "droid is a verified harness"
   pass "fm-control relaunch: a Droid secondmate preserves its configured dynamic effort"
 }

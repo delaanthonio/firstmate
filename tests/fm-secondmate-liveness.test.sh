@@ -275,6 +275,7 @@ set -u
 mode=${FM_TEST_PANE_CMD:-zsh}
 windows="${FM_TMUX_CALL_LOG:?}.windows"
 case "${1:-}" in
+  capture-pane) printf '%s' "${FM_FAKE_PANE_CAPTURE:-}"; exit 0 ;;
   send-keys)
     if [ -n "${FM_FAKE_LAUNCH_LOG:-}" ]; then
       for arg in "$@"; do
@@ -696,7 +697,7 @@ test_sweep_respawns_authoritatively_missing_pi_signed_secondmate() {
 }
 
 test_sweep_respawns_authoritatively_missing_droid_secondmate() {
-  local w fb tmuxfb log out
+  local w fb tmuxfb log out settings cmd
   w=$(new_world sweep-missing-droid)
   printf '%s\n' droid > "$w/home/config/secondmate-harness"
   add_sm_home "$w" sm1 firstmate:fm-sm1 droid
@@ -704,14 +705,19 @@ test_sweep_respawns_authoritatively_missing_droid_secondmate() {
   fb=$(make_toolchain "$w"); tmuxfb=$(make_liveness_tmux "$w")
   log="$w/calls.log"; : > "$log"
 
-  out=$(run_bootstrap "$tmuxfb:$fb" "$w/home" missing "$log")
+  out=$(run_bootstrap "$tmuxfb:$fb" "$w/home" missing "$log" \
+    FM_FAKE_PANE_CAPTURE='Executing...  (Press ESC to stop)')
 
   assert_not_contains "$out" "unverified for recovery" \
     "a recorded Droid secondmate should be verified for recovery"
   assert_contains "$(cat "$log")" "new-window" \
     "an authoritatively missing Droid secondmate should be relaunched"
-  jq -e '.retired == null and .hooks == null' "$w/home/state/sm1.droid-settings.json" >/dev/null \
+  settings="$w/home/state/sm1.droid-settings.json"
+  jq -e '.retired == null and (.hooks.Stop[0].hooks | length == 1)' "$settings" >/dev/null \
     || fail "Droid secondmate recovery did not replace prior runtime settings"
+  cmd=$(jq -er '.hooks.Stop[0].hooks[0].command' "$settings") || fail "Droid accounting hook is missing"
+  printf '{}\n' | bash -c "$cmd" || fail "Droid secondmate accounting hook failed"
+  assert_absent "$w/home/state/sm1.turn-ended" "Droid secondmate must not install a worker turn-end hook"
   assert_not_contains "$(cat "$log")" "kill-window" \
     "an absent Droid window should not need a destructive pre-kill"
   pass "sweep: an authoritatively missing Droid secondmate window is relaunched"
