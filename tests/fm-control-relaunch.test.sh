@@ -131,6 +131,9 @@ case "${1:-}" in
     else
       printf '╭────╮\n│    │\n╰────╯\n'
     fi
+    if [ "${*: -1}" = -0 ] && [ "$(cat "$D/command")" = droid ]; then
+      printf 'Press ESC to stop\n'
+    fi
     exit 0 ;;
   list-windows)
     # The three shapes real tmux answers a per-session inventory with. The
@@ -905,6 +908,37 @@ test_same_droid_relaunch_preserves_explicit_dynamic_effort() {
   pass "fm-control relaunch: Droid accepts and preserves explicit dynamic effort"
 }
 
+test_droid_relaunch_follows_requested_selection() {
+  local dir out rc selection expected settings meta
+  for selection in default pinned-model; do
+    dir=$(new_case "droid-selection-$selection" rl-droid-selection)
+    add_ship_task "$dir" rl-droid-selection droid
+    printf droid > "$dir/fake/command"
+    printf droid > "$dir/fake/becomes"
+    meta="$dir/home/state/rl-droid-selection.meta"
+    printf 'model=%s\neffective_model=old-default\n' "$selection" >> "$meta"
+    mkdir -p "$dir/user-home/.factory"
+    printf '%s\n' '{"sessionDefaultSettings":{"model":"new-default"}}' > "$dir/user-home/.factory/settings.json"
+    out=$(run_control "$dir" rl-droid-selection relaunch --note "continue after default change"); rc=$?
+    expect_code 0 "$rc" "Droid selection relaunch failed"$'\n'"$out"
+    expected=$selection
+    [ "$selection" != default ] || expected='new-default'
+    [ "$(meta_field "$dir" rl-droid-selection model)" = "$selection" ] || fail 'relaunch changed requested selection'
+    [ "$(meta_field "$dir" rl-droid-selection effective_model)" = "$expected" ] || fail 'relaunch retained stale effective-model accounting'
+    settings="$dir/home/state/rl-droid-selection.droid-settings.json"
+    if [ "$selection" = default ]; then
+      jq -e '(.sessionDefaultSettings // {}) | has("model") | not' "$settings" >/dev/null || fail 'default relaunch pinned a model'
+    else
+      jq -e --arg model "$selection" '.sessionDefaultSettings.model == $model' "$settings" >/dev/null || fail 'relaunch lost explicit pin'
+    fi
+  done
+  printf codex > "$dir/fake/becomes"
+  out=$(run_control "$dir" rl-droid-selection relaunch --harness codex --note "switch runtime"); rc=$?
+  expect_code 0 "$rc" "switching away from Droid failed"$'\n'"$out"
+  [ -z "$(meta_field "$dir" rl-droid-selection effective_model)" ] || fail 'harness switch preserved retired Droid accounting'
+  pass 'fm-control relaunch: Droid follows new defaults while preserving explicit model pins'
+}
+
 test_relaunch_refuses_invalid_explicit_effort_before_stop() {
   local dir out rc
   dir=$(new_case invalid-explicit-effort rl36)
@@ -1202,7 +1236,7 @@ test_turnend_auth_paths_are_owned_by_the_control_adapter() {
 }
 
 test_secondmate_relaunch_picks_up_the_configured_harness_pin() {
-  local dir home out rc settings control_pid waited=0
+  local dir home out rc settings cmd control_pid waited=0
   dir=$(new_case smpin sm3)
   home="$dir/home"
   mkdir -p "$home/config"
@@ -1257,8 +1291,11 @@ test_secondmate_relaunch_picks_up_the_configured_harness_pin() {
   [ "$(journal_field "$dir" sm3 to_effort)" = dynamic ] \
     || fail "the configured effort token should come with the pin"
   settings="$home/state/sm3.droid-settings.json"
-  jq -e '.sessionDefaultSettings == {"reasoningEffort":"dynamic"} and .hooks == null' "$settings" >/dev/null \
+  jq -e '.sessionDefaultSettings == {"reasoningEffort":"dynamic"} and (.hooks.Stop[0].hooks | length == 1)' "$settings" >/dev/null \
     || fail "configured Droid secondmate relaunch did not preserve dynamic effort in runtime settings"
+  cmd=$(jq -er '.hooks.Stop[0].hooks[0].command' "$settings") || fail "Droid accounting hook is missing"
+  printf '{}\n' | bash -c "$cmd" || fail "Droid secondmate accounting hook failed"
+  assert_absent "$home/state/sm3.turn-ended" "Droid secondmate must not install a worker turn-end hook"
   assert_not_contains "$out" "not a verified harness" "droid is a verified harness"
   pass "fm-control relaunch: a Droid secondmate preserves its configured dynamic effort"
 }
@@ -2863,6 +2900,7 @@ test_harness_switch_resolves_a_prefixed_recorded_harness
 test_prefixed_recorded_harness_requires_explicit_replacement
 test_same_harness_relaunch_keeps_the_profile_axes
 test_same_droid_relaunch_preserves_explicit_dynamic_effort
+test_droid_relaunch_follows_requested_selection
 test_relaunch_refuses_invalid_explicit_effort_before_stop
 test_native_ultra_relaunch_preserves_profile_and_rejects_before_stop
 test_signed_out_worker_account_pin_refuses_before_stop

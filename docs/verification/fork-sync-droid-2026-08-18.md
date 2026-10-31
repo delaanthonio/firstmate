@@ -29,7 +29,7 @@ The fork-specific overlay was separately inspected with `git diff 64d61aed84373e
 - Local and remote spawn allowlists remain in `bin/fm-spawn.sh`, `bin/fm-remote-doctor.sh`, and `bin/fm-remote-secondmate-control.sh`.
 - Every template-backed Droid ship, scout, and secondmate launch retains `droid --settings <state-file> --auto high <brief>`.
 - The per-task `state/<id>.droid-settings.json` file carries model and effort overrides for every template-backed Droid launch, including `dynamic` effort through local relaunch and remote secondmate recovery.
-- The same settings file carries the Stop hook for ships and scouts, while secondmate settings omit hooks.
+- Current per-task hook wiring is owned by the [Droid adapter reference](../../.agents/skills/harness-adapters/references/harness/droid.md#launch-settings).
 - Droid settings cleanup remains in `bin/fm-control-lib.sh` and `bin/fm-teardown.sh`.
 - Interrupt, exit, relaunch, and task-kind capabilities remain in `bin/fm-control-lib.sh`.
 - The verified `Press ESC to stop` delivery token remains in `bin/fm-composer-lib.sh`.
