@@ -1024,12 +1024,12 @@ secondmate_home_summary_json() {  # <backlog-json-file> <tasks-json-file>
          | select(.requires_child_metadata)
          | select(.id as $id | [$tasks[].id] | index($id) | not) ]) as $orphan_in_flight
     | ([ $tasks[]
-         | select(.kind != "secondmate")
+         | select(.kind != "secondmate" and .kind != "orphan")
          | select(.id as $id | [$owned_in_flight[].id] | index($id) | not)
          | {id,state:.current_state.state} ]) as $unowned_children
     | ([ $owned_in_flight[] as $work
          | $tasks[]
-         | select(.kind != "secondmate")
+         | select(.kind != "secondmate" and .kind != "orphan")
          | select(.id == $work.id and (.current_state.state == "done" or .current_state.state == "failed"))
          | {id,state:.current_state.state} ]) as $terminal_in_flight
     | ([if $backlog.present != true then

@@ -1486,6 +1486,8 @@ test_teardown_removes_poll_artifacts() {
   printf 'data\n' > "$dir/home/state/task-a.pr-poll"
   printf 'registration\n' > "$dir/home/state/task-a.pr-poll-registration"
   printf 'trust\n' > "$dir/home/state/task-a.check-trust"
+  printf '%s\n' accepted-uncertain github github.com o/r 1 > "$dir/home/state/task-a.merge-unresolved"
+  chmod 0600 "$dir/home/state/task-a.merge-unresolved"
   cat > "$fakebin/tmux" <<'SH'
 #!/usr/bin/env bash
 exit 0
@@ -1500,6 +1502,7 @@ SH
   [ ! -e "$dir/home/state/task-a.pr-poll" ] || fail "teardown left the sidecar"
   [ ! -e "$dir/home/state/task-a.pr-poll-registration" ] || fail "teardown left the PR poll registration"
   [ ! -e "$dir/home/state/task-a.check-trust" ] || fail "teardown left the custom check registration"
+  [ ! -e "$dir/home/state/task-a.merge-unresolved" ] || fail "teardown left unresolved merge evidence for task reuse"
 
   dir=$(make_case teardown-retirement-receipt)
   fakebin="$dir/fakebin"
@@ -3112,6 +3115,37 @@ test_merged_poll_row_names_no_authority_when_no_record_grants_one() {
   pass "poll distinguishes attended authorization from external landing"
 }
 
+test_unresolved_merge_poll_requires_reconciliation() {
+  local dir state url scenario number rc
+  url=https://github.com/o/r/pull/1
+  for scenario in matching other-pr; do
+    dir=$(make_case "unresolved-merge-poll-$scenario")
+    state="$dir/home/state"
+    write_poll_meta "$state" task-a "$url"
+    seed_canonical_poll "$dir" task-a "$url"
+    add_stop_custom_check "$dir"
+    number=1
+    [ "$scenario" != other-pr ] || number=2
+    printf '%s\n' accepted-uncertain github github.com o/r "$number" > "$state/task-a.merge-unresolved"
+    chmod 0600 "$state/task-a.merge-unresolved"
+    rc=0
+    FM_TEST_GH_STATE=MERGED run_watcher_bounded "$dir/home" "$dir/fakebin" > "$dir/watch.out" 2> "$dir/watch.err" || rc=$?
+    [ "$rc" -eq 0 ] || fail "unresolved merge poll failed: $(cat "$dir/watch.err")"
+    if [ "$scenario" = matching ]; then
+      [ -e "$state/task-a.check.sh" ] || fail "unresolved merge retired its poll"
+      [ -e "$state/task-a.merge-unresolved" ] || fail "unresolved merge lost reconciliation marker"
+      [ ! -e "$state/task-a.merge-authority" ] || fail "unresolved merge published authority"
+      [ ! -e "$state/task-a.pr-poll-merge-notified" ] || fail "unresolved merge published landed outcome"
+      grep -F "check: unresolved merge: task-a $url accepted-uncertain; firstmate reconciliation required" "$state/.wake-queue" >/dev/null || fail "unresolved merge did not notify firstmate"
+      ! grep -F "check: merge landed:" "$state/.wake-queue" >/dev/null || fail "unresolved merge was classified as external"
+    else
+      [ "$(merged_ledger_row "$state" task-a)" = "check: merge landed: task-a $url external" ] || fail "unrelated unresolved marker suppressed external merge"
+      assert_poll_absent "$state" task-a
+    fi
+  done
+  pass "unresolved merges retain reconciliation evidence without false external attribution"
+}
+
 test_authority_persistence_refuses_rebound_metadata() {
   local dir state url_a url_b rc
   url_a=https://github.com/o/r/pull/1
@@ -3620,6 +3654,7 @@ test_merged_poll_retries_a_failed_upward_report
 test_self_merge_and_poll_publish_one_outcome
 test_merged_poll_row_carries_the_merge_authority
 test_merged_poll_row_names_no_authority_when_no_record_grants_one
+test_unresolved_merge_poll_requires_reconciliation
 test_authority_persistence_refuses_rebound_metadata
 test_authority_persists_before_control_unlock
 test_teardown_cannot_race_authority_consumption

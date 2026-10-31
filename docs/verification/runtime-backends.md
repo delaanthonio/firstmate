@@ -6,6 +6,26 @@ This record contains reusable version-scoped evidence for active runtime guarant
 The backend guides own current setup, safety boundaries, and limitations.
 Exact task chronology, branch names, temporary homes, local paths, process ids, thread ids, and delivery transcripts remain in private reports or PR evidence.
 
+## Worker dependency bootstrap
+
+Verified on 2026-10-31 on macOS with Bash 5.3.20:
+
+```sh
+bash bin/fm-test-run.sh tests/fm-project-bootstrap.test.sh
+```
+
+The run reported `# all fm-project-bootstrap tests passed` and `FM_TEST_END` with `exit=0`.
+The regression exercises default managers under both mise filenames, strict root and bounded nested-layout refusal, setuptools companion files, output-directory loss, root input changes, concurrent receipt reuse, inherited configuration, a successful scout launch, and ship refusal with the queued automatic backlog unchanged.
+Dependency managers and terminal delivery are fixtures; the bootstrap executable, Git worktrees, and the installed tasks-axi backlog are real.
+No real dependency downloads or vendor agent calls are claimed by this check.
+
+The shared boundary in `bin/fm-spawn.sh` follows worktree acquisition, isolation, and base refresh and precedes harness trust setup and task publication.
+Inspection of the tmux, Herdr, zellij, Orca, and cmux acquisition branches confirms they all join that boundary; the replacement-worker path joins it with the recorded worktree too.
+It precedes the shared launch wiring for claude, codex, opencode, pi, pi-signed, grok, kimi, cursor, droid, omp, muse, gemini, rovo, agy, devin, commandcode, and polytoken, including raw launch commands.
+Persistent secondmates are excluded because they use their own homes rather than newly allocated project worktrees.
+These are structural checks of the common spawn path, not live compatibility claims for each vendor or runtime backend.
+[Project dependency bootstrap](../configuration.md#project-dependency-bootstrap-configproject-bootstrapjson) owns configuration and operator behavior.
+
 ## Polytoken worker lifecycle
 
 Verified on 2026-10-14 with Polytoken 0.9.0 on macOS arm64 using the tmux worker path.

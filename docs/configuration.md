@@ -13,6 +13,7 @@ Start with the directory layout, then use the setting reference for the behavior
 | Backlog, preferences, and memory | [Backlog backend](#backlog-backend-taskstoml--configbacklog-backend), [captain preferences](#captain-preferences-datacaptainmd--datacaptain-sharedmd), [external memory tiers](#external-memory-tiers-memory-layering-section), and [startup memory budget](#startup-memory-budget-configstartup-memory-budget) |
 | Supervision and presentation | [Pi supervision branch](#pi-supervision-branch), [supervision host](#supervision-host-configsupervision-host), and [Calm preference](#calm-preference-configcalm) |
 | Persistent secondmates | [Secondmate routes](#secondmate-routes-datasecondmatesmd) |
+| Project dependencies before worker launch | [Project dependency bootstrap](#project-dependency-bootstrap-configproject-bootstrapjson) |
 | Per-run overrides and tuning | [Environment variables](#environment-variables) |
 
 ## FM_HOME
@@ -1213,6 +1214,51 @@ A repository whose config sets `core.hooksPath` to the empty string runs no proj
 When stripping is enabled, the hooks directory is read-only, so a hook manager run inside a fleet pane (lefthook's npm postinstall, `pre-commit install`) fails instead of displacing the strip; install a project's hooks from outside the pane, where the wrappers chain them.
 The flag is a home-wide attribution choice, so it is inherited into secondmate homes under the [`secondmate-provisioning`](../.agents/skills/secondmate-provisioning/SKILL.md) inherited-local-material contract and a secondmate's own workers keep AI trailers too.
 Per-machine Cursor `cli-config.json` attribution-off is not this contract: it does not travel with Firstmate, defaults back to on when unset, and only feeds the CLI's request to the server, so it suppresses the trailer rather than preventing it.
+
+## Project dependency bootstrap (config/project-bootstrap.json)
+
+Every fresh ship or scout bootstraps dependencies in its isolated worktree after the base refresh and before the agent starts, regardless of runtime backend or harness.
+A failed command prints its diagnostics and refuses the spawn before task publication or the backlog transition, leaving a queued item queued.
+Persistent secondmate homes do not use this worker-worktree step.
+
+By default, root-level `mise.toml` or `.mise.toml` runs `mise install`, `uv.lock` runs `uv sync`, `package-lock.json` runs `npm ci`, `Cargo.lock` runs `cargo fetch`, and `Gemfile.lock` runs `bundle install`.
+All matching managers run in that order; when either mise configuration is present, mise installs the toolchains first, then every detected dependency manager runs through `mise exec` with those tools active.
+`uv sync` includes uv's default development group, including tools used during validation.
+Dependency layout validation scans the root and directories one or two levels below it (for example `frontend/` and `packages/api/`), without following directory symlinks.
+Hidden directories (including `.venv`), `node_modules`, and `vendor` are excluded at every level.
+Recognized filenames are `uv.lock`, `pyproject.toml`, `setup.py`, `setup.cfg`, `package-lock.json`, `package.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`, `bun.lockb`, `npm-shrinkwrap.json`, `requirements.txt`, `requirements-dev.txt`, `Pipfile`, `Pipfile.lock`, `poetry.lock`, `Cargo.lock`, `Cargo.toml`, `Gemfile.lock`, `Gemfile`, `go.mod`, `go.sum`, `composer.json`, and `composer.lock`.
+Only projects without a recognized dependency manifest or lockfile in this scope can skip bootstrap without an override.
+Any nested layout in this scope requires a project override, including alongside a resolved root bootstrap or a cached receipt; deeper layouts require an operator-supplied override too but are outside automatic validation.
+A manifest without its supported lockfile refuses spawn and names the required lockfile and override configuration.
+Alternative Node and Python dependency files (pnpm, Yarn, Bun, npm shrinkwrap, requirements, Pipenv, and Poetry), Go modules, and Composer manifests require an explicit command, even when another manager is detected.
+Root `setup.py` and `setup.cfg` companion files are supported by the resolved uv bootstrap and do not require an override.
+The required managers must be available to the spawning process; a missing executable refuses the spawn like any other command failure.
+
+The optional home-local, gitignored `config/project-bootstrap.json` overrides detection for named projects and is inherited into secondmate homes.
+Its top-level object maps each registered project name (the clone directory basename, including spaces) to an object with these fields:
+
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `command` | yes | Nonblank Bash command executed from the worker worktree with `errexit` and `pipefail`. Replaces all detected commands. |
+
+Unknown fields, invalid entries, and unreadable configuration refuse bootstrap rather than silently falling back to detection.
+Commands are trusted operator configuration and may install project tools or execute the project's setup scripts.
+For example, a project needing additional uv groups can declare:
+
+```json
+{
+  "my-project": {
+    "command": "uv sync --all-groups"
+  }
+}
+```
+
+Spawns and relaunches reuse a successful receipt for detected uv/npm dependencies only while the command, worktree path, and root dependency and toolchain inputs (including package-manager configuration) are unchanged and every expected output directory exists (`.venv` for uv and `node_modules` for npm).
+Missing outputs or changed, added, or removed inputs force bootstrap again, using each package manager's ordinary caches and locks.
+Custom commands, Cargo, Bundler, and toolchain-only projects always run because their output locations cannot be established by this check.
+Use a custom command for nested workspace inputs or setup scripts; it replaces detection and runs on every launch.
+Only success writes a receipt, and failure invalidates any previous success so a retry must bootstrap again.
+The helper's header and `--help` own receipt and serialization mechanics: [`bin/fm-project-bootstrap.sh`](../bin/fm-project-bootstrap.sh).
 
 ## Project capacity (config/project-capacity)
 
@@ -2571,7 +2617,8 @@ FM_CHECK_INTERVAL=300   # seconds between slow checks (authenticated merge polls
 FM_TASK_INBOX_GRACE_SECS=90   # seconds an unhandled steering-inbox message may sit before the watcher attempts doorbell delivery on an idle pane; also the minimum spacing between attempts
 FM_TASK_INBOX_RING_MAX=3      # watcher delivery attempts without an acknowledgement before the task surfaces as a stale wake for recovery
 FM_TASK_INBOX_BUSY_MAX=2      # consecutive busy-deferred due polls before a stuck-busy stale wake; 1..999999999, at most 9 decimal digits, otherwise 2; policy: bin/fm-task-inbox-lib.sh
-FM_CHECK_TIMEOUT=30     # seconds allowed per slow check script
+FM_CHECK_TIMEOUT=30     # ordinary per-check seconds; exceptions: bin/fm-check-lib.sh
+# FM_CONTRIBUTIONS_CHECK_TIMEOUT=120 # optional per-home whole-poll tuning; unset/invalid uses FM_CHECK_TIMEOUT
 FM_MAIL_CHECK_BUDGET=15   # seconds allowed for one standing mail poll; valid 5..25, cut to fit FM_CHECK_TIMEOUT
 FM_MAIL_POLL_MAX_WAKES=20   # per-poll wake cap for a mail poll; valid 1..200, keeps a flood from flooding firstmate
 FM_MAIL_TIMEOUT=20   # mail-plane IMAP/SMTP socket timeout in seconds; invalid or non-positive values become 20

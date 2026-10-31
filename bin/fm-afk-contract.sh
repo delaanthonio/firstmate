@@ -131,7 +131,7 @@
 # The cap bounds how many ordinary workers this home runs concurrently while an
 # away record stands; bin/fm-spawn.sh enforces it by refusing a fresh ordinary
 # spawn once the home already holds that many. An ordinary worker record is
-# every state/*.meta whose kind is not secondmate, counted by
+# every state/*.meta whose kind is neither secondmate nor orphan, counted by
 # fm_afk_contract_live_ordinary_workers and exposed as `live-workers`, which is
 # the one implementation both the entry default and that refusal read, so the
 # two can never count differently.
@@ -186,14 +186,15 @@ fm_afk_contract_present() {  # [state-dir]
 }
 
 # The ordinary worker records this home holds right now (the header's SPEND
-# CAP): every state/*.meta whose kind is not secondmate, because a secondmate is
-# a persistent home rather than spend. This is the one implementation of that
+# CAP): every state/*.meta whose kind is neither secondmate nor orphan, because persistent homes and forge-only records are not worker spend. This is the one implementation of that
 # count, read by the entry default here and by bin/fm-spawn.sh's refusal.
 fm_afk_contract_live_ordinary_workers() {  # [state-dir]
   local state=${1:-$FM_AFK_CONTRACT_STATE} meta live=0
   for meta in "$state"/*.meta; do
     [ -f "$meta" ] || continue
-    [ "$(grep '^kind=' "$meta" 2>/dev/null | tail -1 | cut -d= -f2-)" != secondmate ] || continue
+    case "$(grep '^kind=' "$meta" 2>/dev/null | tail -1 | cut -d= -f2-)" in
+      secondmate|orphan) continue ;;
+    esac
     live=$((live + 1))
   done
   printf '%s\n' "$live"

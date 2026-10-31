@@ -468,6 +468,26 @@ test_droid_invalid_failure_bound() {
   pass "Droid rejects invalid failure bounds before starting checkpoints"
 }
 
+test_watcher_contributions_uses_whole_poll_budget() {
+  local home status
+  home=$(make_home contributions-budget)
+  cat > "$home/state/contributions.check.sh" <<'SH'
+#!/usr/bin/env bash
+sleep 2
+echo 'contributions: completed local snapshot and forge poll'
+SH
+  chmod 700 "$home/state/contributions.check.sh"
+  FM_HOME="$home" "$ROOT/bin/fm-check-register.sh" contributions >/dev/null \
+    || fail "could not register the slow contributions fixture"
+  status=0
+  FM_HOME="$home" FM_POLL=1 FM_CHECK_INTERVAL=1 FM_CHECK_TIMEOUT=1 FM_CONTRIBUTIONS_CHECK_TIMEOUT=4 \
+    "$CHECKPOINT" --seconds 20 >"$home/out.txt" 2>"$home/err.txt" || status=$?
+  expect_code 0 "$status" "watcher contributions check should survive the ordinary check bound"
+  assert_contains "$(cat "$home/out.txt")" 'completed local snapshot and forge poll' \
+    "watcher did not use the contributions allowance"
+  pass "watcher and turn-end standing checks share the whole-poll contributions allowance"
+}
+
 test_droid_running_cycle_allows_turn_end() {
   local home cycle_pid status out i
   home=$(make_home droid-turnend)
@@ -519,13 +539,14 @@ SH
 }
 
 test_droid_real_quiet_rotations_preserve_recovery_and_concurrent_wakes() {
-  local initial home cycle_pid watcher_pid previous rotations i status marker
+  local initial home cycle_pid watcher_pid previous rotations i status marker checkpoint_seconds=10
   for initial in absent acked; do
     home=$(make_home "droid-real-rotations-$initial")
     marker='acked:downtime:previous.1.aaa'
     [ "$initial" = absent ] || printf '%s\n' "$marker" > "$home/state/.watcher-down"
     fm_test_track_watcher_state "$home/state"
-    FM_HOME="$home" FM_DROID_WATCH_CHECKPOINT=3 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    # Leave startup headroom while still exercising real quiet checkpoint exits.
+    FM_HOME="$home" FM_DROID_WATCH_CHECKPOINT="$checkpoint_seconds" FM_POLL=1 FM_SIGNAL_GRACE=1 \
       FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
       "$ROOT/bin/fm-watch-droid-background.sh" >"$home/out.txt" 2>"$home/err.txt" &
     cycle_pid=$!
@@ -560,10 +581,10 @@ test_droid_real_quiet_rotations_preserve_recovery_and_concurrent_wakes() {
     append_wake "$home/state" check concurrent 'check: queued during quiet rotation' \
       || fail "could not append during the real checkpoint"
     marker=$(cat "$home/state/.watcher-down")
-    sleep 4
+    sleep "$((checkpoint_seconds + 1))"
     kill -CONT "$watcher_pid" 2>/dev/null || true
     i=0
-    while kill -0 "$cycle_pid" 2>/dev/null && [ "$i" -lt 300 ]; do
+    while kill -0 "$cycle_pid" 2>/dev/null && [ "$i" -lt 600 ]; do
       sleep 0.05
       i=$((i + 1))
     done
@@ -584,6 +605,7 @@ test_droid_quiet_checkpoints_loop_without_output
 test_droid_actionable_outputs_and_away_delegation
 test_droid_failure_bound_and_reset
 test_droid_invalid_failure_bound
+test_watcher_contributions_uses_whole_poll_budget
 test_droid_running_cycle_allows_turn_end
 test_quiet_checkpoint_exits_124_cleanly
 test_droid_rotation_keeps_away_and_quiet_cleanup

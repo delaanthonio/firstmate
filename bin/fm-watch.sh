@@ -300,7 +300,7 @@ WATCHER_STALL_BOUND=$(fm_watcher_stall_bound "$POLL")
 HEARTBEAT=${FM_HEARTBEAT:-600}        # base seconds between heartbeat scans
 HEARTBEAT_MAX=${FM_HEARTBEAT_MAX:-7200}  # heartbeat backoff cap
 CHECK_INTERVAL=${FM_CHECK_INTERVAL:-300}  # seconds between *.check.sh sweeps
-CHECK_TIMEOUT=${FM_CHECK_TIMEOUT:-30}     # seconds allowed per *.check.sh
+CHECK_TIMEOUT=${FM_CHECK_TIMEOUT:-30}     # ordinary per-check seconds; exceptions: fm_custom_check_timeout
 HOME_SUMMARY_INTERVAL=${FM_HOME_SUMMARY_INTERVAL:-300}
 case "$HOME_SUMMARY_INTERVAL" in
   ''|*[!0-9]*|0) HOME_SUMMARY_INTERVAL=300 ;;
@@ -3020,7 +3020,8 @@ while :; do
           out=$FM_CHECK_RESULT
         elif fm_custom_check_snapshot_prepare "$STATE" "$id"; then
           custom_snapshot=$FM_CUSTOM_CHECK_SNAPSHOT
-          run_check_capture "$custom_snapshot" || exit 1
+          CHECK_TIMEOUT=$(fm_custom_check_timeout "$id" "$CHECK_TIMEOUT") \
+            run_check_capture "$custom_snapshot" || exit 1
           out=$FM_CHECK_RESULT
           fm_custom_check_snapshot_cleanup
         else
@@ -3060,6 +3061,14 @@ EOF
             pr_poll_control_release || exit 1
             touch "$STATE/.last-check"
             triage_log "retired a merge poll armed on secondmate $id without reporting an outcome"
+            continue
+          fi
+          if fm_merge_unresolved_matches "$STATE" "$id" "$provider" "$host" "$path" "$number"; then
+            reason="check: unresolved merge: $id $url accepted-uncertain; firstmate reconciliation required"
+            fm_wake_append check "unresolved-merge-$id-$url" "$reason" || exit 1
+            pr_poll_control_release || exit 1
+            touch "$STATE/.last-check"
+            wake "$reason"
             continue
           fi
           if ! fm_merge_authority_read "$STATE" "$id" \

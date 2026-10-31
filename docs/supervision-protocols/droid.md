@@ -7,6 +7,8 @@ When this session owns supervision and away mode is not active:
 3. First cycle: arm exactly one fire-and-forget Droid native tracked background job running `bin/fm-watch-droid-background.sh`.
    Use Execute's native `fireAndForget: true`, never shell `&`, nohup, or disown.
 4. On the job's completion notification, drain queued wakes first, handle the actionable wake (`signal:`, `stale:`, `check:`, or `heartbeat`) under the ordinary wake contract, then arm the next background cycle.
+   Successor handoff stays with the reasoning agent: native Execute establishes the tracked background job, while a script-launched successor would be shell-level backgrounding outside that contract.
+   Exit-on-wake deliberately produces the completion notification so the agent can reconcile the wake before deciding whether supervision still needs another cycle.
    If away or quiet mode became active while the job was running, follow the [shared return classifier](../../.agents/skills/afk/SKILL.md#how-to-exit-the-return) instead, preserving that mode and its daemon's supervision ownership.
 5. Quiet checkpoints stay inside that job and produce no notification or agent turn.
    End turns freely while the cycle is running so captain messages can be handled between wakes; keep exactly one cycle and do not poll or wait on its job id.

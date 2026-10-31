@@ -23,16 +23,36 @@
 # and lifecycle locks and refuses a mismatch. The file is atomically published,
 # mode 0600, single-link, and on the state filesystem. A poll consumes it only
 # when all identity fields match its own validated snapshot. Missing, malformed,
-# or mismatched state means external; it is never resolved again from a later
-# away-posture record.
+# or mismatched authority state means external unless a matching unresolved
+# marker below defers attribution; authority is never resolved again from a
+# later away-posture record.
 #
 # Resolution authorizes nothing by itself. bin/fm-pr-merge.sh owns the merge
-# gate and persists only after a forge command succeeds, before releasing the
-# task lifecycle lock. After observing a landed merge, bin/fm-watch.sh acquires
+# gate, including the stack acceptance and bounded reconciliation conditions.
+# Authority is persisted after success or a confirmed post-submission landing,
+# before releasing each owned participant's lifecycle lock.
+# After observing a landed merge, bin/fm-watch.sh acquires
 # that same lock, revalidates the poll, publishes its durable outcome, and
 # retires only the exact authority record it read. Teardown uses the same lock,
 # so it cannot interleave with that consumption transaction, and removes any
 # remaining record.
+#
+# An accepted stack request whose reconciliation cannot read the merged state
+# instead persists one private marker for each owned participant, without
+# publishing merge authority:
+#   state/<task-id>.merge-unresolved
+#   accepted-uncertain
+#   <provider>
+#   <host>
+#   <path>
+#   <number>
+# The marker is atomically published, mode 0600, single-link, on the state
+# filesystem, and bound to the participant's current PR metadata. A merged poll
+# with that exact marker emits an unresolved-merge wake for firstmate, retaining
+# the marker and poll without publishing a landed outcome or external label.
+# A marker for another PR does not suppress ordinary attribution. Persisting
+# matching authority removes the marker; teardown also removes it. The polling
+# and cleanup regressions are in tests/fm-pr-check-security.test.sh.
 #
 # Sourced by those scripts and by tests. No side effects on source beyond its
 # sourced libraries.
@@ -137,6 +157,10 @@ fm_merge_authority_persist() {  # <state> <task-id> <meta> <provider> <host> <pa
         "$provider" "$host" "$path" "$number" \
       || status=1
   fi
+  if [ "$status" -eq 0 ] \
+    && fm_merge_unresolved_matches "$state" "$id" "$provider" "$host" "$path" "$number"; then
+    rm -f -- "$state/$id.merge-unresolved" || status=1
+  fi
   [ "$status" -eq 0 ] || rm -f -- "$tmp"
   fm_lock_release "$lock" || status=1
   return "$status"
@@ -189,4 +213,37 @@ fm_merge_authority_remove_if_matches() {  # <state> <task-id> <provider> <host> 
   fi
   fm_lock_release "$lock" || status=1
   return "$status"
+}
+
+fm_merge_unresolved_matches() {
+  local state=$1 id=$2 provider=$3 host=$4 path=$5 number=$6 device expected
+  fm_pr_task_id_valid "$id" || return 1
+  device=$(fm_pr_file_device "$state") || return 1
+  fm_pr_private_file_valid "$state/$id.merge-unresolved" 600 "$device" || return 1
+  expected=$(printf '%s\n' accepted-uncertain "$provider" "$host" "$path" "$number")
+  [ "$(cat "$state/$id.merge-unresolved")" = "$expected" ]
+}
+
+fm_merge_unresolved_persist() {
+  local state=$1 id=$2 meta=$3 provider=$4 host=$5 path=$6 number=$7 device record tmp
+  fm_pr_task_id_valid "$id" || return 1
+  [ -d "$state" ] && [ ! -L "$state" ] || return 1
+  device=$(fm_pr_file_device "$state") || return 1
+  fm_pr_metadata_identity_parse "$meta" || return 1
+  [ "$FM_PR_META_PROVIDER" = "$provider" ] \
+    && [ "$FM_PR_META_HOST" = "$host" ] \
+    && [ "$FM_PR_META_PATH" = "$path" ] \
+    && [ "$FM_PR_META_NUMBER" = "$number" ] || return 1
+  record="$state/$id.merge-unresolved"
+  fm_pr_regular_destination_on_device_or_absent "$record" "$device" || return 1
+  umask 077
+  tmp=$(mktemp "$state/.fm-merge-unresolved.XXXXXX") || return 1
+  if ! printf '%s\n' accepted-uncertain "$provider" "$host" "$path" "$number" > "$tmp" \
+    || ! chmod 0600 "$tmp" \
+    || ! fm_pr_regular_destination_on_device_or_absent "$record" "$device" \
+    || ! mv -f -- "$tmp" "$record" \
+    || ! fm_merge_unresolved_matches "$state" "$id" "$provider" "$host" "$path" "$number"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
 }

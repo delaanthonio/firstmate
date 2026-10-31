@@ -183,8 +183,14 @@ SH
 printf '%s\n' "$*" >> "$FM_TEST_GH_LOG"
 case "${1:-} ${2:-}" in
   "pr view")
+    case_dir=$(dirname "$FM_TEST_GH_VIEW_JSON")
     case " $* " in
       *statusCheckRollup*)
+        member=${3##*/}
+        if [ -f "$case_dir/github-member-$member.json" ]; then
+          cat "$case_dir/github-member-$member.json"
+          exit 0
+        fi
         if [ -n "${FM_TEST_GH_MERGEABLE_SEQUENCE:-}" ]; then
           call_n=$(( $(cat "$FM_TEST_GH_MERGEABLE_CALLS" 2>/dev/null || echo 0) + 1 ))
           printf '%s\n' "$call_n" > "$FM_TEST_GH_MERGEABLE_CALLS"
@@ -208,6 +214,9 @@ case "${1:-} ${2:-}" in
         exit 0
         ;;
       *headRefOid*)
+        if [ -x "$case_dir/head-hook" ]; then
+          "$case_dir/head-hook" "$case_dir" || exit 1
+        fi
         cat "$FM_TEST_GH_HEAD"
         exit 0
         ;;
@@ -243,6 +252,29 @@ case "${1:-} ${2:-}" in
     fi
     exit "$merge_rc"
     ;;
+  "stack merge")
+    case_dir=$(dirname "$FM_TEST_GH_VIEW_JSON")
+    git remote get-url origin > "$case_dir/stack-repo"
+    pwd -P > "$case_dir/stack-cwd"
+    if [ -f "$case_dir/stack-before-submit-error" ]; then
+      cat "$case_dir/stack-before-submit-error" >&2
+      exit 1
+    fi
+    touch "$case_dir/stack-submitted"
+    if [ -f "$case_dir/stack-merge-fail" ]; then
+      if [ -f "$case_dir/stack-merge-error" ]; then
+        cat "$case_dir/stack-merge-error" >&2
+      else
+        echo '✗ failed to check merge status: could not reach the GitHub API' >&2
+      fi
+      exit 1
+    fi
+    if [ -x "$case_dir/stack-hook" ]; then
+      "$case_dir/stack-hook" "$case_dir" || exit 1
+    fi
+    echo 'stack merge accepted'
+    exit 0
+    ;;
   "api graphql")
     if [ -f "${FM_TEST_GH_GRAPHQL_FAIL:-}" ]; then
       echo 'error: could not reach the GitHub API' >&2
@@ -255,6 +287,48 @@ case "${1:-} ${2:-}" in
     # The required-check reads: the branch itself, and its rules read without
     # the merge-queue filter the queue reader below applies.
     case " $* " in
+      *"/stacks?pull_request="*)
+        case_dir=$(dirname "$FM_TEST_GH_VIEW_JSON")
+        if [ -f "$case_dir/stack-read-called" ] && [ -f "$case_dir/stack-late-collision" ]; then
+          cp "$case_dir/stack-late-collision" "$case_dir/stack-collision.json"
+        fi
+        if [ -f "$case_dir/stack-read-called" ] && [ -f "$case_dir/stack-late-collision-error" ]; then
+          cp "$case_dir/stack-late-collision-error" "$case_dir/stack-collision-error"
+        fi
+        if [ -f "$case_dir/stack-read-called" ] && [ -f "$case_dir/stack-next.json" ]; then
+          cat "$case_dir/stack-next.json"
+        else
+          cat "$case_dir/stack.json"
+        fi
+        touch "$case_dir/stack-read-called"
+        exit 0
+        ;;
+      *"/stacks/"*)
+        case_dir=$(dirname "$FM_TEST_GH_VIEW_JSON")
+        if [ -f "$case_dir/stack-collision-error" ]; then
+          cat "$case_dir/stack-collision-error" >&2
+          exit 1
+        fi
+        if [ -f "$case_dir/stack-collision.json" ]; then
+          cat "$case_dir/stack-collision.json"
+          exit 0
+        fi
+        echo 'gh: Not Found (HTTP 404)' >&2
+        exit 1
+        ;;
+      *"/pulls/"*" --jq .merged "*)
+        case_dir=$(dirname "$FM_TEST_GH_VIEW_JSON")
+        if [ -f "$case_dir/stack-reconcile-fail" ]; then
+          echo 'error: could not read merge result' >&2
+          exit 1
+        fi
+        if [ -f "$case_dir/stack-reconcile" ]; then
+          cat "$case_dir/stack-reconcile"
+        else
+          echo false
+        fi
+        exit 0
+        ;;
       *" repos/"*"/commits/"*"/check-runs"*)
         case "$*" in
           *"/commits/$(cat "$FM_TEST_GH_HEAD")/check-runs"*) ;;
@@ -657,6 +731,16 @@ glab_merge_line() {
   grep -F ' mr merge ' "$1" || true
 }
 
+run_pr_check_case() {
+  local case_dir=$1
+  shift
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" \
+    FM_PR_CHECK_MERGE=1 FM_TEST_GH_LOG="$case_dir/gh.log" \
+    FM_TEST_GH_HEAD="$case_dir/github-head" FM_TEST_GH_VIEW_JSON="$case_dir/github-view.json" \
+    HOME="$case_dir/user-home" PATH="$case_dir/fakebin:$PATH" \
+    "$ROOT/bin/fm-pr-check.sh" "$@"
+}
+
 run_pr_merge() {
   local case_dir=$1 rc; shift
   FM_ROOT_OVERRIDE="$ROOT" \
@@ -716,6 +800,653 @@ write_away_record() {
   shift
   FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" \
     "$ROOT/bin/fm-afk-contract.sh" enter "$@" >/dev/null
+}
+
+# Model the actual GraphQL refusal, then drive the real helper's fallback and
+# ordinary merge-outcome transaction through the official CLI boundary.
+make_stack_case() {
+  local case_dir head=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  case_dir=$(make_case "$1")
+  add_gh_mocks "$case_dir" "$head"
+  printf '1\n' > "$case_dir/github-merge-rc"
+  printf 'GraphQL: Pull request is part of a stack and must be merged using the asynchronous merge REST API (mergePullRequest)\n' > "$case_dir/github-merge-output"
+  cp "$case_dir/github-view.json" "$case_dir/github-member-8.json"
+  cat > "$case_dir/stack.json" <<JSON
+[{"number":2,"base":{"ref":"main"},"pull_requests":[
+ {"number":8,"state":"open","draft":false,"merged_at":null,"head":{"sha":"$head"}},
+ {"number":9,"state":"open","draft":false,"merged_at":null,"head":{"sha":"$head"}},
+ {"number":10,"state":"open","draft":false,"merged_at":null,"head":{"sha":"$head"}}]}]
+JSON
+  printf '%s\n' "$case_dir"
+}
+
+test_stack_merge_preserves_method_and_records_outcome() {
+  local case_dir method flags
+  for method in squash merge rebase; do
+    case_dir=$(make_stack_case "stack-success-$method")
+    flags="--$method"
+    [ "$method" != rebase ] || flags='--method=rebase'
+    run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 -- "$flags" \
+      > "$case_dir/stdout" 2> "$case_dir/stderr" || fail "stack merge failed: $(cat "$case_dir/stderr")"
+    grep -qxF "stack merge 9 --yes --$method" "$case_dir/gh.log" || fail "stack method not passed through"
+    [ "$(cat "$case_dir/stack-repo")" = https://github.com/example/repo.git ] || fail "stack repository not bound to URL"
+    [ "$(cat "$case_dir/stack-cwd")" != "$ROOT" ] || fail "stack used ambient project"
+    [ ! -d "$(cat "$case_dir/stack-cwd")" ] || fail "temporary stack repository leaked"
+    grep -q 'pr view https://github.com/example/repo/pull/8 .*statusCheckRollup' "$case_dir/gh.log" || fail "dependency not verified"
+    ! grep -q 'pr view https://github.com/example/repo/pull/10 ' "$case_dir/gh.log" || fail "verified above the requested range"
+    [ -f "$case_dir/state/task-x1.pr-poll-merge-notified" ] || fail "stack outcome not recorded"
+  done
+  case_dir=$(make_stack_case stack-default)
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 > "$case_dir/out" 2>&1 || fail "default stack merge failed"
+  grep -qxF 'stack merge 9 --yes --squash' "$case_dir/gh.log" || fail "stack default is not squash"
+  pass "stack fallback delegates atomic merging to gh stack merge with methods, preflight and recorded outcome"
+}
+
+test_stack_collision_is_rechecked_before_dispatch() {
+  local case_dir scenario rc
+  for scenario in collision unreadable; do
+    case_dir=$(make_stack_case "stack-late-$scenario")
+    if [ "$scenario" = collision ]; then
+      printf '{"number":9}\n' > "$case_dir/stack-late-collision"
+    else
+      printf 'gh: unavailable (HTTP 503)\n' > "$case_dir/stack-late-collision-error"
+    fi
+    rc=0
+    run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 > "$case_dir/out" 2>&1 || rc=$?
+    [ "$rc" -ne 0 ] || fail "late $scenario allowed stack dispatch"
+    [ "$(grep -c '^api repos/example/repo/stacks/9$' "$case_dir/gh.log")" -eq 2 ] || fail "numeric target was not rechecked"
+    ! grep -q '^stack merge ' "$case_dir/gh.log" || fail "ambiguous or unreadable target reached extension"
+    [ ! -e "$case_dir/state/task-x1.merge-authority" ] || fail "refused dispatch published authority"
+    [ ! -e "$case_dir/state/task-x1.pr-poll-merge-notified" ] || fail "refused dispatch published merge outcome"
+  done
+  pass "stack dispatch refuses newly colliding and unreadable numeric targets"
+}
+
+test_stack_failure_before_submission_publishes_nothing() {
+  local case_dir failure outcome rc id
+  for failure in setup start unknown; do
+    for outcome in landed unreadable; do
+      case_dir=$(make_stack_case "stack-before-submit-$failure-$outcome")
+      printf 'kind=orphan\npr=https://github.com/Example/Repo/pull/8\n' > "$case_dir/state/dependency.meta"
+      case "$failure" in
+        setup) printf '✗ failed to fetch repository merge settings: unavailable\n' > "$case_dir/stack-before-submit-error" ;;
+        start)
+          printf '%s\n' 'Merging #8, #9 into main via squash...' \
+            '✗ failed to start merge: failed to check merge status: upstream unavailable' > "$case_dir/stack-before-submit-error"
+          ;;
+        unknown) printf 'unexpected extension failure\n' > "$case_dir/stack-before-submit-error" ;;
+      esac
+      if [ "$outcome" = landed ]; then
+        echo true > "$case_dir/stack-reconcile"
+      else
+        touch "$case_dir/stack-reconcile-fail"
+      fi
+      rc=0
+      run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 > "$case_dir/out" 2>&1 || rc=$?
+      [ "$rc" -ne 0 ] || fail "$failure-$outcome: pre-submission failure reported helper success"
+      [ ! -e "$case_dir/stack-submitted" ] || fail "$failure-$outcome: fixture unexpectedly submitted"
+      ! grep -q '^api repos/example/repo/pulls/9 --jq .merged$' "$case_dir/gh.log" || fail "$failure-$outcome: pre-submission failure entered reconciliation"
+      ! grep -q '^api graphql ' "$case_dir/gh.log" || fail "$failure-$outcome: pre-submission failure performed outcome readback"
+      [ ! -s "$case_dir/gh-axi.log" ] || fail "$failure-$outcome: pre-submission failure invoked another reader"
+      [ -f "$case_dir/state/task-x1.check.sh" ] || fail "$failure-$outcome: merge poll lost"
+      for id in task-x1 dependency; do
+        [ ! -e "$case_dir/state/$id.merge-authority" ] || fail "$id: pre-submission failure published authority"
+        [ ! -e "$case_dir/state/$id.merge-unresolved" ] || fail "$id: pre-submission failure published uncertainty"
+        [ ! -e "$case_dir/state/$id.pr-poll-merge-notified" ] || fail "$id: pre-submission failure published a merge outcome"
+      done
+      ! grep -E 'check: (unresolved merge|merge landed):' "$case_dir/state/.wake-queue" >/dev/null 2>&1 || fail "$failure-$outcome: false merge notification"
+    done
+  done
+  pass "pre-submission and unproven stack failures publish neither authority nor uncertainty"
+}
+
+test_stack_failure_reconciles_once_for_all_participants() {
+  local case_dir scenario outcome rc id number
+  for scenario in landed not-landed unreadable malformed landed-timeout not-landed-timeout unreadable-timeout; do
+    case_dir=$(make_stack_case "stack-reconcile-$scenario")
+    printf 'kind=orphan\npr=https://github.com/Example/Repo/pull/8\n' > "$case_dir/state/dependency.meta"
+    touch "$case_dir/stack-merge-fail"
+    outcome=${scenario%-timeout}
+    if [ "$scenario" != "$outcome" ]; then
+      printf '⚠ Merge is still in progress. Check the pull requests on GitHub.\n' > "$case_dir/stack-merge-error"
+    fi
+    case "$outcome" in
+      landed)
+        echo true > "$case_dir/stack-reconcile"
+        printf '%s\n' accepted-uncertain github github.com example/repo 9 > "$case_dir/state/task-x1.merge-unresolved"
+        printf '%s\n' accepted-uncertain github github.com Example/Repo 8 > "$case_dir/state/dependency.merge-unresolved"
+        chmod 0600 "$case_dir/state/"*.merge-unresolved
+        ;;
+      not-landed) echo false > "$case_dir/stack-reconcile" ;;
+      unreadable) touch "$case_dir/stack-reconcile-fail" ;;
+      malformed) echo null > "$case_dir/stack-reconcile" ;;
+    esac
+    rc=0
+    run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 > "$case_dir/out" 2>&1 || rc=$?
+    [ -f "$case_dir/stack-submitted" ] || fail "$scenario: extension did not reach submission"
+    [ "$(grep -c '^api repos/example/repo/pulls/9 --jq .merged$' "$case_dir/gh.log")" -eq 1 ] || fail "$scenario: expected exactly one reconciliation read"
+    ! grep -q '^api graphql ' "$case_dir/gh.log" || fail "$scenario: reconciliation performed a second outcome read"
+    [ ! -s "$case_dir/gh-axi.log" ] || fail "$scenario: reconciliation invoked another reader"
+    if [ "$outcome" = landed ]; then
+      [ "$rc" -eq 0 ] || fail "confirmed landing failed: $(cat "$case_dir/out")"
+      [ -f "$case_dir/state/task-x1.pr-poll-merge-notified" ] || fail "confirmed merge outcome missing"
+    else
+      [ "$rc" -ne 0 ] || fail "$scenario: reported a successful merge"
+      [ ! -e "$case_dir/state/task-x1.pr-poll-merge-notified" ] || fail "$scenario: published a false merge outcome"
+    fi
+    for id in task-x1 dependency; do
+      number=9
+      [ "$id" != dependency ] || number=8
+      if [ "$outcome" = landed ]; then
+        bash -c '
+          . "$1/bin/fm-wake-lib.sh"
+          . "$1/bin/fm-merge-authority-lib.sh"
+          fm_merge_authority_read "$2" "$3" github github.com "$4" "$5" || exit 1
+          [ "$FM_MERGE_AUTHORITY" = attended ]
+        ' bash "$ROOT" "$case_dir/state" "$id" "$([ "$id" = dependency ] && echo Example/Repo || echo example/repo)" "$number" || fail "$id: landed authority missing"
+      else
+        [ ! -e "$case_dir/state/$id.merge-authority" ] || fail "$id: $scenario published authority"
+      fi
+      case "$outcome" in
+        unreadable|malformed)
+          [ "$(sed -n 1p "$case_dir/state/$id.merge-unresolved")" = accepted-uncertain ] || fail "$id: unresolved marker missing"
+          [ "$(sed -n 5p "$case_dir/state/$id.merge-unresolved")" = "$number" ] || fail "$id: unresolved marker has wrong PR"
+          grep -F "check: unresolved merge: $id " "$case_dir/state/.wake-queue" | grep -F 'accepted-uncertain; firstmate reconciliation required' >/dev/null || fail "$id: no reconciliation notification"
+          ;;
+        *) [ ! -e "$case_dir/state/$id.merge-unresolved" ] || fail "$id: resolved result marked uncertain" ;;
+      esac
+    done
+    if [ "$outcome" != landed ]; then
+      ! grep -F 'check: merge landed:' "$case_dir/state/.wake-queue" >/dev/null 2>&1 || fail "$scenario: false landed notification"
+    fi
+  done
+  pass "stack errors reconcile landed, unmerged and unreadable outcomes once for every owned participant"
+}
+
+test_stack_participant_locks_and_authority() {
+  local case_dir rc i authority
+  case_dir=$(make_stack_case stack-participant-authority)
+  printf 'kind=orphan\npr=https://github.com/Example/Repo/pull/8\n' > "$case_dir/state/dependency.meta"
+  cat > "$case_dir/stack-hook" <<'SH'
+#!/usr/bin/env bash
+case_dir=$1
+bash -c '
+  . "$1/bin/fm-wake-lib.sh"
+  if fm_lock_try_acquire "$2/.control-dependency.lock"; then
+    fm_lock_release "$2/.control-dependency.lock"
+    exit 1
+  fi
+' bash "$FM_TEST_ROOT" "$FM_STATE_OVERRIDE" || exit 1
+(
+  touch "$case_dir/hold-attempted"
+  rc=0
+  "$FM_TEST_ROOT/bin/fm-captain-hold.sh" hold dependency --title 'Review task' --reason 'Review required' \
+    > "$case_dir/hold-out" 2>&1 || rc=$?
+  cp "$FM_STATE_OVERRIDE/dependency.merge-authority" "$case_dir/authority-at-hold" 2>/dev/null || true
+  printf '%s\n' "$rc" > "$case_dir/hold-rc"
+) < /dev/null > "$case_dir/holder-out" 2>&1 &
+for ((i=0; i<200; i++)); do
+  [ ! -f "$case_dir/hold-attempted" ] || break
+  sleep 0.01
+done
+[ -f "$case_dir/hold-attempted" ] || exit 1
+for ((i=0; i<20; i++)); do
+  [ ! -f "$case_dir/hold-rc" ] || exit 1
+  sleep 0.05
+done
+touch "$case_dir/hold-blocked-at-dispatch"
+SH
+  chmod +x "$case_dir/stack-hook"
+  rc=0
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 > "$case_dir/out" 2>&1 || rc=$?
+  for ((i=0; i<200; i++)); do
+    [ ! -f "$case_dir/hold-rc" ] || break
+    sleep 0.05
+  done
+  [ "$rc" -eq 0 ] || fail "stack participant transaction failed: $(cat "$case_dir/out")"
+  [ -f "$case_dir/hold-blocked-at-dispatch" ] || fail "dependency hold was published during dispatch"
+  [ "$(cat "$case_dir/hold-rc")" = 0 ] || fail "dependency lock was not released"
+  authority=$(bash -c '
+    . "$1/bin/fm-wake-lib.sh"
+    . "$1/bin/fm-merge-authority-lib.sh"
+    fm_merge_authority_read "$2" dependency github github.com Example/Repo 8 || exit 1
+    printf "%s" "$FM_MERGE_AUTHORITY"
+  ' bash "$ROOT" "$case_dir/state") || fail "dependency authority did not match its recorded identity"
+  [ "$authority" = attended ] || fail "dependency helper merge was classified as external"
+  cmp "$case_dir/authority-at-hold" "$case_dir/state/dependency.merge-authority" || fail "authority was published after releasing dependency control"
+  pass "stack holds serialize through dispatch and every owned participant receives matching authority before unlock"
+}
+
+test_stack_extra_aliases_refuse() {
+  local case_dir flag rc
+  for flag in --merge-method=rebase --merge-method --yes -y; do
+    case_dir=$(make_stack_case "stack-alias-${flag#--}")
+    rc=0
+    run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 -- "$flag" > "$case_dir/out" 2>&1 || rc=$?
+    [ "$rc" -ne 0 ] || fail "unrequired stack alias accepted: $flag"
+    ! grep -q '^stack merge ' "$case_dir/gh.log" || fail "stack merger received unrequired alias: $flag"
+  done
+  pass "stack fallback rejects unrequired public method and confirmation aliases"
+}
+
+test_stack_merge_refuses_unsafe_state() {
+  local case_dir scenario rc
+  for scenario in red missing changed-head collision equivalent-collision failed away held mixed-case-held unsupported; do
+    case_dir=$(make_stack_case "stack-refuse-$scenario")
+    case "$scenario" in
+      red) jq '.statusCheckRollup[0].conclusion = "FAILURE"' "$case_dir/github-member-8.json" > "$case_dir/member.tmp"; mv "$case_dir/member.tmp" "$case_dir/github-member-8.json" ;;
+      missing)
+        write_github_required "$case_dir" ruleset:ci
+        jq '.statusCheckRollup = []' "$case_dir/github-member-8.json" > "$case_dir/member.tmp"
+        mv "$case_dir/member.tmp" "$case_dir/github-member-8.json"
+        ;;
+      changed-head) jq '.[0].pull_requests[0].head.sha = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"' "$case_dir/stack.json" > "$case_dir/stack-next.json" ;;
+      collision) printf '{"number":9,"base":{"ref":"main"},"pull_requests":[]}\n' > "$case_dir/stack-collision.json" ;;
+      equivalent-collision) jq '.[0] | .pull_requests = .pull_requests[:2]' "$case_dir/stack.json" > "$case_dir/stack-collision.json" ;;
+      failed) touch "$case_dir/stack-merge-fail" ;;
+      away) write_away_record "$case_dir" --words 'Merge the approved green work.' ;;
+      held|mixed-case-held)
+        printf 'kind=ship\npr=https://github.com/example/repo/pull/8\n' > "$case_dir/state/dependency.meta"
+        if [ "$scenario" = mixed-case-held ]; then
+          printf 'kind=ship\npr=https://github.com/Example/Repo/pull/8\n' > "$case_dir/state/dependency.meta"
+        fi
+        FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" \
+          "$ROOT/bin/fm-captain-hold.sh" hold dependency --title 'Review task' --reason 'Review required' >/dev/null || fail "could not create dependency hold"
+        ;;
+      unsupported) ;;
+    esac
+    rc=0
+    if [ "$scenario" = unsupported ]; then
+      run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 --attended-override -- --admin > "$case_dir/out" 2>&1 || rc=$?
+    else
+      run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 > "$case_dir/out" 2>&1 || rc=$?
+    fi
+    [ "$rc" -ne 0 ] || fail "stack $scenario was accepted"
+    [ ! -f "$case_dir/state/task-x1.pr-poll-merge-notified" ] || fail "stack $scenario claimed landed"
+    if [ "$scenario" != failed ]; then
+      ! grep -q '^stack merge ' "$case_dir/gh.log" || fail "stack merger ran for $scenario"
+    else
+      assert_contains "$(cat "$case_dir/out")" 'gh stack merge failed' "stack failure lacked diagnostic"
+      [ -f "$case_dir/state/task-x1.check.sh" ] || fail "failed stack lost poll"
+    fi
+  done
+  pass "stack fallback refuses red, absent, changed, ambiguous, away, held and unsupported states and surfaces CLI failure"
+}
+
+test_orphan_recording_preserves_guards() {
+  local case_dir scenario rc
+  for scenario in green red missing held; do
+    case_dir=$(make_case "orphan-$scenario")
+    add_gh_mocks "$case_dir" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    rm "$case_dir/state/task-x1.meta"
+    case "$scenario" in
+      red) write_github_red_json "$case_dir" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ci ;;
+      missing) write_github_required "$case_dir" ruleset:never-reported ;;
+      held)
+        FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" \
+          "$ROOT/bin/fm-captain-hold.sh" hold task-x1 --title 'Review task' --reason 'Review required' >/dev/null || fail "could not create orphan hold"
+        ;;
+    esac
+    rc=0
+    run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 --orphan > "$case_dir/out" 2>&1 || rc=$?
+    if [ "$scenario" = green ]; then
+      [ "$rc" -eq 0 ] || fail "orphan merge failed: $(cat "$case_dir/out")"
+      grep -qxF kind=orphan "$case_dir/state/task-x1.meta" || fail "orphan kind absent"
+      grep -qxF pr_head=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa "$case_dir/meta-at-merge" || fail "orphan head not recorded before merge"
+      [ -f "$case_dir/state/task-x1.pr-poll-merge-notified" ] || fail "orphan outcome absent"
+      run_pr_merge "$case_dir" task-x1 https://github.com/Example/Repo/pull/9 --orphan > "$case_dir/retry-out" 2>&1 || fail "same orphan record was not reusable"
+      rc=0
+      run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/10 --orphan > "$case_dir/rebind-out" 2>&1 || rc=$?
+      [ "$rc" -ne 0 ] || fail "orphan record rebound to another PR"
+      grep -qxF 'pr=https://github.com/Example/Repo/pull/9' "$case_dir/state/task-x1.meta" || fail "orphan identity changed"
+    else
+      [ "$rc" -ne 0 ] || fail "orphan $scenario was accepted"
+      ! grep -q '^pr merge ' "$case_dir/gh.log" || fail "orphan $scenario reached forge merge"
+    fi
+  done
+  pass "explicit orphan merge records the live head and outcome while retaining red, missing-check and hold guards"
+}
+
+test_orphan_lifecycle() {
+  local case_dir state_out summary backlog_before
+  case_dir=$(make_case orphan-lifecycle)
+  add_gh_mocks "$case_dir" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  rm "$case_dir/state/task-x1.meta"
+  write_github_red_json "$case_dir" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ci
+  if run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 --orphan > "$case_dir/out" 2>&1; then
+    fail "red orphan unexpectedly merged"
+  fi
+  state_out=$(FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" "$ROOT/bin/fm-crew-state.sh" task-x1)
+  assert_contains "$state_out" 'state: paused' "forge-only record must have an explicit current state"
+  assert_not_contains "$state_out" 'worktree gone' "orphan must not require a worker copy"
+  [ "$(FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" "$ROOT/bin/fm-afk-contract.sh" live-workers)" = 0 ] || fail "forge-only record consumed a worker spend slot"
+  summary=$(FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" PATH="$case_dir/fakebin:$PATH" \
+    "$ROOT/bin/fm-fleet-snapshot.sh" --secondmate-home-summary)
+  printf '%s' "$summary" | jq -e '.valid == true and .invalidity.kind == null' > /dev/null || fail "orphan invalidated inventory: $summary"
+  write_github_live_json "$case_dir" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 --orphan > "$case_dir/out" 2>&1 || fail "orphan merge failed"
+  state_out=$(FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" "$ROOT/bin/fm-crew-state.sh" task-x1)
+  assert_contains "$state_out" 'state: done' "recorded merged orphan must report its terminal state"
+  backlog_before=$(cat "$case_dir/home/data/backlog.md")
+  FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" FM_TEARDOWN_GUARD_DONE=1 \
+    "$ROOT/bin/fm-teardown.sh" task-x1 > "$case_dir/teardown-out" 2>&1 || fail "orphan cleanup failed: $(cat "$case_dir/teardown-out")"
+  [ ! -e "$case_dir/state/task-x1.meta" ] || fail "orphan record survived cleanup"
+  [ ! -e "$case_dir/state/task-x1.backlog-close" ] || fail "orphan created a nonexistent backlog close"
+  [ "$backlog_before" = "$(cat "$case_dir/home/data/backlog.md")" ] || fail "orphan cleanup changed the backlog"
+  assert_not_contains "$(cat "$case_dir/teardown-out")" 'move task-x1 to Done' "orphan must not request a nonexistent backlog transition"
+  pass "forge-only records have current state, valid inventory and cleanup without worker or backlog fields"
+}
+
+test_orphan_never_overwrites_an_owner() {
+  local case_dir rc
+  case_dir=$(make_case orphan-needs-opt-in)
+  add_gh_mocks "$case_dir" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  rm "$case_dir/state/task-x1.meta"
+  rc=0
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 > "$case_dir/out" 2>&1 || rc=$?
+  [ "$rc" -ne 0 ] || fail "missing task implicitly became orphan"
+  [ ! -e "$case_dir/state/task-x1.meta" ] || fail "implicit orphan record created"
+  printf 'kind=ship\npr=https://github.com/Example/Repo/pull/9\n' > "$case_dir/state/owner.meta"
+  rc=0
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 --orphan > "$case_dir/out" 2>&1 || rc=$?
+  [ "$rc" -ne 0 ] || fail "orphan bypassed existing owner"
+  [ ! -e "$case_dir/state/task-x1.meta" ] || fail "duplicate ownership created"
+  rm "$case_dir/state/owner.meta"
+  printf 'kind=ship\n' > "$case_dir/state/task-x1.meta"
+  rc=0
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 --orphan > "$case_dir/out" 2>&1 || rc=$?
+  [ "$rc" -ne 0 ] || fail "worker task became orphan"
+  grep -qxF kind=ship "$case_dir/state/task-x1.meta" || fail "worker record replaced"
+  pass "orphan mode requires opt-in and never replaces or bypasses an owning worker"
+}
+
+test_orphan_registration_refuses_worker_replacement() {
+  local case_dir entry rc suffix
+  for entry in explicit-create explicit-reuse flagless merge-create merge-reuse merge-flagless; do
+    case_dir=$(make_case "orphan-worker-replacement-$entry")
+    add_gh_mocks "$case_dir" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    cp "$case_dir/state/task-x1.meta" "$case_dir/replacement.expected"
+    cp "$case_dir/replacement.expected" "$case_dir/replacement.pending"
+    chmod 0600 "$case_dir/replacement.pending"
+    printf '%s\n' "$REAL_MV" > "$case_dir/real-mv"
+    case "$entry" in
+      explicit-create|merge-create)
+        rm "$case_dir/state/task-x1.meta"
+        cat > "$case_dir/fakebin/mv" <<'SH'
+#!/usr/bin/env bash
+case_dir=${FM_STATE_OVERRIDE%/state}
+real_mv=$(cat "$case_dir/real-mv")
+replace=false
+for arg in "$@"; do
+  case "$arg" in "$FM_STATE_OVERRIDE"/.fm-pr-orphan.*) replace=true ;; esac
+done
+"$real_mv" "$@" || exit 1
+if [ "$replace" = true ] && [ -f "$case_dir/replacement.pending" ]; then
+  "$real_mv" -- "$case_dir/replacement.pending" "$FM_STATE_OVERRIDE/task-x1.meta" || exit 1
+  touch "$case_dir/record-replaced"
+fi
+SH
+        chmod +x "$case_dir/fakebin/mv"
+        ;;
+      *)
+        printf 'kind=orphan\npr=https://github.com/example/repo/pull/9\n' > "$case_dir/state/task-x1.meta"
+        cat > "$case_dir/head-hook" <<'SH'
+#!/usr/bin/env bash
+case_dir=$1
+real_mv=$(cat "$case_dir/real-mv")
+if [ -f "$case_dir/replacement.pending" ]; then
+  "$real_mv" -- "$case_dir/replacement.pending" "$FM_STATE_OVERRIDE/task-x1.meta" || exit 1
+  touch "$case_dir/record-replaced"
+fi
+SH
+        chmod +x "$case_dir/head-hook"
+        ;;
+    esac
+    rc=0
+    case "$entry" in
+      merge-flagless) run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 > "$case_dir/out" 2>&1 || rc=$? ;;
+      merge-*) run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 --orphan > "$case_dir/out" 2>&1 || rc=$? ;;
+      flagless) run_pr_check_case "$case_dir" task-x1 https://github.com/example/repo/pull/9 > "$case_dir/out" 2>&1 || rc=$? ;;
+      *) run_pr_check_case "$case_dir" task-x1 https://github.com/example/repo/pull/9 --orphan > "$case_dir/out" 2>&1 || rc=$? ;;
+    esac
+    [ -f "$case_dir/record-replaced" ] || fail "$entry did not exercise record replacement"
+    [ "$rc" -ne 0 ] || fail "$entry attached stale orphan registration to a replacement worker"
+    assert_contains "$(cat "$case_dir/out")" 'was replaced before PR publication' "$entry did not refuse at the shared replacement guard"
+    cmp "$case_dir/replacement.expected" "$case_dir/state/task-x1.meta" || fail "$entry modified the replacement worker record"
+    for suffix in check.sh pr-poll pr-poll-registration; do
+      [ ! -e "$case_dir/state/task-x1.$suffix" ] || fail "$entry published a stale orphan poll artifact: $suffix"
+    done
+    ! grep -q '^pr merge ' "$case_dir/gh.log" || fail "$entry reached the forge merge for a replacement worker"
+  done
+  pass "explicit and flagless orphan registration preserve replacement workers without publishing stale polls"
+}
+
+test_orphan_merge_retains_context_under_control() {
+  local case_dir entry rc script
+  for entry in after-registration changed-binding second-recording stack-reacquisition; do
+    if [ "$entry" = stack-reacquisition ]; then
+      case_dir=$(make_stack_case "orphan-control-$entry")
+    else
+      case_dir=$(make_case "orphan-control-$entry")
+      add_gh_mocks "$case_dir" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    fi
+    cp "$case_dir/state/task-x1.meta" "$case_dir/replacement.expected"
+    if [ "$entry" = changed-binding ]; then
+      printf 'kind=orphan\npr=https://github.com/example/repo/pull/8\n' > "$case_dir/replacement.expected"
+    elif [ "$entry" = stack-reacquisition ]; then
+      printf 'pr=https://github.com/example/repo/pull/9\n' >> "$case_dir/replacement.expected"
+    fi
+    printf 'kind=orphan\npr=https://github.com/example/repo/pull/9\n' > "$case_dir/state/task-x1.meta"
+    printf '%s\n' "$entry" > "$case_dir/replacement-mode"
+    mkdir "$case_dir/scripts"
+    for script in "$ROOT"/bin/*.sh; do
+      ln -s "$script" "$case_dir/scripts/${script##*/}"
+    done
+    rm "$case_dir/scripts/fm-pr-merge.sh" "$case_dir/scripts/fm-pr-check.sh"
+    cp "$PR_MERGE" "$case_dir/scripts/fm-pr-merge.sh"
+    cat > "$case_dir/scripts/fm-pr-check.sh" <<'SH'
+#!/usr/bin/env bash
+case_dir=${FM_STATE_OVERRIDE%/state}
+entry=$(cat "$case_dir/replacement-mode")
+call=$(( $(cat "$case_dir/recording-calls" 2>/dev/null || echo 0) + 1 ))
+printf '%s\n' "$call" > "$case_dir/recording-calls"
+bash -c '
+  . "$1/bin/fm-wake-lib.sh"
+  if fm_lock_try_acquire "$2/.control-task-x1.lock"; then
+    fm_lock_release "$2/.control-task-x1.lock"
+    exit 1
+  fi
+' bash "$FM_TEST_ROOT" "$FM_STATE_OVERRIDE" || exit 1
+touch "$case_dir/recording-under-control"
+replace() {
+  cp "$case_dir/replacement.expected" "$FM_STATE_OVERRIDE/task-x1.meta"
+  chmod 0600 "$FM_STATE_OVERRIDE/task-x1.meta"
+  rm -f "$FM_STATE_OVERRIDE/task-x1.check.sh" "$FM_STATE_OVERRIDE/task-x1.pr-poll" \
+    "$FM_STATE_OVERRIDE/task-x1.pr-poll-registration"
+  touch "$case_dir/record-replaced"
+}
+if [ "$entry" = second-recording ] && [ "$call" = 2 ]; then
+  replace
+fi
+"$FM_TEST_ROOT/bin/fm-pr-check.sh" "$@" || exit $?
+case "$entry:$call" in after-registration:1|changed-binding:1) replace ;; esac
+SH
+    chmod +x "$case_dir/scripts/fm-pr-check.sh"
+    if [ "$entry" = stack-reacquisition ]; then
+      mv "$case_dir/fakebin/gh" "$case_dir/fakebin/gh-real"
+      cat > "$case_dir/fakebin/gh" <<'SH'
+#!/usr/bin/env bash
+case_dir=${FM_STATE_OVERRIDE%/state}
+case "${1:-}:${2:-}" in
+  api:*'/stacks?pull_request='*)
+    if [ ! -f "$case_dir/record-replaced" ]; then
+      cp "$case_dir/replacement.expected" "$FM_STATE_OVERRIDE/task-x1.meta"
+      chmod 0600 "$FM_STATE_OVERRIDE/task-x1.meta"
+      rm -f "$FM_STATE_OVERRIDE/task-x1.check.sh" "$FM_STATE_OVERRIDE/task-x1.pr-poll" \
+        "$FM_STATE_OVERRIDE/task-x1.pr-poll-registration"
+      touch "$case_dir/record-replaced"
+    fi
+    ;;
+esac
+exec "$case_dir/fakebin/gh-real" "$@"
+SH
+      chmod +x "$case_dir/fakebin/gh"
+    fi
+    rc=0
+    PR_MERGE="$case_dir/scripts/fm-pr-merge.sh" \
+      run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 --orphan > "$case_dir/out" 2>&1 || rc=$?
+    [ -f "$case_dir/recording-under-control" ] || fail "$entry recorded an orphan without task control"
+    [ -f "$case_dir/record-replaced" ] || fail "$entry did not exercise replacement"
+    [ "$rc" -ne 0 ] || fail "$entry adopted a replacement task"
+    cmp "$case_dir/replacement.expected" "$case_dir/state/task-x1.meta" || fail "$entry changed replacement metadata"
+    [ ! -e "$case_dir/state/task-x1.pr-poll" ] || fail "$entry republished a stale orphan poll"
+    [ ! -e "$case_dir/state/task-x1.pr-poll-registration" ] || fail "$entry republished stale poll registration"
+    if [ "$entry" = second-recording ]; then
+      [ "$(cat "$case_dir/recording-calls")" = 2 ] || fail "second recorder was not exercised"
+      assert_contains "$(cat "$case_dir/out")" '--orphan refuses to replace' "second recorder lost explicit orphan context"
+    else
+      assert_contains "$(cat "$case_dir/out")" 'no longer owns the requested PR' "$entry did not refuse at the binding guard"
+    fi
+    ! grep -q '^stack merge ' "$case_dir/gh.log" || fail "$entry reached stack dispatch"
+    [ "$entry" = stack-reacquisition ] || ! grep -q '^pr merge ' "$case_dir/gh.log" || fail "$entry reached forge merge"
+  done
+  pass "explicit orphan merges retain binding and task control across registration, re-recording and stack lock reacquisition"
+}
+
+test_orphan_identity_is_fixed_at_publication() {
+  local case_dir entry rc meta_before poll_before
+  for entry in record merge; do
+    case_dir=$(make_case "orphan-rebind-$entry")
+    add_gh_mocks "$case_dir" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    run_pr_check_case "$case_dir" orphan-x1 https://github.com/example/repo/pull/8 --orphan > "$case_dir/setup-out" 2>&1 || fail "orphan setup failed"
+    run_pr_check_case "$case_dir" task-x1 https://github.com/example/repo/pull/9 > "$case_dir/owner-out" 2>&1 || fail "owner setup failed"
+    FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" \
+      "$ROOT/bin/fm-captain-hold.sh" hold task-x1 --title 'Review task' --reason 'Review required' > /dev/null || fail "owner hold failed"
+    if [ "$entry" = merge ]; then
+      bash -c '
+        . "$1/bin/fm-wake-lib.sh"
+        . "$1/bin/fm-pr-lib.sh"
+        fm_pr_poll_merge_mark_notified "$2" orphan-x1 github github.com example/repo 8
+      ' bash "$ROOT" "$case_dir/state" || fail "prior merged receipt setup failed"
+    fi
+    meta_before=$(cat "$case_dir/state/orphan-x1.meta")
+    poll_before=$(cat "$case_dir/state/orphan-x1.pr-poll")
+    rc=0
+    if [ "$entry" = record ]; then
+      run_pr_check_case "$case_dir" orphan-x1 https://github.com/example/repo/pull/9 > "$case_dir/out" 2>&1 || rc=$?
+    else
+      run_pr_merge "$case_dir" orphan-x1 https://github.com/example/repo/pull/9 > "$case_dir/out" 2>&1 || rc=$?
+    fi
+    [ "$rc" -ne 0 ] || fail "$entry rebound an orphan to a held owner's PR"
+    assert_contains "$(cat "$case_dir/out")" 'cannot change its PR identity' "$entry did not reach the shared orphan identity guard"
+    [ "$meta_before" = "$(cat "$case_dir/state/orphan-x1.meta")" ] || fail "$entry changed the orphan's metadata"
+    [ "$poll_before" = "$(cat "$case_dir/state/orphan-x1.pr-poll")" ] || fail "$entry changed the orphan's poll identity"
+    ! grep -q '^pr merge ' "$case_dir/gh.log" || fail "$entry reached the forge merge"
+    run_pr_check_case "$case_dir" orphan-x1 https://github.com/Example/Repo/pull/8 > "$case_dir/reuse-out" 2>&1 || fail "flagless equivalent orphan recording was refused"
+  done
+  pass "ordinary recording and prior-merged helper entry preserve the stored orphan identity"
+}
+
+test_registration_serializes_orphan_discovery() {
+  local case_dir meta_lock writer orphan i writer_rc=0 orphan_rc=0
+  case_dir=$(make_case orphan-concurrent-registration)
+  add_gh_mocks "$case_dir" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  . "$ROOT/bin/fm-wake-lib.sh"
+  meta_lock=$(fm_meta_lock_path "$case_dir/state/task-x1.meta")
+  fm_lock_acquire_wait "$meta_lock"
+  run_pr_check_case "$case_dir" task-x1 https://github.com/example/repo/pull/9 > "$case_dir/writer-out" 2>&1 &
+  writer=$!
+  fm_test_track_child "$writer"
+  for ((i=0; i<200; i++)); do
+    [ ! -e "$case_dir/state/.task-set.lock" ] || break
+    sleep 0.05
+  done
+  if [ ! -e "$case_dir/state/.task-set.lock" ]; then
+    fm_lock_release "$meta_lock"
+    wait "$writer" || true
+    fail "ordinary publication did not reserve ownership before its metadata lock"
+  fi
+  run_pr_check_case "$case_dir" orphan-x1 https://github.com/example/repo/pull/9 --orphan > "$case_dir/orphan-out" 2>&1 &
+  orphan=$!
+  fm_test_track_child "$orphan"
+  for ((i=0; i<20; i++)); do
+    [ ! -e "$case_dir/state/orphan-x1.meta" ] || fail "orphan discovery passed an in-flight registration"
+    sleep 0.05
+  done
+  fm_lock_release "$meta_lock"
+  wait "$writer" || writer_rc=$?
+  wait "$orphan" || orphan_rc=$?
+  [ "$writer_rc" -eq 0 ] || fail "ordinary registration failed: $(cat "$case_dir/writer-out")"
+  [ "$orphan_rc" -ne 0 ] || fail "orphan duplicated the newly published owner"
+  assert_contains "$(cat "$case_dir/orphan-out")" 'already belongs to task task-x1' "orphan discovery did not observe the serialized owner"
+  [ ! -e "$case_dir/state/orphan-x1.meta" ] || fail "refused orphan left duplicate ownership"
+  case_dir=$(make_case orphan-before-registration)
+  add_gh_mocks "$case_dir" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  run_pr_check_case "$case_dir" orphan-x1 https://github.com/example/repo/pull/9 --orphan > "$case_dir/orphan-out" 2>&1 || fail "orphan-first setup failed"
+  if run_pr_check_case "$case_dir" task-x1 https://github.com/Example/Repo/pull/9 > "$case_dir/writer-out" 2>&1; then
+    fail "ordinary recording duplicated an orphan owner"
+  fi
+  ! grep -q '^pr=' "$case_dir/state/task-x1.meta" || fail "refused ordinary recording published duplicate ownership"
+  pass "orphan and ordinary registration serialize ownership in both orders"
+}
+
+test_registration_waits_for_stack_dispatch() {
+  local case_dir i
+  case_dir=$(make_stack_case stack-concurrent-registration)
+  cp "$case_dir/state/task-x1.meta" "$case_dir/state/dependency.meta"
+  FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" \
+    "$ROOT/bin/fm-captain-hold.sh" hold dependency --title 'Review task' --reason 'Review required' > /dev/null || fail "unbound dependency hold failed"
+  cat > "$case_dir/stack-hook" <<'SH'
+#!/usr/bin/env bash
+case_dir=$1
+(
+  rc=0
+  "$FM_TEST_ROOT/bin/fm-pr-check.sh" dependency https://github.com/example/repo/pull/8 > "$case_dir/registration-out" 2>&1 || rc=$?
+  printf '%s\n' "$rc" > "$case_dir/registration-rc"
+) < /dev/null > "$case_dir/registrar-out" 2>&1 &
+for ((i=0; i<40; i++)); do
+  if [ -f "$case_dir/registration-rc" ] || grep -q '^pr=' "$FM_STATE_OVERRIDE/dependency.meta"; then
+    exit 1
+  fi
+  sleep 0.05
+done
+touch "$case_dir/registration-blocked-at-dispatch"
+SH
+  chmod +x "$case_dir/stack-hook"
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 > "$case_dir/out" 2>&1 || fail "stack registration transaction failed: $(cat "$case_dir/out")"
+  for ((i=0; i<200; i++)); do
+    [ ! -f "$case_dir/registration-rc" ] || break
+    sleep 0.05
+  done
+  [ -f "$case_dir/registration-blocked-at-dispatch" ] || fail "registration did not wait through dispatch"
+  [ "$(cat "$case_dir/registration-rc")" = 0 ] || fail "registration failed after stack unlock: $(cat "$case_dir/registration-out")"
+  grep -qxF 'pr=https://github.com/example/repo/pull/8' "$case_dir/state/dependency.meta" || fail "registration did not publish after stack unlock"
+  pass "held unbound tasks cannot publish a PR binding during stack dispatch"
+}
+
+test_busy_stack_participant_refuses_without_deadlock() {
+  local case_dir lock merge i rc=0
+  case_dir=$(make_stack_case stack-busy-participant)
+  printf 'kind=orphan\npr=https://github.com/example/repo/pull/8\n' > "$case_dir/state/dependency.meta"
+  . "$ROOT/bin/fm-wake-lib.sh"
+  lock="$case_dir/state/.control-dependency.lock"
+  fm_lock_acquire_wait "$lock"
+  (rc=0; run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 > "$case_dir/out" 2>&1 || rc=$?; printf '%s\n' "$rc" > "$case_dir/merge-rc") &
+  merge=$!
+  fm_test_track_child "$merge"
+  for ((i=0; i<400; i++)); do
+    [ ! -f "$case_dir/merge-rc" ] || break
+    sleep 0.05
+  done
+  fm_lock_release "$lock"
+  wait "$merge" || rc=$?
+  [ -f "$case_dir/merge-rc" ] || fail "stack waited on busy participant while reserving ownership"
+  [ "$(cat "$case_dir/merge-rc")" != 0 ] || fail "stack ignored a busy participant"
+  [ "$rc" -eq 0 ] || fail "stack refusal harness failed"
+  assert_contains "$(cat "$case_dir/out")" 'another lifecycle action is running for stack participant dependency' "busy participant lacked a refusal"
+  ! grep -q '^stack merge ' "$case_dir/gh.log" || fail "busy stack reached dispatch"
+  run_pr_check_case "$case_dir" task-x1 https://github.com/example/repo/pull/9 > "$case_dir/retry-out" 2>&1 || fail "refused stack retained the ownership lock"
+  pass "busy stack participants refuse and release ownership without a control/publication deadlock"
 }
 
 test_verified_merge_records_pr_and_head() {
@@ -1918,7 +2649,7 @@ test_method_equals_merge_method_not_overridden() {
   run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/23 -- --method=merge \
     > "$case_dir/stdout" 2> "$case_dir/stderr" || fail "method-equals-merge-method: fm-pr-merge failed"
 
-  assert_logged_gh_merge "$case_dir" 23 example/repo --method=merge
+  assert_logged_gh_merge "$case_dir" 23 example/repo --merge
   pass "fm-pr-merge respects --method=<value> as an explicit merge method"
 }
 
@@ -4645,6 +5376,23 @@ test_allow_no_pipeline_is_attended_only_and_gitlab_only() {
   [ ! -s "$case_dir/tea.log" ] || fail "forgejo-no-pipeline: tea ran despite the waiver"
   pass "fm-pr-merge --allow-no-pipeline is attended-only, takes no value, and applies only to GitLab"
 }
+
+test_stack_merge_preserves_method_and_records_outcome
+test_stack_participant_locks_and_authority
+test_stack_collision_is_rechecked_before_dispatch
+test_stack_failure_before_submission_publishes_nothing
+test_stack_failure_reconciles_once_for_all_participants
+test_orphan_registration_refuses_worker_replacement
+test_orphan_merge_retains_context_under_control
+test_orphan_identity_is_fixed_at_publication
+test_registration_serializes_orphan_discovery
+test_registration_waits_for_stack_dispatch
+test_busy_stack_participant_refuses_without_deadlock
+test_stack_extra_aliases_refuse
+test_orphan_lifecycle
+test_stack_merge_refuses_unsafe_state
+test_orphan_recording_preserves_guards
+test_orphan_never_overwrites_an_owner
 
 test_gitlab_head_override_args_refuse_before_recording
 test_secondmate_merge_reports_upward_once
