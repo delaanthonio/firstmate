@@ -238,6 +238,17 @@
 #   A batch reports such a pair as `batch: DEFERRED` and exits 75 when nothing
 #   else failed. A relaunch and a --secondmate spawn are never counted against
 #   capacity.
+#   Host load ceiling: when this machine declares a one-minute load-average
+#   ceiling (config/spawn-load-ceiling; bin/fm-host-load-lib.sh owns the
+#   declaration, the load source, and the verdict), a fresh ship or scout spawn
+#   is checked before the project capacity admission and, above the ceiling,
+#   prints one `deferred:` line naming the observed load, the ceiling, and the
+#   resume condition, and exits 75 with nothing launched, created, or moved -
+#   the same deferral shape as project capacity. An unset ceiling leaves
+#   dispatch unchanged; an unreadable declaration, a malformed one, or an
+#   unreadable load source refuses with exit 1; and --allow-over-load launches
+#   a captain-ordered spawn under load. A relaunch and a --secondmate spawn are
+#   never checked, and --allow-over-load is refused on them.
 #   With no harness arg, a crewmate/scout spawn resolves the CREW harness only when
 #   config/crew-dispatch.json is absent. When that file exists, crewmate/scout
 #   spawns require an explicit harness so firstmate cannot silently skip dispatch
@@ -978,6 +989,8 @@ fi
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
 # shellcheck source=bin/fm-project-capacity-lib.sh
 . "$SCRIPT_DIR/fm-project-capacity-lib.sh"
+# shellcheck source=bin/fm-host-load-lib.sh
+. "$SCRIPT_DIR/fm-host-load-lib.sh"
 # shellcheck source=bin/fm-worker-account-lib.sh
 . "$SCRIPT_DIR/fm-worker-account-lib.sh"
 # shellcheck source=bin/fm-omp-profile-lib.sh
@@ -990,6 +1003,7 @@ fm_refuse_if_gate_agent
 [ -n "${FM_SPAWN_NO_GUARD:-}" ] || "$FM_ROOT/bin/fm-guard.sh" || true
 KIND=ship
 KIND_SET=0
+ALLOW_OVER_LOAD=0
 HARNESS_ARG=
 MODEL=
 EFFORT=
@@ -1083,6 +1097,7 @@ for a in "$@"; do
     KIND_SET=1
     ;;
   --relaunch) RELAUNCH=1 ;;
+  --allow-over-load) ALLOW_OVER_LOAD=1 ;;
   --herdr-resume-lock-wait) HERDR_RESUME_LOCK_WAIT=1 ;;
   --harness) want_value=harness ;;
   --harness=*)
@@ -1185,6 +1200,15 @@ if [ "$TRACEPARENT_SET" -eq 1 ]; then
     echo "error: --traceparent is not a valid W3C traceparent" >&2
     exit 1
   }
+fi
+# --allow-over-load launches a captain-ordered spawn under load, so it is
+# refused where the load guard could never run: a relaunch reuses an existing
+# worker rather than adding one, and a secondmate is not a worker.
+if [ "$ALLOW_OVER_LOAD" -eq 1 ]; then
+  if [ "$KIND" = secondmate ] || [ "$RELAUNCH" -eq 1 ]; then
+    echo "error: --allow-over-load applies only to a fresh ship or scout spawn; a relaunch reuses an existing worker and a secondmate is not a worker" >&2
+    exit 1
+  fi
 fi
 case "$EFFORT" in
 '' | low | medium | high | xhigh | max | ultra | dynamic) ;;
@@ -2125,7 +2149,7 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
     pair_rc=0
     FM_SPAWN_NO_GUARD=1 "$FM_ROOT/bin/fm-spawn.sh" "${pair_args[@]}" || pair_rc=$?
     if [ "$pair_rc" -eq "$FM_PROJECT_CAPACITY_DEFER_EXIT" ]; then
-      echo "batch: DEFERRED ${pair%%=*} (${pair#*=}) - its project is at capacity, so it stays queued" >&2
+      echo "batch: DEFERRED ${pair%%=*} (${pair#*=}) - the launch was deferred, so it stays queued" >&2
       [ "$rc" -ne 0 ] || rc=$FM_PROJECT_CAPACITY_DEFER_EXIT
     elif [ "$pair_rc" -ne 0 ]; then
       echo "batch: FAILED to spawn ${pair%%=*} (${pair#*=})" >&2
@@ -4143,6 +4167,39 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ] &&
   ! git -C "$PROJ_ABS" rev-parse --verify --quiet HEAD >/dev/null 2>&1; then
   echo "error: spawn refused: project $PROJ_ABS has no commit yet (unborn HEAD), so there is nothing to branch a worktree from; make one commit in the project, for example 'git -C $PROJ_ABS commit --allow-empty -m \"chore: initial commit\"', then spawn again" >&2
   exit 1
+fi
+# Host load admission (bin/fm-host-load-lib.sh owns the ceiling declaration,
+# the load source, and the verdict): the machine-wide complement to project
+# capacity, for the load a fleet of concurrent workers creates together. Before
+# any fresh ship or scout launch, the machine's one-minute load average is
+# compared against the root home's config/spawn-load-ceiling, and a spawn above
+# it is deferred exactly like a capacity deferral - no brief render, endpoint,
+# worktree, record, or backlog move exists, so the task stays exactly as queued
+# as it was. An unset ceiling leaves dispatch unchanged, and
+# --allow-over-load launches a captain-ordered spawn under load. A relaunch
+# replaces a worker the machine already carried, and a secondmate is not a
+# worker, so neither is checked.
+SPAWN_LOAD_CEILING=
+if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ] && [ "$ALLOW_OVER_LOAD" -ne 1 ]; then
+  SPAWN_LOAD_CONFIG=$(fm_host_load_config_dir "$FM_HOME" "$CONFIG") || {
+    echo "error: could not resolve the root Firstmate home that declares the spawn load ceiling" >&2
+    exit 1
+  }
+  if ! fm_host_load_ceiling_lookup "$SPAWN_LOAD_CONFIG"; then
+    echo "error: spawn refused: the spawn load ceiling declaration is unreadable ($FM_HOST_LOAD_CEILING_ERROR); fix it so the machine's load limit is known (docs/configuration.md \"Spawn load ceiling\")" >&2
+    exit 1
+  fi
+  SPAWN_LOAD_CEILING=$FM_HOST_LOAD_CEILING
+  if [ -n "$SPAWN_LOAD_CEILING" ]; then
+    if ! fm_host_load_one_minute; then
+      echo "error: spawn refused: the machine's one-minute load average cannot be read ($FM_HOST_LOAD_ERROR), so the configured spawn load ceiling cannot be checked (docs/configuration.md \"Spawn load ceiling\")" >&2
+      exit 1
+    fi
+    if fm_host_load_over "$FM_HOST_LOAD_1M" "$SPAWN_LOAD_CEILING"; then
+      echo "deferred: the machine's one-minute load average is $FM_HOST_LOAD_1M, above the spawn load ceiling of $SPAWN_LOAD_CEILING ($FM_HOST_LOAD_CEILING_FILE); task $ID was not launched and its backlog item stays queued - dispatch it again once the machine's load average falls to or below the ceiling, or launch under load with --allow-over-load" >&2
+      exit "$FM_SPAWN_LOAD_DEFER_EXIT"
+    fi
+  fi
 fi
 # Project capacity admission (bin/fm-project-capacity-lib.sh owns the
 # declaration, what holds a place, and why this is race-safe). A fresh worker

@@ -1786,6 +1786,22 @@ A malformed or unreadable file refuses every fresh ship or scout spawn until it 
 Firstmate cannot see which part of a worker's life uses the resource, so the number bounds whole workers from launch to handoff, and the tightest resource every worker needs should decide it.
 [`bin/fm-project-capacity-lib.sh`](../bin/fm-project-capacity-lib.sh) owns the file format, what holds a place, and why concurrent spawns cannot both take the last one.
 
+## Spawn load ceiling (config/spawn-load-ceiling)
+
+The optional local, gitignored `config/spawn-load-ceiling` tells Firstmate the machine's one-minute load-average ceiling for launching a fresh worker - the machine-wide complement to per-project capacity, for the load a fleet of concurrent workers creates together, as when several projects' test suites run at once and timing-sensitive tests start failing flakily.
+Without it, dispatch is unchanged: no load is read and no launch is ever deferred for the machine's load.
+
+The file lives in the machine's root Firstmate home, so every local secondmate home reads the same limit, and it holds one positive number: the highest one-minute load average at which a fresh ship or scout launch is still admitted, so a whole number such as `8` is usually right on a machine with that many cores.
+Blank lines and `#` comment lines are ignored, so the reason the number was chosen can be recorded beside it.
+Anything else - a second number, a negative or zero ceiling, a token that is not a number, an unreadable file - is a malformed declaration, and `bin/fm-spawn.sh` then refuses every fresh ship or scout spawn from this machine's homes until it is fixed, rather than guessing the intended limit.
+When the load source itself cannot be read (`/proc/loadavg` on Linux, `sysctl vm.loadavg` elsewhere), a configured ceiling also refuses the spawn, since skipping the check would silently ignore the limit the captain set.
+
+Above the ceiling, `bin/fm-spawn.sh` launches nothing, creates no record, leaves the backlog item queued, prints one `deferred:` line naming the observed load, the ceiling, and the resume condition, and exits 75 - the same deferral shape as project capacity, and a batch reports the pair the same way.
+A spawn at exactly the ceiling is admitted.
+The check runs before per-project capacity admission and does not change it: a spawn under the load ceiling still counts against its project's declared capacity.
+A captain can order a launch under load by passing `--allow-over-load` to `bin/fm-spawn.sh`; the flag is accepted only on a fresh ship or scout spawn, since a relaunch replaces a worker the machine already carried and a secondmate is not a worker.
+[`bin/fm-host-load-lib.sh`](../bin/fm-host-load-lib.sh) owns the file format, the load source, and the verdict; `bin/fm-spawn.sh` owns where the check runs.
+
 ## Crew dispatch profiles (config/crew-dispatch.json)
 
 `config/crew-dispatch.json` is an optional local, gitignored file containing natural-language rules that firstmate reads before dispatching a crewmate or scout.
