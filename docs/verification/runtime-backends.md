@@ -561,7 +561,8 @@ It then drives the real spawn path on a private tmux socket, verifies that the d
 Only the worktree provider is a fixture; the Droid binary, viewport reads, key delivery, and launch settings are real.
 This establishes the tmux path; Herdr and Zellij use their existing viewport-capture interface, while cmux and Orca are refused before endpoint allocation because they lack that capability.
 
-Portable regressions in `tests/fm-spawn-dispatch-profile.test.sh` exercise the trust choice, incomplete and negative selections, failed reads and key delivery, bounded failure, and default-model observation through the spawn executable.
+Portable regressions in `tests/fm-spawn-dispatch-profile.test.sh` exercise the trust choice, incomplete and negative selections, failed reads and key delivery, bounded failure, default-model observation, and generation-bound runtime reconciliation that preserves requested selection and registered PR identity.
+`tests/fm-control-relaunch.test.sh` covers changed defaults, explicit model pins, and removal of Droid accounting on a harness switch; `tests/fm-remote-secondmate-relaunch.test.sh` covers the parent publication boundary for refreshed or unknown accounting, harness switches, and preserved PR registration.
 `tests/fm-remote-secondmate-lifecycle-e2e.test.sh` checks that the parent record preserves the model observed by the remote host.
 
 ## Pi seeded-secondmate project trust

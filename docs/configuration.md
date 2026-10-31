@@ -860,7 +860,8 @@ Canonical Droid tasks additionally carry `effective_model`, an accounting and re
 When no concrete identifier is available before launch, it is `unknown-at-spawn`, never the bare `default` selection sentinel.
 `fm-droid-model.sh` observes the runtime session settings sidecar through SessionStart, PreToolUse, and Stop hooks and reconciles only `effective_model` under the task lock, bound to `spawn_gen` so retired sessions cannot alter a replacement's record.
 An observation arriving while spawn holds that lock is reconciled after launch; no accounting hook waits for spawn's lock.
-Remote launch replies mirror both fields from the launching host, and the fleet ledger receives the observed identifier available at dispatch, including an honest `unknown-at-spawn` if reconciliation has not happened yet.
+Remote launch and relaunch replies mirror both fields from the launching host; switching away from Droid removes `effective_model` from both host and parent records.
+The fleet ledger receives the observed identifier available at dispatch, including an honest `unknown-at-spawn` if reconciliation has not happened yet.
 Neither runtime settings generation nor relaunch or recovery uses `effective_model` for selection.
 A cursor secondmate or primary runs the tracked project-scope `.cursor/hooks.json` in its own home and must be launched with `--trust`, or no project hook loads; [`docs/supervision-protocols/cursor.md`](supervision-protocols/cursor.md) owns its supervision protocol.
 
