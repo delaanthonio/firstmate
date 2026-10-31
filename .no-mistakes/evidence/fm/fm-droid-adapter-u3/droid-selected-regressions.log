@@ -1,0 +1,6 @@
+# all fm-spawn-dispatch-profile tests passed
+ok - droid receives custom model and dynamic effort through settings alongside its Stop hook
+ok - Droid records configured defaults and local overrides without changing model selection
+ok - Droid reconciles runtime accounting without pinning selection or blocking spawn
+ok - Droid answers only the complete affirmative trust dialog and verifies launch progress
+ok - Droid refuses unsupported trust-gate backends before allocation

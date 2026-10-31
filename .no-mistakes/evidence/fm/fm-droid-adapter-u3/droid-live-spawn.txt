@@ -1,0 +1,2 @@
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69SW8ZHZ0QCHZPN4JJQZKKX/.validation-tmp/live-lab
+spawned live-droid harness=droid kind=scout window=primary:fm-live-droid worktree=/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69SW8ZHZ0QCHZPN4JJQZKKX/.validation-tmp/live-lab/user-home/.treehouse/project-43fc54/1/project

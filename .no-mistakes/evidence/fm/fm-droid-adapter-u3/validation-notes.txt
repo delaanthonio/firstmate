@@ -1,0 +1,23 @@
+Only this test phase was executed; no pipeline, publication, lint, or full-suite commands were run.
+
+Baseline: TMPDIR="$PWD/.validation-tmp" bin/fm-test-run.sh tests/fm-spawn-dispatch-profile.test.sh tests/fm-control-relaunch.test.sh tests/fm-remote-secondmate-relaunch.test.sh
+The dispatch suite hit a setup restriction: its secondmate fixture is under this repository, which the product refuses. The runner was stopped, so subsequent control interruption diagnostics are not regression results. No full baseline pass is claimed.
+
+Selected existing executable tests were then run from disposable copies with only the standalone test-invocation lines removed, and these selectors appended:
+- test_droid_threads_custom_model_and_dynamic_effort_through_settings
+- test_droid_observes_default_model_without_pinning_it
+- test_droid_runtime_model_reconciliation
+- test_droid_trust_gate
+- test_droid_refuses_backends_without_viewport_capture
+- test_droid_relaunch_follows_requested_selection
+All selected checks passed. The inherited "all fm-spawn-dispatch-profile tests passed" echo in the selected log is not a full-suite result. These checks simulate terminals/harnesses, so are not live evidence.
+
+TMPDIR="$PWD/.validation-tmp" bin/fm-test-run.sh tests/fm-remote-secondmate-relaunch.test.sh passed. Its SSH transport is simulated, so this is not full remote live evidence. The user's explicit remote-live deferral was preserved.
+
+The standalone runtime observer/PR-registration protocol check passed using disposable metadata and session settings. It is protocol-level evidence with synthetic runtime input, not authenticated Droid end-to-end evidence.
+
+Initial live-droid-attempt.log and droid-live-* files are DISCARDED as isolation evidence: an inherited FACTORY_HOME_OVERRIDE was discovered. No pass is based on that launch.
+
+The final isolated attempt removed inherited FM_*, FACTORY_* and DROID_* variables, set FACTORY_HOME_OVERRIDE inside a marked disposable lab, disabled Droid auto-update, used a private tmux socket with a 120x40 terminal, and launched the real Droid 1.1.0 through fm-spawn.sh. A shell function supplied the pre-created disposable Git worktree only; Droid, tmux, spawn, settings, and readiness checks were real. Droid displayed its Factory login screen. Spawn refused readiness and emitted its expected bounded failure diagnostic rather than approving unknown startup content. The login screen remained selected; no sign-in or credential-copy operation was performed. Authenticated trust acceptance, effective-model use, and recovery could not be validated without a credential usable in that isolated Factory home. A Factory API credential scoped to the disposable process would enable a retry without using operator configuration.
+
+The PNG is a rendered tmux text capture of the actual isolated login screen, not a native GUI screenshot. No renderer/UI-layout source was changed. Private tmux servers were stopped and their lab homes removed. All disposable worktree fixtures were removed; source is unchanged.

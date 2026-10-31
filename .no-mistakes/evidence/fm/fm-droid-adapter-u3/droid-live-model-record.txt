@@ -1,0 +1,4 @@
+effective_model=glm-5.3-flash
+harness=droid
+model=default
+spawn_gen=s1793480205.86634.22310

@@ -1,0 +1,40 @@
+
+
+                                 █████████    █████████     ████████    ███   █████████
+                                 ███    ███   ███    ███   ███    ███   ███   ███    ███
+                                 ███    ███   ███    ███   ███    ███   ███   ███    ███
+                                 ███    ███   █████████    ███    ███   ███   ███    ███
+                                 ███    ███   ███    ███   ███    ███   ███   ███    ███
+                                 ███    ███   ███    ███   ███    ███   ███   ███    ███
+                                 █████████    ███    ███    ████████    ███   █████████
+
+                                                         v1.1.0
+
+                         TIP: Run /readiness-report to evaluate this repo for agent readiness.
+
+                                   shift+tab to cycle modes · ctrl+N to cycle models
+                                        ctrl+L for autonomy · tab for reasoning
+
+                                 Skills (…)  MCPs (4) ✓  Connectors (1) ✓  AGENTS.md ✗
+
+
+●  Tip: Enable Shift+Enter for new lines in tmux. Run /terminal-setup to configure it.
+
+ Auto (High) · allow all commands                                                                  GLM-5.3-Flash (High)
+╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ > Try "Explain how the codebase is organized"                                                                        │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+2 config issues — /diagnostics                                                                            MCP ✗ | TMUX ⧉
+/U/d/.n/w/2/0/.v/l/worktree   lab-work
+
+
+
+
+
+
+
+
+
+
+
+
