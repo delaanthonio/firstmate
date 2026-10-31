@@ -268,6 +268,10 @@ META_LOCK_HELD=1
 [ -f "$META" ] && [ ! -L "$META" ] && [ "$(fm_pr_file_link_count "$META")" = 1 ] \
   || { echo "error: task metadata is unavailable" >&2; exit 1; }
 CURRENT_KIND=$(grep '^kind=' "$META" | tail -1 | cut -d= -f2- || true)
+if [ "$CURRENT_KIND" != orphan ] && { [ "${3:-}" = --orphan ] || [ "$KIND" = orphan ]; }; then
+  echo "error: orphan task $ID was replaced before PR publication" >&2
+  exit 1
+fi
 if [ "$CURRENT_KIND" = orphan ] \
   && ! fm_pr_urls_equal "$(grep '^pr=' "$META" | tail -1 | cut -d= -f2- || true)" "$URL"; then
   echo "error: orphan task $ID cannot change its PR identity" >&2

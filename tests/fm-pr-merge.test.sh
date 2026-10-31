@@ -214,6 +214,9 @@ case "${1:-} ${2:-}" in
         exit 0
         ;;
       *headRefOid*)
+        if [ -x "$case_dir/head-hook" ]; then
+          "$case_dir/head-hook" "$case_dir" || exit 1
+        fi
         cat "$FM_TEST_GH_HEAD"
         exit 0
         ;;
@@ -1002,6 +1005,67 @@ test_orphan_never_overwrites_an_owner() {
   [ "$rc" -ne 0 ] || fail "worker task became orphan"
   grep -qxF kind=ship "$case_dir/state/task-x1.meta" || fail "worker record replaced"
   pass "orphan mode requires opt-in and never replaces or bypasses an owning worker"
+}
+
+test_orphan_registration_refuses_worker_replacement() {
+  local case_dir entry rc suffix
+  for entry in explicit-create explicit-reuse flagless merge-create merge-reuse merge-flagless; do
+    case_dir=$(make_case "orphan-worker-replacement-$entry")
+    add_gh_mocks "$case_dir" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    cp "$case_dir/state/task-x1.meta" "$case_dir/replacement.expected"
+    cp "$case_dir/replacement.expected" "$case_dir/replacement.pending"
+    chmod 0600 "$case_dir/replacement.pending"
+    printf '%s\n' "$REAL_MV" > "$case_dir/real-mv"
+    case "$entry" in
+      explicit-create|merge-create)
+        rm "$case_dir/state/task-x1.meta"
+        cat > "$case_dir/fakebin/mv" <<'SH'
+#!/usr/bin/env bash
+case_dir=${FM_STATE_OVERRIDE%/state}
+real_mv=$(cat "$case_dir/real-mv")
+replace=false
+for arg in "$@"; do
+  case "$arg" in "$FM_STATE_OVERRIDE"/.fm-pr-orphan.*) replace=true ;; esac
+done
+"$real_mv" "$@" || exit 1
+if [ "$replace" = true ] && [ -f "$case_dir/replacement.pending" ]; then
+  "$real_mv" -- "$case_dir/replacement.pending" "$FM_STATE_OVERRIDE/task-x1.meta" || exit 1
+  touch "$case_dir/record-replaced"
+fi
+SH
+        chmod +x "$case_dir/fakebin/mv"
+        ;;
+      *)
+        printf 'kind=orphan\npr=https://github.com/example/repo/pull/9\n' > "$case_dir/state/task-x1.meta"
+        cat > "$case_dir/head-hook" <<'SH'
+#!/usr/bin/env bash
+case_dir=$1
+real_mv=$(cat "$case_dir/real-mv")
+if [ -f "$case_dir/replacement.pending" ]; then
+  "$real_mv" -- "$case_dir/replacement.pending" "$FM_STATE_OVERRIDE/task-x1.meta" || exit 1
+  touch "$case_dir/record-replaced"
+fi
+SH
+        chmod +x "$case_dir/head-hook"
+        ;;
+    esac
+    rc=0
+    case "$entry" in
+      merge-flagless) run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 > "$case_dir/out" 2>&1 || rc=$? ;;
+      merge-*) run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 --orphan > "$case_dir/out" 2>&1 || rc=$? ;;
+      flagless) run_pr_check_case "$case_dir" task-x1 https://github.com/example/repo/pull/9 > "$case_dir/out" 2>&1 || rc=$? ;;
+      *) run_pr_check_case "$case_dir" task-x1 https://github.com/example/repo/pull/9 --orphan > "$case_dir/out" 2>&1 || rc=$? ;;
+    esac
+    [ -f "$case_dir/record-replaced" ] || fail "$entry did not exercise record replacement"
+    [ "$rc" -ne 0 ] || fail "$entry attached stale orphan registration to a replacement worker"
+    assert_contains "$(cat "$case_dir/out")" 'was replaced before PR publication' "$entry did not refuse at the shared replacement guard"
+    cmp "$case_dir/replacement.expected" "$case_dir/state/task-x1.meta" || fail "$entry modified the replacement worker record"
+    for suffix in check.sh pr-poll pr-poll-registration; do
+      [ ! -e "$case_dir/state/task-x1.$suffix" ] || fail "$entry published a stale orphan poll artifact: $suffix"
+    done
+    ! grep -q '^pr merge ' "$case_dir/gh.log" || fail "$entry reached the forge merge for a replacement worker"
+  done
+  pass "explicit and flagless orphan registration preserve replacement workers without publishing stale polls"
 }
 
 test_orphan_identity_is_fixed_at_publication() {
@@ -5070,6 +5134,7 @@ test_allow_no_pipeline_is_attended_only_and_gitlab_only() {
 
 test_stack_merge_preserves_method_and_records_outcome
 test_stack_participant_locks_and_authority
+test_orphan_registration_refuses_worker_replacement
 test_orphan_identity_is_fixed_at_publication
 test_registration_serializes_orphan_discovery
 test_registration_waits_for_stack_dispatch
