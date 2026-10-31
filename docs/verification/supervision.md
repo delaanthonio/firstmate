@@ -290,7 +290,7 @@ ok - watcher and turn-end standing checks share the whole-poll contributions all
 The tests execute authenticated immutable check snapshots through the shared standing-check runner and a real watcher checkpoint with an explicit per-home contributions allowance.
 An unset allowance preserves the ordinary deadline, and invalid overrides preserve the ordinary timeout selection.
 The bounded override negative control times out before its completion output, while an ordinary sibling retains its shorter deadline.
-This refresh exercises shell execution and tracked hook wiring without launching a vendor model session.
+This refresh exercises shell execution through the watcher and turn-end guard directly, without invoking native hook registrations or launching a vendor model session.
 The shared check runner has no tmux, Herdr, zellij, Orca, or cmux dispatch surface, so its timeout selection is independent of runtime backend.
 
 ### Cursor primary park, 2026-08-13
