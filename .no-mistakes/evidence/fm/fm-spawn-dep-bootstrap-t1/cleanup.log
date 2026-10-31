@@ -1,0 +1,1 @@
+Private tmux server absence confirmed. Removed disposable .l lab, extracted Cargo/rustc and Node tools, fixtures, dependency outputs, caches, and transient drivers. Evidence retained outside worktree.

@@ -1,0 +1,56 @@
+FM_TEST_BEGIN 2026-10-31T19:59:09Z tests/fm-project-bootstrap.test.sh family=backend-dispatch expected_gate_skip=none
+ok - all detected managers run in the worker copy and use either mise configuration
+ok - receipts require every output directory and unchanged, added, and removed inputs
+ok - global-output managers, toolchain-only projects, and overrides rerun on relaunch
+ok - registered names with spaces and symlinked clones select their own override
+ok - a failed sync keeps diagnostics and cannot reuse an older success
+ok - only dependency-free projects no-op; unresolved families refuse even with other detected commands
+ok - nested layouts require an override before no-op, root bootstrap, or cached receipt reuse
+ok - layout scanning stops after two directory levels and skips hidden, dependency, and symlink directories
+ok - uv bootstraps setuptools companion files and fingerprints both representations
+ok - real spawn refuses failed sync and unresolved manifests before worker delivery or backlog transition
+ok - a scout bootstraps before its launch and then publishes normally
+ok - concurrent unchanged relaunches serialize and reuse success
+ok - secondmate workers inherit the project bootstrap override
+# all fm-project-bootstrap tests passed
+FM_TEST_END 2026-10-31T20:00:11Z tests/fm-project-bootstrap.test.sh exit=0 duration_ms=62437 gate_skip=false
+FM_TEST_BEGIN 2026-10-31T20:00:11Z tests/fm-spawn-worktree-settle.test.sh family=backend-dispatch expected_gate_skip=none
+ok - a single transient stale pane_current_path read is not accepted as the worktree
+ok - an already-settled pane confirms on the next read, not a whole extra cycle
+ok - a transient primary-checkout pane read is not accepted as the worktree
+ok - a pane stuck on the primary checkout fails loudly at the deadline
+ok - a project with an unborn HEAD is refused at once with its cause named
+# all fm-spawn-worktree-settle tests passed
+FM_TEST_END 2026-10-31T20:00:48Z tests/fm-spawn-worktree-settle.test.sh exit=0 duration_ms=36781 gate_skip=false
+FM_TEST_BEGIN 2026-10-31T20:00:48Z tests/fm-spawn-orca-worktree.test.sh family=unclassified expected_gate_skip=none
+ok - real tmux preserves absent/C locale values and reported raw bytes, rejects missing/phantom names and excludes the automatic SSH agent
+ok - Orca refuses source=absent before allocating resources
+ok - Orca source/allowlist=enabled preserves controlled values, clears ambient credentials and keeps values off terminal input
+ok - Orca source/allowlist=empty preserves controlled values, clears ambient credentials and keeps values off terminal input
+ok - Orca refuses source=unavailable before allocating resources
+ok - Orca refuses source=malformed before allocating resources
+ok - Orca refuses source=nonregular before allocating resources
+ok - Orca refuses source=missing before allocating resources
+ok - Orca removes the credential launch file when the launch cannot be delivered
+ok - Orca warns when allowlisted names would resolve from the Orca terminal, and stays quiet for an empty allowlist
+not ok - the spawn did not fail at the backlog transition (missing: 'could not be moved to In flight')
+--- output ---
+mise by @jdx – installing 1 tool
+mise █████████████░░░ 0/1 · 3.0s
+  node@24.20.0  extracting  3.0s
+mise █████████████░░░ 0/1 · 6.0s
+  node@24.20.0  extracting  6.0s
+mise node@24.20.0 v24.20.0
+mise node@24.20.0 11.19.0
+mise ✓ node@24.20.0  8.1s  node-v24.20.0-darwin-arm64.tar.gz
+mise ████████████████ 1/1 · installed 1 tool in 8.1s
+warning: /private/var/folders/63/v9mxgtb957zdylpw41cx6mj40000gn/T/fm-spawn-orca-worktree.TUVRxT/orca-env-unsourced/home/data/orca-env-unsourced/launch-brief.md records no ship branch; defaulting to legacy branch fm/orca-env-unsourced
+warning: /private/var/folders/63/v9mxgtb957zdylpw41cx6mj40000gn/T/fm-spawn-orca-worktree.TUVRxT/orca-env-unsourced/home/data/orca-env-unsourced/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+error: task orca-env-unsourced cannot be dispatched because its backlog data directory is inaccessible: /private/var/folders/63/v9mxgtb957zdylpw41cx6mj40000gn/T/fm-spawn-orca-worktree.TUVRxT/orca-env-unsourced/home/data (automatic backlog transitions require tasks-axi 0.2.6 or newer with the required update and mv features)
+FM_TEST_END 2026-10-31T20:03:07Z tests/fm-spawn-orca-worktree.test.sh exit=1 duration_ms=138799 gate_skip=false
+FM_TEST_SUMMARY total=3 failed=1 skipped_gate=0 duration_ms=238712
+FM_TEST_SUMMARY_FAMILY family=backend-dispatch count=2 duration_ms=99218 failed=0
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=138799 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-spawn-orca-worktree.test.sh duration_ms=138799
+FM_TEST_SLOWEST rank=2 script=tests/fm-project-bootstrap.test.sh duration_ms=62437
+FM_TEST_SLOWEST rank=3 script=tests/fm-spawn-worktree-settle.test.sh duration_ms=36781

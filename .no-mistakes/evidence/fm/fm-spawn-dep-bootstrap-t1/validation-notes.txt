@@ -1,0 +1,11 @@
+Live verification used a marked, disposable FM_HOME at <worktree>/.l and a 120x40 private tmux server named fm-lab. No default terminal server or operator fleet was driven.
+
+The actual fm-spawn executable launched supported raw Bash worker commands, not simulated terminal delivery or a model CLI. The worker's first command executed its own .venv/bin/basedpyright and only then wrote a startup proof. No Claude/Codex account or primary-harness compatibility claim is made.
+
+Setup corrections: relaunch uses --harness for the raw command; nested-refusal fixture was given a local bare origin after Git correctly rejected a push to a checked-out fixture branch. The completed continuation log proves the nested refusal and automatic queued backlog checks.
+
+The initial Orca regression run stopped before its intended backlog-failure case because tasks-axi resolved through a mise shim under the suite's isolated HOME. The targeted rerun puts the existing Node 24.20.0 bin directory on PATH so the suite uses the installed CLI directly.
+
+Real Cargo and rustc 1.85.1 were downloaded and extracted only under the disposable worktree-local lab because Cargo was not on PATH. All toolchains, fixtures, install outputs, and private tmux state are removed during phase cleanup.
+
+This is a shell/CLI change; product transcripts are the reviewer-visible evidence. No GUI was changed.

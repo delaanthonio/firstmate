@@ -1,0 +1,355 @@
+$ /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/bin/fm-lab-home.sh create /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l
+/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l
+[exit 0]
+$ git init -b main /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/python/project
+Initialized empty Git repository in /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/python/project/.git/
+[exit 0]
+$ git add .
+[exit 0]
+$ git commit -m fixture
+[main (root-commit) eab6f36] fixture
+ 4 files changed, 13 insertions(+)
+ create mode 100644 .gitignore
+ create mode 100644 pyproject.toml
+ create mode 100644 setup.cfg
+ create mode 100644 setup.py
+[exit 0]
+$ git worktree add -b worker /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/python/worker
+Preparing worktree (new branch 'worker')
+HEAD is now at eab6f36 fixture
+[exit 0]
+$ uv lock
+Using CPython 3.15.2 interpreter at: /opt/homebrew/opt/python@3.15/bin/python3.15
+Resolved 3 packages in 312ms
+[exit 0]
+$ git add uv.lock
+[exit 0]
+$ git commit -m lock dev dependencies
+[main f448496] lock dev dependencies
+ 1 file changed, 46 insertions(+)
+ create mode 100644 uv.lock
+[exit 0]
+$ git reset --hard main
+HEAD is now at f448496 lock dev dependencies
+[exit 0]
+$ /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/bin/fm-project-bootstrap.sh /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/python/project /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/python/worker
+bootstrap: uv sync
+ in /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/python/worker
+Using CPython 3.15.2 interpreter at: /opt/homebrew/opt/python@3.15/bin/python3.15
+Creating virtual environment at: .venv
+Resolved 3 packages in 10ms
+Downloading basedpyright (13.1MiB)
+Downloading nodejs-wheel-binaries (53.5MiB)
+ Downloaded basedpyright
+ Downloaded nodejs-wheel-binaries
+Prepared 2 packages in 3.99s
+Installed 2 packages in 5.22s
+ + basedpyright==1.40.2
+ + nodejs-wheel-binaries==24.19.0
+[exit 0]
+$ /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/python/worker/.venv/bin/basedpyright --version
+basedpyright 1.40.2
+based on pyright 1.1.414
+[exit 0]
+PROVEN: dev tools installed only in worker, with setuptools companions accepted
+$ /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/bin/fm-project-bootstrap.sh /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/python/project /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/python/worker
+bootstrap: dependencies unchanged in /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/python/worker
+[exit 0]
+PROVEN: unchanged receipt reused
+$ /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/bin/fm-project-bootstrap.sh /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/python/project /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/python/worker
+bootstrap: uv sync
+ in /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/python/worker
+Using CPython 3.15.2 interpreter at: /opt/homebrew/opt/python@3.15/bin/python3.15
+Creating virtual environment at: .venv
+Resolved 3 packages in 28ms
+Installed 2 packages in 5.26s
+ + basedpyright==1.40.2
+ + nodejs-wheel-binaries==24.19.0
+[exit 0]
+$ /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/python/worker/.venv/bin/basedpyright --version
+basedpyright 1.40.2
+based on pyright 1.1.414
+[exit 0]
+PROVEN: deleted virtualenv recreated on retry
+$ /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/bin/fm-project-bootstrap.sh /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/python/project /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/python/worker
+bootstrap: uv sync
+ in /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/python/worker
+Resolved 3 packages in 12ms
+Checked 2 packages in 0.27ms
+[exit 0]
+PROVEN: changed manifest forced real sync
+$ git init -b main /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/npm-mise_toml/project
+Initialized empty Git repository in /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/npm-mise_toml/project/.git/
+[exit 0]
+$ git add .
+[exit 0]
+$ git commit -m fixture
+[main (root-commit) f098f8f] fixture
+ 3 files changed, 7 insertions(+)
+ create mode 100644 .gitignore
+ create mode 100644 mise.toml
+ create mode 100644 package.json
+[exit 0]
+$ git worktree add -b worker /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/npm-mise_toml/worker
+Preparing worktree (new branch 'worker')
+HEAD is now at f098f8f fixture
+[exit 0]
+$ npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+
+up to date in 524ms
+[exit 0]
+$ git add package-lock.json
+[exit 0]
+$ git commit -m lock npm
+[main 2f1749d] lock npm
+ 1 file changed, 13 insertions(+)
+ create mode 100644 package-lock.json
+[exit 0]
+$ git reset --hard main
+HEAD is now at 2f1749d lock npm
+[exit 0]
+$ npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+
+up to date in 219ms
+[exit 0]
+$ git add .
+[exit 0]
+$ git commit -m local dep
+[main 2871978] local dep
+ 2 files changed, 13 insertions(+), 2 deletions(-)
+[exit 0]
+$ git reset --hard main
+HEAD is now at 2871978 local dep
+[exit 0]
+$ /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/bin/fm-project-bootstrap.sh /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/npm-mise_toml/project /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/npm-mise_toml/worker
+bootstrap: mise install
+mise exec -- bash -e -o pipefail -c $'npm ci\n' in /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/npm-mise_toml/worker
+mise all tools are installed
+
+> bootstrap-proof@1.0.0 postinstall
+> node -e "if(process.env.BOOTSTRAP_PROBE!=='active')process.exit(31); console.log('ACTIVE_MISE '+process.version);"
+
+ACTIVE_MISE v26.12.1
+
+added 1 package, and audited 3 packages in 566ms
+
+found 0 vulnerabilities
+[exit 0]
+PROVEN: npm lifecycle used real mise exec for mise.toml
+$ /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/bin/fm-project-bootstrap.sh /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/npm-mise_toml/project /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/npm-mise_toml/worker
+bootstrap: dependencies unchanged in /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/npm-mise_toml/worker
+[exit 0]
+PROVEN: npm outputs permit receipt reuse
+$ /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/bin/fm-project-bootstrap.sh /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/npm-mise_toml/project /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/npm-mise_toml/worker
+bootstrap: mise install
+mise exec -- bash -e -o pipefail -c $'npm ci\n' in /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/npm-mise_toml/worker
+mise all tools are installed
+
+> bootstrap-proof@1.0.0 postinstall
+> node -e "if(process.env.BOOTSTRAP_PROBE!=='active')process.exit(31); console.log('ACTIVE_MISE '+process.version);"
+
+ACTIVE_MISE v26.12.1
+
+added 1 package, and audited 3 packages in 376ms
+
+found 0 vulnerabilities
+[exit 0]
+PROVEN: deleted node_modules forces reinstall
+$ git init -b main /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/npm-_mise_toml/project
+Initialized empty Git repository in /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/npm-_mise_toml/project/.git/
+[exit 0]
+$ git add .
+[exit 0]
+$ git commit -m fixture
+[main (root-commit) ee8cd9b] fixture
+ 3 files changed, 7 insertions(+)
+ create mode 100644 .gitignore
+ create mode 100644 .mise.toml
+ create mode 100644 package.json
+[exit 0]
+$ git worktree add -b worker /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/npm-_mise_toml/worker
+Preparing worktree (new branch 'worker')
+HEAD is now at ee8cd9b fixture
+[exit 0]
+$ npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+
+up to date in 308ms
+[exit 0]
+$ git add package-lock.json
+[exit 0]
+$ git commit -m lock npm
+[main 4fe60b9] lock npm
+ 1 file changed, 13 insertions(+)
+ create mode 100644 package-lock.json
+[exit 0]
+$ git reset --hard main
+HEAD is now at 4fe60b9 lock npm
+[exit 0]
+$ npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+
+up to date in 354ms
+[exit 0]
+$ git add .
+[exit 0]
+$ git commit -m local dep
+[main 214d96e] local dep
+ 2 files changed, 13 insertions(+), 2 deletions(-)
+[exit 0]
+$ git reset --hard main
+HEAD is now at 214d96e local dep
+[exit 0]
+$ /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/bin/fm-project-bootstrap.sh /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/npm-_mise_toml/project /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/npm-_mise_toml/worker
+bootstrap: mise install
+mise exec -- bash -e -o pipefail -c $'npm ci\n' in /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/npm-_mise_toml/worker
+mise all tools are installed
+
+> bootstrap-proof@1.0.0 postinstall
+> node -e "if(process.env.BOOTSTRAP_PROBE!=='active')process.exit(31); console.log('ACTIVE_MISE '+process.version);"
+
+ACTIVE_MISE v26.12.1
+
+added 1 package, and audited 3 packages in 430ms
+
+found 0 vulnerabilities
+[exit 0]
+PROVEN: npm lifecycle used real mise exec for .mise.toml
+$ /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/bin/fm-project-bootstrap.sh /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/npm-_mise_toml/project /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/npm-_mise_toml/worker
+bootstrap: dependencies unchanged in /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/npm-_mise_toml/worker
+[exit 0]
+PROVEN: npm outputs permit receipt reuse
+$ /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/bin/fm-project-bootstrap.sh /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/npm-_mise_toml/project /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/npm-_mise_toml/worker
+bootstrap: mise install
+mise exec -- bash -e -o pipefail -c $'npm ci\n' in /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/npm-_mise_toml/worker
+mise all tools are installed
+
+> bootstrap-proof@1.0.0 postinstall
+> node -e "if(process.env.BOOTSTRAP_PROBE!=='active')process.exit(31); console.log('ACTIVE_MISE '+process.version);"
+
+ACTIVE_MISE v26.12.1
+
+added 1 package, and audited 3 packages in 354ms
+
+found 0 vulnerabilities
+[exit 0]
+PROVEN: deleted node_modules forces reinstall
+$ git init -b main /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/nested/project
+Initialized empty Git repository in /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/nested/project/.git/
+[exit 0]
+$ git add .
+[exit 0]
+$ git commit -m fixture
+[main (root-commit) f873036] fixture
+ 3 files changed, 6 insertions(+)
+ create mode 100644 .gitignore
+ create mode 100644 frontend/package-lock.json
+ create mode 100644 frontend/package.json
+[exit 0]
+$ git worktree add -b worker /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/nested/worker
+Preparing worktree (new branch 'worker')
+HEAD is now at f873036 fixture
+[exit 0]
+$ /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/bin/fm-project-bootstrap.sh /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/nested/project /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/nested/worker
+error: nested dependency layout frontend/package-lock.json requires a bootstrap command; configure command for 'project' in /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/config/project-bootstrap.json
+[exit 1]
+PROVEN: nested dependencies refuse with an actionable configuration remedy
+$ /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/bin/fm-project-bootstrap.sh /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/nested/project /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/nested/worker
+bootstrap: cd frontend; npm ci --no-audit --no-fund in /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/nested/worker
+
+up to date in 218ms
+[exit 0]
+$ /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/bin/fm-project-bootstrap.sh /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/nested/project /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/nested/worker
+bootstrap: cd frontend; npm ci --no-audit --no-fund in /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/nested/worker
+
+up to date in 221ms
+[exit 0]
+PROVEN: custom nested command executes every time
+$ /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/bin/fm-project-bootstrap.sh /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/nested/project /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/nested/worker
+jq: parse error: Unfinished JSON term at EOF at line 1, column 1
+error: invalid dependency bootstrap configuration: /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/config/project-bootstrap.json
+[exit 1]
+PROVEN: invalid operator configuration refuses
+$ git init -b main /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/unresolved/project
+Initialized empty Git repository in /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/unresolved/project/.git/
+[exit 0]
+$ git add .
+[exit 0]
+$ git commit -m fixture
+[main (root-commit) 1488807] fixture
+ 3 files changed, 6 insertions(+)
+ create mode 100644 .gitignore
+ create mode 100644 package.json
+ create mode 100644 pnpm-lock.yaml
+[exit 0]
+$ git worktree add -b worker /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/unresolved/worker
+Preparing worktree (new branch 'worker')
+HEAD is now at 1488807 fixture
+[exit 0]
+$ /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/bin/fm-project-bootstrap.sh /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/unresolved/project /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/unresolved/worker
+error: no dependency bootstrap command for package.json (requires package-lock.json) in /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/unresolved/worker; configure command for 'project' in /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/config/project-bootstrap.json
+[exit 1]
+PROVEN: unsupported root dependency manager refuses
+$ git init -b main /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/empty/project
+Initialized empty Git repository in /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/empty/project/.git/
+[exit 0]
+$ git add .
+[exit 0]
+$ git commit -m fixture
+[main (root-commit) 540fd0e] fixture
+ 4 files changed, 7 insertions(+)
+ create mode 100644 .gitignore
+ create mode 100644 .hidden/package.json
+ create mode 100644 README.md
+ create mode 100644 deep/a/b/package.json
+[exit 0]
+$ git worktree add -b worker /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/empty/worker
+Preparing worktree (new branch 'worker')
+HEAD is now at 540fd0e fixture
+[exit 0]
+$ /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/bin/fm-project-bootstrap.sh /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/empty/project /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/empty/worker
+[exit 0]
+PROVEN: dependency-free declared scan scope no-ops, excluding vendor, hidden, and third-level directories
+$ git init -b main /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/ruby/project
+Initialized empty Git repository in /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/ruby/project/.git/
+[exit 0]
+$ git add .
+[exit 0]
+$ git commit -m fixture
+[main (root-commit) fc6f838] fixture
+ 2 files changed, 5 insertions(+)
+ create mode 100644 .gitignore
+ create mode 100644 Gemfile
+[exit 0]
+$ git worktree add -b worker /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/ruby/worker
+Preparing worktree (new branch 'worker')
+HEAD is now at fc6f838 fixture
+[exit 0]
+$ bundle lock
+Writing lockfile to /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/ruby/project/Gemfile.lock
+Resolving dependencies...
+[exit 0]
+$ git add Gemfile.lock
+[exit 0]
+$ git commit -m lock bundle
+[main 8341992] lock bundle
+ 1 file changed, 13 insertions(+)
+ create mode 100644 Gemfile.lock
+[exit 0]
+$ git reset --hard main
+HEAD is now at 8341992 lock bundle
+[exit 0]
+$ /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/bin/fm-project-bootstrap.sh /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/ruby/project /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/ruby/worker
+bootstrap: bundle install
+ in /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/ruby/worker
+The Gemfile specifies no dependencies
+Bundle complete! 0 Gemfile dependencies, 0 gems now installed.
+Use `bundle info [gemname]` to see where a bundled gem is installed.
+[exit 0]
+$ /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/bin/fm-project-bootstrap.sh /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/ruby/project /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/ruby/worker
+bootstrap: bundle install
+ in /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/ruby/worker
+The Gemfile specifies no dependencies
+Bundle complete! 0 Gemfile dependencies, 0 gems now installed.
+Use `bundle info [gemname]` to see where a bundled gem is installed.
+[exit 0]
+PROVEN: Bundler runs again rather than trusting unverifiable global output
+HELPER LIVE SCENARIOS COMPLETE

@@ -1,0 +1,76 @@
+$ /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/bin/fm-project-bootstrap.sh /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/npm-mise_toml/project /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/npm-mise_toml/worker
+bootstrap: mise install
+mise exec -- bash -e -o pipefail -c $'npm ci\n' in /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/npm-mise_toml/worker
+mise all tools are installed
+
+> bootstrap-proof@1.0.0 postinstall
+> if test -f .fail-bootstrap; then echo REAL_NPM_LIFECYCLE_FAILURE >&2; exit 42; fi; echo REAL_NPM_LIFECYCLE_SUCCESS
+
+REAL_NPM_LIFECYCLE_SUCCESS
+
+added 1 package, and audited 3 packages in 397ms
+
+found 0 vulnerabilities
+[exit 0]
+$ /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/bin/fm-project-bootstrap.sh /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/npm-mise_toml/project /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/npm-mise_toml/worker
+bootstrap: mise install
+mise exec -- bash -e -o pipefail -c $'npm ci\n' in /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/npm-mise_toml/worker
+mise all tools are installed
+
+> bootstrap-proof@1.0.0 postinstall
+> if test -f .fail-bootstrap; then echo REAL_NPM_LIFECYCLE_FAILURE >&2; exit 42; fi; echo REAL_NPM_LIFECYCLE_SUCCESS
+
+REAL_NPM_LIFECYCLE_FAILURE
+npm error code 42
+npm error path /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/npm-mise_toml/worker
+npm error command failed
+npm error command sh -c if test -f .fail-bootstrap; then echo REAL_NPM_LIFECYCLE_FAILURE >&2; exit 42; fi; echo REAL_NPM_LIFECYCLE_SUCCESS
+npm error A complete log of this run can be found in: /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cache/npm/_logs/2026-10-31T20_04_47_235Z-debug-0.log
+error: dependency bootstrap failed (exit 42) in /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/npm-mise_toml/worker; worker was not launched
+[exit 42]
+PROVEN: real package-manager lifecycle failure refuses bootstrap
+PROVEN: failed npm lifecycle leaves dependency directory present, challenging stale receipt reuse
+$ /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/bin/fm-project-bootstrap.sh /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/npm-mise_toml/project /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/npm-mise_toml/worker
+bootstrap: mise install
+mise exec -- bash -e -o pipefail -c $'npm ci\n' in /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/npm-mise_toml/worker
+mise all tools are installed
+
+> bootstrap-proof@1.0.0 postinstall
+> if test -f .fail-bootstrap; then echo REAL_NPM_LIFECYCLE_FAILURE >&2; exit 42; fi; echo REAL_NPM_LIFECYCLE_SUCCESS
+
+REAL_NPM_LIFECYCLE_SUCCESS
+
+added 1 package, and audited 3 packages in 199ms
+
+found 0 vulnerabilities
+[exit 0]
+PROVEN: failed sync invalidates older success even when dependency output exists on retry
+$ /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/bin/fm-project-bootstrap.sh /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/npm-mise_toml/project /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/npm-mise_toml/worker
+bootstrap: mise install
+mise exec -- bash -e -o pipefail -c $'npm ci\n' in /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/npm-mise_toml/worker
+mise all tools are installed
+
+> bootstrap-proof@1.0.0 postinstall
+> if test -f .fail-bootstrap; then echo REAL_NPM_LIFECYCLE_FAILURE >&2; exit 42; fi; echo REAL_NPM_LIFECYCLE_SUCCESS
+
+REAL_NPM_LIFECYCLE_SUCCESS
+
+added 1 package in 227ms
+[exit 0]
+PROVEN: adding manager configuration invalidates receipt
+$ /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/bin/fm-project-bootstrap.sh /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/npm-mise_toml/project /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/npm-mise_toml/worker
+bootstrap: mise install
+mise exec -- bash -e -o pipefail -c $'npm ci\n' in /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/npm-mise_toml/worker
+mise all tools are installed
+
+> bootstrap-proof@1.0.0 postinstall
+> if test -f .fail-bootstrap; then echo REAL_NPM_LIFECYCLE_FAILURE >&2; exit 42; fi; echo REAL_NPM_LIFECYCLE_SUCCESS
+
+REAL_NPM_LIFECYCLE_SUCCESS
+
+added 1 package, and audited 3 packages in 223ms
+
+found 0 vulnerabilities
+[exit 0]
+PROVEN: removing manager configuration invalidates receipt
+FAILURE RECOVERY LIVE SCENARIOS COMPLETE

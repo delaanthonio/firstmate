@@ -1,0 +1,75 @@
+$ git init -b main /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/rust/project
+Initialized empty Git repository in /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/rust/project/.git/
+[exit 0]
+$ git add .
+[exit 0]
+$ git commit -m fixture
+[main (root-commit) 077ae1a] fixture
+ 3 files changed, 9 insertions(+)
+ create mode 100644 .gitignore
+ create mode 100644 Cargo.toml
+ create mode 100644 src/lib.rs
+[exit 0]
+$ git worktree add -b worker /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/rust/worker
+Preparing worktree (new branch 'worker')
+HEAD is now at 077ae1a fixture
+[exit 0]
+$ cargo generate-lockfile
+[exit 0]
+$ git add Cargo.lock
+[exit 0]
+$ git commit -m lock cargo
+[main 33d5b80] lock cargo
+ 1 file changed, 7 insertions(+)
+ create mode 100644 Cargo.lock
+[exit 0]
+$ git reset --hard main
+HEAD is now at 33d5b80 lock cargo
+[exit 0]
+$ /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/bin/fm-project-bootstrap.sh /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/rust/project /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/rust/worker
+bootstrap: cargo fetch
+ in /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/rust/worker
+[exit 0]
+$ /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/bin/fm-project-bootstrap.sh /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/rust/project /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/rust/worker
+bootstrap: cargo fetch
+ in /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/rust/worker
+[exit 0]
+PROVEN: real cargo fetch repeats for globally cached dependencies
+$ /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/bin/fm-project-bootstrap.sh /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/python/project /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/python/worker
+error: nested dependency layout frontend/package.json requires a bootstrap command; configure command for 'project' in /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/config/project-bootstrap.json
+[exit 1]
+PROVEN: existing root receipt cannot hide a new nested dependency layout
+$ git worktree add -b concurrent /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/concurrent
+Preparing worktree (new branch 'concurrent')
+HEAD is now at f448496 lock dev dependencies
+[exit 0]
+CONCURRENT A:
+bootstrap: uv sync
+ in /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/concurrent
+Using CPython 3.15.2 interpreter at: /opt/homebrew/opt/python@3.15/bin/python3.15
+Creating virtual environment at: .venv
+Resolved 3 packages in 71ms
+Installed 2 packages in 19.42s
+ + basedpyright==1.40.2
+ + nodejs-wheel-binaries==24.19.0
+CONCURRENT B:
+bootstrap: dependencies unchanged in /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/concurrent
+PROVEN: concurrent real bootstrap invocations serialize and reuse one successful sync
+$ /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/concurrent/.venv/bin/basedpyright --version
+basedpyright 1.40.2
+based on pyright 1.1.414
+[exit 0]
+$ bash -c . "$1"; propagate_inheritable_config "$2" "$3" _ /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/bin/fm-config-inherit-lib.sh /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/inherit-primary/config /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/inherit-mate/config
+[exit 0]
+PROVEN: project override propagates through real inheritance implementation
+$ /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/bin/fm-project-bootstrap.sh /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/python/project /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/python/worker
+bootstrap: uv sync --all-groups in /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/python/worker
+Resolved 3 packages in 51ms
+Checked 2 packages in 0.50ms
+[exit 0]
+PROVEN: inherited override executes in the secondmate worker copy
+$ /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69Q3VH6Y1QYYGN31B26JEJ7/.l/cases/python/worker/.venv/bin/basedpyright --version
+basedpyright 1.40.2
+based on pyright 1.1.414
+[exit 0]
+ADDITIONAL LIVE SCENARIOS COMPLETE
