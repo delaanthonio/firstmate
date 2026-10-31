@@ -273,7 +273,7 @@ The blocking and bounded-follow-up mechanisms were validated across seven harnes
 ### Contributions standing-check allowance, 2026-10-31
 
 The portable regression refresh ran on macOS arm64 with GNU Bash 5.3.20.
-The current timeout selection remains owned by `fm_custom_check_timeout` in `bin/fm-check-lib.sh`; [the turn-end guard](../turnend-guard.md#current-invariant) records the outer hook allowances.
+The current timeout selection remains owned by `fm_custom_check_timeout` in `bin/fm-check-lib.sh`; [the turn-end guard's harness integrations](../turnend-guard.md#harness-integrations) record the outer hook allowances.
 
 ```sh
 bash bin/fm-test-run.sh tests/fm-gotmp.test.sh tests/fm-standing-checks.test.sh tests/fm-watch-checkpoint.test.sh tests/fm-droid-primary.test.sh tests/fm-turnend-guard.test.sh

@@ -44,8 +44,8 @@ When the guard acts, the harness integration must do one of two things:
 - Force one bounded follow-up that uses the recovery instruction from the emitted session-start protocol.
 
 The same boundary also runs any due authenticated standing check under the watcher's cadence lock; actionable output is queued durably before the guard blocks or requests its bounded follow-up.
-The Relay shim, registered PR polls, and trusted custom checks retain the watcher's validation and immutable-snapshot rules, and each execution remains bounded by `FM_CHECK_TIMEOUT`, with the whole-poll contributions allowance owned by `fm_custom_check_timeout` in `bin/fm-check-lib.sh`.
-The tracked Claude, Codex, and Droid Stop registrations allow 180 seconds so their outer hook deadline accommodates that check; Grok already uses that allowance, Cursor parks under its longer bound, and the OpenCode, Pi, and omp adapters await the guard without a separate short deadline.
+The Relay shim, registered PR polls, and trusted custom checks retain the watcher's validation and immutable-snapshot rules.
+Execution uses `FM_CHECK_TIMEOUT` except for authenticated contributions checks, whose whole-poll allowance is owned by [`fm_custom_check_timeout` in `bin/fm-check-lib.sh`](../bin/fm-check-lib.sh).
 An unauthenticated state check is never executed and its rejection becomes an actionable notification; the due sweep scans every matching check before publication, so a rejection after valid actionable output is included in that same durable notification rather than hidden.
 An execution failure or timeout is logged and lets the turn end continue without that optional protection.
 The mid-turn pull warning uses the model-aware supervision verdict described below, while the turn-end guard keeps the PID-strict watcher predicate.
@@ -267,6 +267,8 @@ Each enabled primary harness adapts its own turn-end mechanism to the shared gua
 | omp | `session_stop` in `.omp/extensions/fm-primary-turnend-guard.ts` | Blocking hook that compels one continuation |
 | Cursor | `stop` hook in `.cursor/hooks.json` | Cannot block, so it parks and returns at most one follow-up |
 | Grok | `Stop` hook in `.grok/hooks/fm-primary-turnend-guard.json` | Native blocking, or one legacy `grok --resume` fallback |
+
+The tracked Claude, Codex, Droid, and Grok Stop guard registrations allow 180 seconds to accommodate the contributions check; Cursor parks under its longer bound, and the OpenCode, Pi, and omp adapters await the guard without a separate deadline.
 
 The registrations in detail:
 
