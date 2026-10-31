@@ -696,6 +696,16 @@ glab_merge_line() {
   grep -F ' mr merge ' "$1" || true
 }
 
+run_pr_check_case() {
+  local case_dir=$1
+  shift
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" \
+    FM_PR_CHECK_MERGE=1 FM_TEST_GH_LOG="$case_dir/gh.log" \
+    FM_TEST_GH_HEAD="$case_dir/github-head" FM_TEST_GH_VIEW_JSON="$case_dir/github-view.json" \
+    HOME="$case_dir/user-home" PATH="$case_dir/fakebin:$PATH" \
+    "$ROOT/bin/fm-pr-check.sh" "$@"
+}
+
 run_pr_merge() {
   local case_dir=$1 rc; shift
   FM_ROOT_OVERRIDE="$ROOT" \
@@ -992,6 +1002,142 @@ test_orphan_never_overwrites_an_owner() {
   [ "$rc" -ne 0 ] || fail "worker task became orphan"
   grep -qxF kind=ship "$case_dir/state/task-x1.meta" || fail "worker record replaced"
   pass "orphan mode requires opt-in and never replaces or bypasses an owning worker"
+}
+
+test_orphan_identity_is_fixed_at_publication() {
+  local case_dir entry rc meta_before poll_before
+  for entry in record merge; do
+    case_dir=$(make_case "orphan-rebind-$entry")
+    add_gh_mocks "$case_dir" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    run_pr_check_case "$case_dir" orphan-x1 https://github.com/example/repo/pull/8 --orphan > "$case_dir/setup-out" 2>&1 || fail "orphan setup failed"
+    run_pr_check_case "$case_dir" task-x1 https://github.com/example/repo/pull/9 > "$case_dir/owner-out" 2>&1 || fail "owner setup failed"
+    FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" \
+      "$ROOT/bin/fm-captain-hold.sh" hold task-x1 --title 'Review task' --reason 'Review required' > /dev/null || fail "owner hold failed"
+    if [ "$entry" = merge ]; then
+      bash -c '
+        . "$1/bin/fm-wake-lib.sh"
+        . "$1/bin/fm-pr-lib.sh"
+        fm_pr_poll_merge_mark_notified "$2" orphan-x1 github github.com example/repo 8
+      ' bash "$ROOT" "$case_dir/state" || fail "prior merged receipt setup failed"
+    fi
+    meta_before=$(cat "$case_dir/state/orphan-x1.meta")
+    poll_before=$(cat "$case_dir/state/orphan-x1.pr-poll")
+    rc=0
+    if [ "$entry" = record ]; then
+      run_pr_check_case "$case_dir" orphan-x1 https://github.com/example/repo/pull/9 > "$case_dir/out" 2>&1 || rc=$?
+    else
+      run_pr_merge "$case_dir" orphan-x1 https://github.com/example/repo/pull/9 > "$case_dir/out" 2>&1 || rc=$?
+    fi
+    [ "$rc" -ne 0 ] || fail "$entry rebound an orphan to a held owner's PR"
+    assert_contains "$(cat "$case_dir/out")" 'cannot change its PR identity' "$entry did not reach the shared orphan identity guard"
+    [ "$meta_before" = "$(cat "$case_dir/state/orphan-x1.meta")" ] || fail "$entry changed the orphan's metadata"
+    [ "$poll_before" = "$(cat "$case_dir/state/orphan-x1.pr-poll")" ] || fail "$entry changed the orphan's poll identity"
+    ! grep -q '^pr merge ' "$case_dir/gh.log" || fail "$entry reached the forge merge"
+    run_pr_check_case "$case_dir" orphan-x1 https://github.com/Example/Repo/pull/8 > "$case_dir/reuse-out" 2>&1 || fail "flagless equivalent orphan recording was refused"
+  done
+  pass "ordinary recording and prior-merged helper entry preserve the stored orphan identity"
+}
+
+test_registration_serializes_orphan_discovery() {
+  local case_dir meta_lock writer orphan i writer_rc=0 orphan_rc=0
+  case_dir=$(make_case orphan-concurrent-registration)
+  add_gh_mocks "$case_dir" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  . "$ROOT/bin/fm-wake-lib.sh"
+  meta_lock=$(fm_meta_lock_path "$case_dir/state/task-x1.meta")
+  fm_lock_acquire_wait "$meta_lock"
+  run_pr_check_case "$case_dir" task-x1 https://github.com/example/repo/pull/9 > "$case_dir/writer-out" 2>&1 &
+  writer=$!
+  fm_test_track_child "$writer"
+  for ((i=0; i<200; i++)); do
+    [ ! -e "$case_dir/state/.task-set.lock" ] || break
+    sleep 0.05
+  done
+  if [ ! -e "$case_dir/state/.task-set.lock" ]; then
+    fm_lock_release "$meta_lock"
+    wait "$writer" || true
+    fail "ordinary publication did not reserve ownership before its metadata lock"
+  fi
+  run_pr_check_case "$case_dir" orphan-x1 https://github.com/example/repo/pull/9 --orphan > "$case_dir/orphan-out" 2>&1 &
+  orphan=$!
+  fm_test_track_child "$orphan"
+  for ((i=0; i<20; i++)); do
+    [ ! -e "$case_dir/state/orphan-x1.meta" ] || fail "orphan discovery passed an in-flight registration"
+    sleep 0.05
+  done
+  fm_lock_release "$meta_lock"
+  wait "$writer" || writer_rc=$?
+  wait "$orphan" || orphan_rc=$?
+  [ "$writer_rc" -eq 0 ] || fail "ordinary registration failed: $(cat "$case_dir/writer-out")"
+  [ "$orphan_rc" -ne 0 ] || fail "orphan duplicated the newly published owner"
+  assert_contains "$(cat "$case_dir/orphan-out")" 'already belongs to task task-x1' "orphan discovery did not observe the serialized owner"
+  [ ! -e "$case_dir/state/orphan-x1.meta" ] || fail "refused orphan left duplicate ownership"
+  case_dir=$(make_case orphan-before-registration)
+  add_gh_mocks "$case_dir" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  run_pr_check_case "$case_dir" orphan-x1 https://github.com/example/repo/pull/9 --orphan > "$case_dir/orphan-out" 2>&1 || fail "orphan-first setup failed"
+  if run_pr_check_case "$case_dir" task-x1 https://github.com/Example/Repo/pull/9 > "$case_dir/writer-out" 2>&1; then
+    fail "ordinary recording duplicated an orphan owner"
+  fi
+  ! grep -q '^pr=' "$case_dir/state/task-x1.meta" || fail "refused ordinary recording published duplicate ownership"
+  pass "orphan and ordinary registration serialize ownership in both orders"
+}
+
+test_registration_waits_for_stack_dispatch() {
+  local case_dir i
+  case_dir=$(make_stack_case stack-concurrent-registration)
+  cp "$case_dir/state/task-x1.meta" "$case_dir/state/dependency.meta"
+  FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" \
+    "$ROOT/bin/fm-captain-hold.sh" hold dependency --title 'Review task' --reason 'Review required' > /dev/null || fail "unbound dependency hold failed"
+  cat > "$case_dir/stack-hook" <<'SH'
+#!/usr/bin/env bash
+case_dir=$1
+(
+  rc=0
+  "$FM_TEST_ROOT/bin/fm-pr-check.sh" dependency https://github.com/example/repo/pull/8 > "$case_dir/registration-out" 2>&1 || rc=$?
+  printf '%s\n' "$rc" > "$case_dir/registration-rc"
+) < /dev/null > "$case_dir/registrar-out" 2>&1 &
+for ((i=0; i<40; i++)); do
+  if [ -f "$case_dir/registration-rc" ] || grep -q '^pr=' "$FM_STATE_OVERRIDE/dependency.meta"; then
+    exit 1
+  fi
+  sleep 0.05
+done
+touch "$case_dir/registration-blocked-at-dispatch"
+SH
+  chmod +x "$case_dir/stack-hook"
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 > "$case_dir/out" 2>&1 || fail "stack registration transaction failed: $(cat "$case_dir/out")"
+  for ((i=0; i<200; i++)); do
+    [ ! -f "$case_dir/registration-rc" ] || break
+    sleep 0.05
+  done
+  [ -f "$case_dir/registration-blocked-at-dispatch" ] || fail "registration did not wait through dispatch"
+  [ "$(cat "$case_dir/registration-rc")" = 0 ] || fail "registration failed after stack unlock: $(cat "$case_dir/registration-out")"
+  grep -qxF 'pr=https://github.com/example/repo/pull/8' "$case_dir/state/dependency.meta" || fail "registration did not publish after stack unlock"
+  pass "held unbound tasks cannot publish a PR binding during stack dispatch"
+}
+
+test_busy_stack_participant_refuses_without_deadlock() {
+  local case_dir lock merge i rc=0
+  case_dir=$(make_stack_case stack-busy-participant)
+  printf 'kind=orphan\npr=https://github.com/example/repo/pull/8\n' > "$case_dir/state/dependency.meta"
+  . "$ROOT/bin/fm-wake-lib.sh"
+  lock="$case_dir/state/.control-dependency.lock"
+  fm_lock_acquire_wait "$lock"
+  (rc=0; run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 > "$case_dir/out" 2>&1 || rc=$?; printf '%s\n' "$rc" > "$case_dir/merge-rc") &
+  merge=$!
+  fm_test_track_child "$merge"
+  for ((i=0; i<400; i++)); do
+    [ ! -f "$case_dir/merge-rc" ] || break
+    sleep 0.05
+  done
+  fm_lock_release "$lock"
+  wait "$merge" || rc=$?
+  [ -f "$case_dir/merge-rc" ] || fail "stack waited on busy participant while reserving ownership"
+  [ "$(cat "$case_dir/merge-rc")" != 0 ] || fail "stack ignored a busy participant"
+  [ "$rc" -eq 0 ] || fail "stack refusal harness failed"
+  assert_contains "$(cat "$case_dir/out")" 'another lifecycle action is running for stack participant dependency' "busy participant lacked a refusal"
+  ! grep -q '^stack merge ' "$case_dir/gh.log" || fail "busy stack reached dispatch"
+  run_pr_check_case "$case_dir" task-x1 https://github.com/example/repo/pull/9 > "$case_dir/retry-out" 2>&1 || fail "refused stack retained the ownership lock"
+  pass "busy stack participants refuse and release ownership without a control/publication deadlock"
 }
 
 test_verified_merge_records_pr_and_head() {
@@ -4924,6 +5070,10 @@ test_allow_no_pipeline_is_attended_only_and_gitlab_only() {
 
 test_stack_merge_preserves_method_and_records_outcome
 test_stack_participant_locks_and_authority
+test_orphan_identity_is_fixed_at_publication
+test_registration_serializes_orphan_discovery
+test_registration_waits_for_stack_dispatch
+test_busy_stack_participant_refuses_without_deadlock
 test_stack_extra_aliases_refuse
 test_orphan_lifecycle
 test_stack_merge_refuses_unsafe_state

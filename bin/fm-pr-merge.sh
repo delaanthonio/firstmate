@@ -1527,7 +1527,10 @@ github_merge_stack_checked() {
       if fm_pr_urls_equal "$participant_url" "https://$PR_HOST/$PR_OWNER/$PR_REPO/pull/$number"; then
         ID=$(basename "$other" .meta)
         fm_pr_task_id_valid "$ID" || return 1
-        fm_lock_acquire_wait "$STATE/.control-$ID.lock" || return 1
+        fm_lock_try_acquire "$STATE/.control-$ID.lock" || {
+          echo "error: another lifecycle action is running for stack participant $ID; retry" >&2
+          return 1
+        }
         STACK_CONTROL_LOCKS+=("$STATE/.control-$ID.lock")
         [ "$ID" != "$original_id" ] || target_locked=true
         participants+=("$other")

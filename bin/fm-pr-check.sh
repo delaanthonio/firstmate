@@ -62,8 +62,28 @@ META="$STATE/$ID.meta"
 # The task-set lock serializes record creation with spawn and teardown.
 # Existing tasks are never converted into orphans, and another record's PR
 # binding cannot be bypassed by choosing a fresh task ID.
+require_pr_ownership() {
+  local kind=$1 other other_kind
+  for other in "$STATE"/*.meta; do
+    [ -e "$other" ] || [ -L "$other" ] || continue
+    [ "$other" = "$META" ] && continue
+    [ -f "$other" ] && [ ! -L "$other" ] && [ -r "$other" ] || {
+      echo "error: cannot establish PR ownership: unreadable task record $other" >&2
+      return 1
+    }
+    other_kind=$(grep '^kind=' "$other" | tail -1 | cut -d= -f2- || true)
+    if [ "$kind" != orphan ] && [ "$other_kind" != orphan ]; then
+      continue
+    fi
+    if fm_pr_urls_equal "$(grep '^pr=' "$other" | tail -1 | cut -d= -f2- || true)" "$URL"; then
+      echo "error: $URL already belongs to task $(basename "$other" .meta); use that task's merge record" >&2
+      return 1
+    fi
+  done
+}
+
 record_orphan() (
-  local lock meta_lock other tmp=''
+  local lock meta_lock tmp=''
   [ -d "$STATE" ] && [ ! -L "$STATE" ] || {
     echo "error: orphan recording requires a real state directory" >&2
     exit 1
@@ -73,21 +93,10 @@ record_orphan() (
   trap '[ -z "$tmp" ] || rm -f -- "$tmp"; fm_lock_release "$meta_lock" || true; fm_lock_release "$lock" || true' EXIT
   fm_lock_acquire_wait "$lock" || exit 1
   fm_lock_acquire_wait "$meta_lock" || exit 1
-  for other in "$STATE"/*.meta; do
-    [ -e "$other" ] || [ -L "$other" ] || continue
-    [ "$other" = "$META" ] && continue
-    [ -f "$other" ] && [ ! -L "$other" ] && [ -r "$other" ] || {
-      echo "error: cannot establish orphan ownership: unreadable task record $other" >&2
-      exit 1
-    }
-    if fm_pr_urls_equal "$(grep '^pr=' "$other" | tail -1 | cut -d= -f2- || true)" "$URL"; then
-      echo "error: $URL already belongs to task $(basename "$other" .meta); use that task's merge record" >&2
-      exit 1
-    fi
-  done
+  require_pr_ownership orphan || exit 1
   if [ -e "$META" ] || [ -L "$META" ]; then
     if ! { [ -f "$META" ] && [ ! -L "$META" ] && [ "$(fm_pr_file_link_count "$META")" = 1 ] \
-      && grep -qxF 'kind=orphan' "$META" && fm_pr_urls_equal "$(grep '^pr=' "$META" | tail -1 | cut -d= -f2- || true)" "$URL"; }; then
+      && grep -qxF 'kind=orphan' "$META"; }; then
       echo "error: --orphan refuses to replace an existing task or change its PR identity" >&2
       exit 1
     fi
@@ -225,6 +234,8 @@ fi
 META_TMP=
 META_LOCK=
 META_LOCK_HELD=0
+TASK_SET_LOCK=
+TASK_SET_LOCK_HELD=0
 PR_POLL_PUBLISH_LOCK=
 PR_POLL_PUBLISH_LOCK_HELD=0
 pr_check_cleanup() {
@@ -238,17 +249,31 @@ pr_check_cleanup() {
     fm_lock_release "$META_LOCK" || true
     META_LOCK_HELD=0
   fi
+  if [ "$TASK_SET_LOCK_HELD" = 1 ]; then
+    fm_lock_release "$TASK_SET_LOCK" || true
+    TASK_SET_LOCK_HELD=0
+  fi
 }
 trap pr_check_cleanup EXIT
 trap 'exit 1' HUP INT TERM
 fm_pr_poll_prepare "$STATE" "$ID" "$PROVIDER" "$URL" "$HOST" "$PROJECT_PATH" "$NUMBER" "$SCRIPT_DIR/fm-pr-poll.sh" \
   || { echo "error: could not prepare PR poll" >&2; exit 1; }
 
+TASK_SET_LOCK=$(fm_task_set_lock_path "$STATE") || exit 1
+fm_lock_acquire_wait "$TASK_SET_LOCK"
+TASK_SET_LOCK_HELD=1
 META_LOCK=$(fm_meta_lock_path "$META") || exit 1
 fm_lock_acquire_wait "$META_LOCK"
 META_LOCK_HELD=1
 [ -f "$META" ] && [ ! -L "$META" ] && [ "$(fm_pr_file_link_count "$META")" = 1 ] \
   || { echo "error: task metadata is unavailable" >&2; exit 1; }
+CURRENT_KIND=$(grep '^kind=' "$META" | tail -1 | cut -d= -f2- || true)
+if [ "$CURRENT_KIND" = orphan ] \
+  && ! fm_pr_urls_equal "$(grep '^pr=' "$META" | tail -1 | cut -d= -f2- || true)" "$URL"; then
+  echo "error: orphan task $ID cannot change its PR identity" >&2
+  exit 1
+fi
+require_pr_ownership "$CURRENT_KIND" || exit 1
 META_DEVICE=$(fm_pr_file_device "$META") || exit 1
 STATE_DEVICE=$(fm_pr_file_device "$STATE") || exit 1
 [ "$META_DEVICE" = "$STATE_DEVICE" ] || { echo "error: task metadata is unavailable" >&2; exit 1; }
@@ -277,6 +302,8 @@ fm_pr_metadata_identity_parse "$META" || exit 1
   && [ "$FM_PR_META_NUMBER" = "$NUMBER" ] || exit 1
 fm_lock_release "$META_LOCK"
 META_LOCK_HELD=0
+fm_lock_release "$TASK_SET_LOCK"
+TASK_SET_LOCK_HELD=0
 
 PR_POLL_PUBLISH_LOCK="$STATE/.pr-poll-publish-$ID.lock"
 fm_lock_acquire_wait "$PR_POLL_PUBLISH_LOCK"
