@@ -740,6 +740,12 @@ See [`trace-context.md`](trace-context.md) for carrier semantics, supported rout
 
 See [`fleet-ledger.md`](fleet-ledger.md) for the opt-in setup, record contract, and limits.
 
+## PR stack status (bin/fm-stack-status.sh)
+
+`bin/fm-stack-status.sh [--repo <owner/name>] [<pr-number>]` lists every open pull-request stack in a repository at a glance: each stack's chain of PRs from base to top with titles, checks summaries, merge state, and merge-queue membership, plus merged ancestors shown as a visible MERGED floor.
+Inside a project checkout the repository defaults to the origin remote; a PR number scopes the output to that PR's own stack.
+It is read-only against the forge and the local checkout, GitHub-only through gh, and needs only gh and jq on PATH; the script's header owns the grouping rules.
+
 ## Firstmate role (config/firstmate-role)
 
 The optional local, gitignored `config/firstmate-role` declares this home's relationship to the firstmate repository itself.
