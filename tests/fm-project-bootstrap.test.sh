@@ -5,6 +5,7 @@
 set -eu
 # shellcheck source=tests/fixtures.sh
 . "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
+fm_git_identity
 
 TMP_ROOT=$(fm_test_tmproot fm-project-bootstrap)
 BOOTSTRAP="$ROOT/bin/fm-project-bootstrap.sh"
