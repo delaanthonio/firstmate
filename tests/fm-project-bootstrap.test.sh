@@ -51,7 +51,7 @@ run_bootstrap() {
   FM_ROOT_OVERRIDE='' FM_HOME="$HOME_DIR" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
     FM_STATE_OVERRIDE="$HOME_DIR/state" \
     FM_BOOTSTRAP_LOG="$LOG" PATH="$FAKEBIN:$PATH" \
-    bash "$BOOTSTRAP" "$PROJECT_DIR" "$WT_DIR" "$@"
+    bash "$BOOTSTRAP" "$PROJECT_DIR" "$WT_DIR"
 }
 
 test_detected_managers_and_worktree_cwd() {
@@ -90,7 +90,7 @@ test_receipt_output_and_input_invalidation() {
   out=$(run_bootstrap 2>&1)
   assert_contains "$out" 'dependencies unchanged' 'unchanged relaunch repeated sync'
   for output in .venv node_modules; do
-    rm -rf "$WT_DIR/$output"
+    rm -rf "${WT_DIR:?}/${output:?}"
     run_bootstrap >/dev/null 2>&1
     assert_present "$WT_DIR/$output" 'missing dependency output did not force sync'
   done
