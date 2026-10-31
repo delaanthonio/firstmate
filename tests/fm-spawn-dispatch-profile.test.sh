@@ -37,6 +37,32 @@ SH
 make_spawn_fakebin() {
   local dir=$1 fakebin
   fakebin=$(fm_test_make_spawn_fakebin "$dir")
+  mv "$fakebin/tmux" "$fakebin/tmux-base"
+  cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+set -u
+dir=${0%/*}
+if [ "${1:-}" = capture-pane ] && [ "${*: -1}" = -0 ]; then
+  [ ! -e "$dir/droid-capture-fails" ] || exit 1
+  if [ -f "$dir/droid-screen" ]; then
+    : > "$dir/droid-captured"
+    cat "$dir/droid-screen"
+  else
+    printf 'Press ESC to stop\n'
+  fi
+  exit 0
+fi
+if [ "${1:-}" = send-keys ] && [ -e "$dir/droid-captured" ] \
+  && [ "${*: -1}" = Enter ]; then
+  printf 'Enter\n' >> "$dir/droid-answers"
+  [ ! -e "$dir/droid-answer-fails" ] || exit 1
+  if [ -f "$dir/droid-after-answer" ]; then
+    cp "$dir/droid-after-answer" "$dir/droid-screen"
+  fi
+fi
+exec "$dir/tmux-base" "$@"
+SH
+  chmod +x "$fakebin/tmux"
   cat > "$fakebin/timeout" <<'SH'
 #!/usr/bin/env bash
 # Match GNU timeout's option shape from bin/fm-timeout-lib.sh fm_run_timed:
@@ -1205,6 +1231,132 @@ test_droid_threads_custom_model_and_dynamic_effort_through_settings() {
     '.hooks.Stop[0].hooks[0] == {"type":"command","command":("touch '\''" + $turnend + "'\''")}' "$settings" >/dev/null \
     || fail "droid settings lost the Stop turn-end hook"
   pass "droid receives custom model and dynamic effort through settings alongside its Stop hook"
+}
+
+test_droid_observes_default_model_without_pinning_it() {
+  local rec id out status scenario expected
+  for scenario in omitted sentinel local project absent invalid; do
+    id="droid-default-$scenario"
+    rec=$(make_spawn_case "$id" droid "$id")
+    read_case_record "$rec"
+    mkdir -p "$HOME_DIR/user-home/.factory" "$WT_DIR/.factory"
+    printf '%s\n' '{"sessionDefaultSettings":{"model":"glm-5.3-flash"},"secret":"not-for-task-state"}' \
+      > "$HOME_DIR/user-home/.factory/settings.json"
+    expected=glm-5.3-flash
+    case "$scenario" in
+      local)
+        printf '%s\n' '{"sessionDefaultSettings":{"model":"custom:local-default"}}' \
+          > "$HOME_DIR/user-home/.factory/settings.local.json"
+        expected=custom:local-default ;;
+      project)
+        printf '.factory/settings.local.json\n' >> "$PROJ_DIR/.git/info/exclude"
+        printf '%s\n' '{"sessionDefaultSettings":{"model":"project-default"}}' \
+          > "$WT_DIR/.factory/settings.local.json"
+        expected=project-default ;;
+      absent) rm "$HOME_DIR/user-home/.factory/settings.json"; expected=default ;;
+      invalid) printf '%s\n' '{bad json' > "$HOME_DIR/user-home/.factory/settings.json" ;;
+    esac
+    if [ "$scenario" = sentinel ]; then
+      out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+        "$id" "$PROJ_DIR" --harness droid --model default)
+    else
+      out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+        "$id" "$PROJ_DIR" --harness droid)
+    fi
+    status=$?
+    if [ "$scenario" = invalid ]; then
+      [ "$status" -ne 0 ] || fail "unreadable Droid model defaults should refuse launch"
+      assert_contains "$out" 'cannot read Droid model default' "missing default-settings diagnostic"
+      [ ! -s "$LAUNCH_LOG" ] || fail "unreadable model defaults launched Droid"
+      continue
+    fi
+    expect_code 0 "$status" "Droid default observation failed: $scenario"$'\n'"$out"
+    assert_meta_profile "$HOME_DIR/state/$id.meta" droid "$expected" default
+    jq -e '(.sessionDefaultSettings // {}) | has("model") | not' \
+      "$HOME_DIR/state/$id.droid-settings.json" >/dev/null \
+      || fail "observing the Droid default must not pin it"
+    assert_not_contains "$(cat "$HOME_DIR/state/$id.meta" "$HOME_DIR/state/$id.droid-settings.json")" \
+      'not-for-task-state' 'Droid model observation copied unrelated settings'
+  done
+  pass "Droid records configured defaults and local overrides without changing model selection"
+}
+
+droid_test_trust_screen() {
+  printf '%s\n' 'Trust this folder?' '> 1. Trust this folder' \
+    '  2. Exit without trusting' 'Enter to confirm · Esc to exit'
+}
+
+test_droid_trust_gate() {
+  local rec id scenario out status expected_answers actual_answers
+  for scenario in fresh response stuck partial decline shell unreadable send-failed; do
+    id="droid-trust-$scenario"
+    rec=$(make_spawn_case "$id" droid "$id")
+    read_case_record "$rec"
+    droid_test_trust_screen > "$FAKEBIN_DIR/droid-screen"
+    expected_answers=0
+    case "$scenario" in
+      fresh)
+        printf 'Press ESC to stop\n' > "$FAKEBIN_DIR/droid-after-answer"
+        expected_answers=1 ;;
+      response)
+        printf '⛬  Finished the requested task.\n' > "$FAKEBIN_DIR/droid-after-answer"
+        expected_answers=1 ;;
+      partial) printf 'Trust this folder?\nPress ESC to stop\n' > "$FAKEBIN_DIR/droid-screen" ;;
+      decline)
+        printf '%s\n' 'Trust this folder?' '  1. Trust this folder' \
+          '> 2. Exit without trusting' 'Enter to confirm · Esc to exit' > "$FAKEBIN_DIR/droid-screen" ;;
+      shell) printf 'shell starting\n' > "$FAKEBIN_DIR/droid-screen" ;;
+      unreadable) touch "$FAKEBIN_DIR/droid-capture-fails" ;;
+      send-failed) touch "$FAKEBIN_DIR/droid-answer-fails"; expected_answers=1 ;;
+      stuck) expected_answers=4 ;;
+    esac
+    out=$(FM_DROID_READY_POLLS=4 FM_DROID_POLL_INTERVAL=0.1 \
+      run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+      "$id" "$PROJ_DIR" --harness droid)
+    status=$?
+    case "$scenario" in
+      fresh|response) expect_code 0 "$status" "Droid trust acceptance failed: $scenario"$'\n'"$out" ;;
+      *)
+        [ "$status" -ne 0 ] || fail "Droid must refuse unconfirmed startup: $scenario"
+        assert_not_contains "$out" "spawned $id" "Droid reported success before trust/startup confirmation"
+        grep -Eq 'failed.*Droid' "$HOME_DIR/state/$id.status" || fail "Droid failure was not recorded"
+        ;;
+    esac
+    actual_answers=0
+    [ ! -f "$FAKEBIN_DIR/droid-answers" ] || actual_answers=$(wc -l < "$FAKEBIN_DIR/droid-answers" | tr -d ' ')
+    [ "$actual_answers" = "$expected_answers" ] \
+      || fail "Droid sent $actual_answers trust answers, expected $expected_answers ($scenario)"
+  done
+  pass "Droid answers only the complete affirmative trust dialog and verifies launch progress"
+}
+
+test_droid_refuses_backends_without_viewport_capture() {
+  local rec id backend out status
+  for backend in cmux orca; do
+    id="droid-viewport-$backend"
+    rec=$(make_spawn_case "$id" droid "$id")
+    read_case_record "$rec"
+    # Orca checks runtime readiness before resolving the harness. Keep that
+    # preflight hermetic so the case reaches Droid's capability refusal.
+    cat > "$FAKEBIN_DIR/orca" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = status ]; then
+  printf '%s\n' '{"result":{"runtime":{"reachable":true,"state":"ready"}}}'
+  exit 0
+fi
+printf 'unexpected Orca allocation\n' >> "$FM_FAKE_LAUNCH_LOG"
+exit 1
+SH
+    chmod +x "$FAKEBIN_DIR/orca"
+    out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+      "$id" "$PROJ_DIR" --harness droid --backend "$backend")
+    status=$?
+    [ "$status" -ne 0 ] || fail "Droid must refuse a backend without viewport capture"
+    assert_contains "$out" 'no verified viewport-bounded capture' "Droid viewport refusal missing"
+    [ ! -s "$LAUNCH_LOG" ] || fail "Droid allocated or launched an unsupported backend"
+    assert_absent "$HOME_DIR/state/$id.meta" 'Droid wrote a task record for an unsupported backend'
+  done
+  pass "Droid refuses unsupported trust-gate backends before allocation"
 }
 
 test_droid_stop_hook_quotes_apostrophe_paths() {
@@ -2567,6 +2719,9 @@ test_pi_signed_threads_shared_pi_profile_and_preserves_identity
 test_pi_signed_missing_binary_refuses_before_endpoint_or_metadata
 test_pi_signed_persistent_secondmate_uses_pi_extensions_and_identity
 test_droid_threads_custom_model_and_dynamic_effort_through_settings
+test_droid_observes_default_model_without_pinning_it
+test_droid_trust_gate
+test_droid_refuses_backends_without_viewport_capture
 test_droid_stop_hook_quotes_apostrophe_paths
 test_droid_requires_jq_before_allocating_backend
 test_droid_settings_failure_precedes_backend_allocation

@@ -49,7 +49,7 @@ cleanup() {
     . "$ROOT/bin/fm-remote-job-lib.sh"
     fm_remote_job_stop_worker_tree "$worker_pid" || true
   fi
-  rm -rf -- "$TMP_ROOT"
+  fm_test_remove_tree "$TMP_ROOT"
 }
 trap cleanup EXIT
 
@@ -95,7 +95,7 @@ case "\${1:-}" in
     esac
     exit 0
     ;;
-  capture-pane) printf '❯\n'; exit 0 ;;
+  capture-pane) printf '⛬  Ready\n❯\n'; exit 0 ;;
   send-keys) [ ! -f "\$fail_send" ] || exit 1; exit 0 ;;
   kill-window) rm -f -- "\$state"; exit 0 ;;
   list-panes) printf 'codex\n'; exit 0 ;;
@@ -880,6 +880,9 @@ assert_absent "$PARENT/state/ios.meta" "failed remote inheritance published laun
 out=$(remote_env "$ROOT/bin/fm-spawn.sh" ios --secondmate)
 assert_contains "$out" 'remote=remote-mac backend=herdr' "remote spawn did not report separate host and backend dimensions"
 assert_grep 'harness=droid' "$PARENT/state/ios.meta" "configured remote Droid launch lost its harness"
+remote_model=$(sed -n 's/^model=//p' "$REMOTE_HOME/state/parent-route/ios.meta")
+assert_grep "model=$remote_model" "$PARENT/state/ios.meta" \
+  "parent Droid record did not preserve the remote host's observed model"
 assert_grep 'effort=dynamic' "$PARENT/state/ios.meta" "configured remote Droid launch lost dynamic effort in parent metadata"
 assert_grep 'effort=dynamic' "$REMOTE_HOME/state/parent-route/ios.meta" "configured remote Droid launch lost dynamic effort in host metadata"
 jq -e '.sessionDefaultSettings == {"reasoningEffort":"dynamic"} and .hooks == null' \
@@ -1043,11 +1046,11 @@ FM_FAKE_SSH_MODE=inherit-block remote_env "$ROOT/bin/fm-spawn.sh" ios --secondma
 spawn_concurrent=$!
 spawn_inherit_wait=0
 # Earlier inherited files traverse the worker before captain-shared.md, so give
-# a loaded portable runner 30 seconds to reach this deliberately blocked write.
+# a loaded portable runner five minutes to reach this deliberately blocked write.
 while [ ! -f "$TMP_ROOT/inherit.entered" ]; do
   kill -0 "$spawn_concurrent" 2>/dev/null || fail "remote spawn exited before its blocked inheritance write"
   spawn_inherit_wait=$((spawn_inherit_wait + 1))
-  [ "$spawn_inherit_wait" -le 1500 ] || fail "remote spawn never reached its blocked inheritance write"
+  [ "$spawn_inherit_wait" -le 15000 ] || fail "remote spawn never reached its blocked inheritance write"
   sleep 0.02
 done
 cat > "$PARENT/data/captain-shared.md" <<'EOF'
@@ -1156,9 +1159,9 @@ inherit_wait=0
 while [ ! -f "$TMP_ROOT/inherit.entered" ]; do
   kill -0 "$config_first" 2>/dev/null || fail "first inheritance transaction exited before its blocked write"
   inherit_wait=$((inherit_wait + 1))
-  # Match the earlier spawn/inheritance wait: a loaded portable runner can
-  # spend several seconds in the remote entrypoint before reaching this write.
-  [ "$inherit_wait" -le 1500 ] || fail "first inheritance transaction never reached its blocked write"
+  # Match the earlier spawn/inheritance wait while preceding files traverse
+  # the remote worker on a loaded portable runner.
+  [ "$inherit_wait" -le 15000 ] || fail "first inheritance transaction never reached its blocked write"
   sleep 0.02
 done
 cat > "$PARENT/data/captain-shared.md" <<'EOF'

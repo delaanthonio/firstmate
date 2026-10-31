@@ -102,6 +102,13 @@
 #   build agent's variant, keyed to the resolved model, inside the
 #   OPENCODE_CONFIG_CONTENT JSON its launch already carries (config schema
 #   verified on opencode 1.18.32); without a model the axis is recorded but omitted.
+#   Canonical Droid launches observe user and worktree model defaults when no
+#   model override is requested; model= records that identifier without pinning
+#   it in runtime settings. With no configured default, model= stays default.
+#   Their folder-trust gate requires viewport capture (tmux/herdr/zellij), sends
+#   Enter only on the complete affirmative-selected dialog, and waits for work
+#   or a response before success. FM_DROID_READY_POLLS (120) and
+#   FM_DROID_POLL_INTERVAL (0.5 seconds) bound that wait; raw launches bypass it.
 #   --backend <name> is the explicit runtime session-provider backend for this
 #   exact task only (docs/configuration.md "Runtime backend" owns when that flag
 #   is authorized). Without it, the script resolves FM_BACKEND, then
@@ -1371,6 +1378,11 @@ spawn_remote_secondmate() {
   # reports it here so the parent does not deny the agent's actual identity.
   remote_recorded_traceparent=$(printf '%s\n' "$out" | sed -n 's/^traceparent=//p' | tail -1)
   fm_trace_context_valid "$remote_recorded_traceparent" || remote_recorded_traceparent=
+  if [ "$remote_harness" = droid ]; then
+    # Only the launching host can observe Droid's configured default.
+    model=$(printf '%s\n' "$out" | sed -n 's/^model=//p' | tail -1)
+    model=${model:-default}
+  fi
   tmp="$meta.tmp.$$"
   {
     echo "window=remote:$id"
@@ -2576,6 +2588,8 @@ launch_template() {
   # launch receives a process-only settings file carrying model/effort overrides
   # and, for crews, the verified Stop hook. Secondmates use the same settings
   # path so their configured model/effort pins apply without a turn-end hook.
+  # --auto high does not bypass folder trust; the post-launch gate below
+  # answers the verified affirmative choice through the backend key plane.
   droid) printf '%s' 'droid --settings __DROIDSETTINGS__ --auto high "$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
   # Cursor Agent CLI. --trust suppresses the workspace-trust prompt, which
   # --yolo does NOT cover and which would otherwise block every spawn, since
@@ -2927,6 +2941,10 @@ if [ "$KIND" = secondmate ] && [ -z "$ARG3" ]; then
 fi
 if [ "$DROID_TEMPLATE" -eq 1 ] && ! command -v jq >/dev/null 2>&1; then
   echo "error: jq is required to build droid runtime settings" >&2
+  exit 1
+fi
+if [ "$DROID_TEMPLATE" -eq 1 ] && ! fm_backend_visible_capture_supported "$BACKEND"; then
+  echo "error: refusing Droid spawn because backend '$BACKEND' has no verified viewport-bounded capture for its folder-trust gate" >&2
   exit 1
 fi
 # Ultra is an explicit native capability, never a Pi thinking-level alias.
@@ -3294,6 +3312,26 @@ droid_effort_value() {
   case "$effort" in
   low | medium | high | xhigh | max | dynamic) printf '%s' "$effort" ;;
   esac
+}
+
+# Observe defaults without turning them into a runtime model override. The
+# session-default scalar is most-local-wins; local files overlay their peer.
+# Read only model identifiers, never copy credential-bearing settings to state.
+droid_default_model() { # <worktree>
+  local worktree=$1 settings model='' value
+  for settings in "$HOME/.factory/settings.json" "$HOME/.factory/settings.local.json" \
+    "$worktree/.factory/settings.json" "$worktree/.factory/settings.local.json"; do
+    [ -f "$settings" ] || continue
+    value=$(jq -er '
+      (.sessionDefaultSettings.model // .model // "") |
+      select(type == "string" and (test("[\\r\\n]") | not))
+    ' "$settings") || {
+      echo "error: cannot read Droid model default from $settings" >&2
+      return 1
+    }
+    [ -z "$value" ] || model=$value
+  done
+  printf '%s' "$model"
 }
 
 case "$LAUNCH" in
@@ -4886,6 +4924,43 @@ kimi_spawn_fail() { # <detail>
   echo "error: $1; inspect window $T" >&2
 }
 
+# Droid has no documented settings-based workspace-trust bypass. Only the
+# complete, affirmative-selected dialog in a fresh viewport is safe to answer.
+# The pre-launch cwd assertion binds this endpoint to this task's own copy.
+droid_wait_for_working() {
+  local pane i=0 max=${FM_DROID_READY_POLLS:-120} interval=${FM_DROID_POLL_INTERVAL:-0.5}
+  DROID_READY_FAILURE_DETAIL='Droid did not start processing its launch brief'
+  while [ "$i" -lt "$max" ]; do
+    if ! pane=$(fm_backend_visible_capture "$BACKEND" "$T" "$W"); then
+      DROID_READY_FAILURE_DETAIL='Droid folder-trust gate could not read the visible viewport'
+      return 1
+    fi
+    if [[ "$pane" == *'Trust this folder?'* ]]; then
+      if printf '%s\n' "$pane" | grep -qE '^> 1\. Trust this folder[[:space:]]*$' \
+        && [[ "$pane" == *'2. Exit without trusting'* ]] \
+        && [[ "$pane" == *'Enter to confirm'* ]] \
+        && [[ "$pane" == *'Esc to exit'* ]]; then
+        if ! spawn_send_key "$T" Enter; then
+          DROID_READY_FAILURE_DETAIL='Droid folder-trust choice could not be submitted'
+          return 1
+        fi
+      fi
+      DROID_READY_FAILURE_DETAIL='Droid folder-trust dialog did not clear or its verified affirmative choice was unavailable'
+    elif [[ "$pane" != *'Exit without trusting'* ]]; then
+      # A banner or empty composer can precede trust. Require actual work or
+      # a response instead; either also proves the positional brief survived.
+      if [[ "$pane" == *'Press ESC to stop'* ]] \
+        || printf '%s\n' "$pane" | grep -qE '^[[:space:]]*⛬[[:space:]]'; then
+        return 0
+      fi
+      DROID_READY_FAILURE_DETAIL='Droid did not start processing its launch brief after folder-trust handling'
+    fi
+    i=$((i + 1))
+    [ "$i" -ge "$max" ] || sleep "$interval"
+  done
+  return 1
+}
+
 # rovo mirrors kimi's launch-then-send shape exactly: a positional brief is
 # dead-on-arrival, so rovo launches bare and takes its brief pointer only after a
 # readiness gate, then a delivery-confirmation gate. Both route their
@@ -5256,6 +5331,12 @@ if [ "$KIND" != secondmate ]; then
     echo "error: dependency bootstrap refused spawn of $ID; $(spawn_endpoint_hint)" >&2
     exit 1
   fi
+fi
+
+RECORDED_MODEL=$MODEL
+if [ "$DROID_TEMPLATE" -eq 1 ] && { [ -z "$MODEL" ] || [ "$MODEL" = default ]; }; then
+  DROID_DEFAULT_MODEL=$(droid_default_model "$WT") || exit 1
+  RECORDED_MODEL=${DROID_DEFAULT_MODEL:-default}
 fi
 
 # Pre-register Claude's workspace trust for the directory this launch starts in,
@@ -6043,7 +6124,7 @@ preserve_relaunch_meta() {
   [ "$EXTERNAL_REVIEW" = 0 ] || echo "forge=external"
   [ -z "$EXTERNAL_BACKUP_REMOTE" ] || echo "backup_remote=$EXTERNAL_BACKUP_REMOTE"
   [ -z "$EXTERNAL_BACKUP_REMOTE" ] || echo "backup_prefix=$EXTERNAL_BACKUP_PREFIX"
-  echo "model=${MODEL:-default}"
+  echo "model=${RECORDED_MODEL:-default}"
   echo "effort=${EFFORT:-default}"
   # The worker account pin, only when this home declares one, so an unpinned
   # task record stays byte-identical.
@@ -6636,6 +6717,11 @@ if [ "$ORCA_LAUNCH_ENV_ENABLED" = 1 ]; then
   spawn_orca_wait_launch_consumed
   trap - HUP INT TERM
 fi
+if [ "$DROID_TEMPLATE" -eq 1 ] && ! droid_wait_for_working; then
+  printf '%s\n' "$(status_stamp_line "failed: $DROID_READY_FAILURE_DETAIL")" >>"$STATE/$ID.status"
+  echo "error: $DROID_READY_FAILURE_DETAIL; inspect window $T" >&2
+  exit 1
+fi
 if [ "$HARNESS" = kimi ]; then
   if ! kimi_wait_for_ready; then
     kimi_spawn_fail "$KIMI_READY_FAILURE_DETAIL"
@@ -6795,7 +6881,7 @@ SPAWN_ACCOUNT=
 [ -z "$WORKER_ACCOUNT" ] || SPAWN_ACCOUNT=" account=$WORKER_ACCOUNT_DECLARED"
 [ -z "$WORKER_ACCOUNT_PROVIDER" ] || SPAWN_ACCOUNT="$SPAWN_ACCOUNT account_provider=$WORKER_ACCOUNT_PROVIDER"
 # Opt-in fleet activity ledger (docs/fleet-ledger.md); off costs one file test.
-[ ! -e "$CONFIG/fleet-ledger" ] || [ "$RELAUNCH" -eq 1 ] || FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG "$SCRIPT_DIR/fm-fleet-ledger.sh" dispatched "$ID" "$KIND" "${PROJ_ABS##*/}" "$HARNESS" "$MODEL" || true
+[ ! -e "$CONFIG/fleet-ledger" ] || [ "$RELAUNCH" -eq 1 ] || FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG "$SCRIPT_DIR/fm-fleet-ledger.sh" dispatched "$ID" "$KIND" "${PROJ_ABS##*/}" "$HARNESS" "$RECORDED_MODEL" || true
 # Opt-in Herdr project groups (docs/herdr-backend.md "Project groups") tag the
 # new endpoint now rather than at the next watcher poll; off costs one file test.
 [ ! -e "$CONFIG/herdr-project-groups" ] || [ "$BACKEND" != herdr ] || FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG "$SCRIPT_DIR/fm-herdr-groups.sh" sync "$ID" || true

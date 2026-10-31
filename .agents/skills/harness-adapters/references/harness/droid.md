@@ -15,7 +15,7 @@ Cross-harness provider and credential identity is owned by `references/common/mo
 | Skill invocation | `/<skill>`, for example `/no-mistakes`. |
 | Resume | No verified native pane resume; use deterministic relaunch. |
 | Autonomy | `--auto high`, labeled `Auto (High) · allow all commands`. |
-| Trust | No verified workspace-trust dialog. |
+| Trust | Fresh folders require approval; the spawn gate answers the affirmative selection and confirms brief processing. |
 | Marker | Exact `droid` process ancestry; Droid exposes no stable environment identity marker. |
 | Model | Per-task settings key `sessionDefaultSettings.model`; custom models use their registry id. |
 | Effort | Per-task settings key `sessionDefaultSettings.reasoningEffort`; `dynamic` is retained. |
@@ -33,6 +33,16 @@ Control uses Escape for interrupt and `/quit` for exit.
 `../../../../../bin/fm-spawn.sh` writes `state/<id>.droid-settings.json` before endpoint allocation and launches Droid with that file through `--settings`.
 The settings file carries the crewmate turn-end hook plus optional model and reasoning-effort pins.
 It is task-local runtime state and `../../../../../bin/fm-teardown.sh` removes it.
+When the model is omitted or `default`, spawn observes the user and worktree settings for the task's `model=` record without adding a model override to the runtime settings.
+An unresolved product default remains `default`; spawn never substitutes a different model for accounting.
+`../../../../../bin/fm-spawn.sh` owns the folder-trust gate, its bounded wait, and the refusal on backends without verified viewport capture.
+Factory's [settings reference](https://docs.factory.com/droid-cli/settings) documents no settings-based folder-trust bypass, so spawn uses the verified control-plane answer instead of writing an undocumented trust store.
+
+## Working style
+
+Droid works programmatically and may use scripts for implementation, analysis, and other task work.
+Steering responses and validation-gate decisions remain agent actions on the doorbell plane: read the delivered instruction, reason about it, and respond through the required interface.
+Never move those lifecycle decisions into scripts that read an inbox or answer gates autonomously.
 
 ## Primary integration
 
