@@ -1,0 +1,50 @@
+CASE absent: actual Droid cycle/checkpoint, actual watcher; four-second launch delay from start 4; checkpoint=10s
+live watcher rotation=1 pid=75565
+live watcher rotation=2 pid=84698
+live watcher rotation=3 pid=92190
+Persisted before timeout: pending:downtime:92447.1793478740.0shjpm
+1793478740	1	check	concurrent	check: queued during quiet rotation
+
+Timed-out stopped watcher has already exited; successor owns recovery
+cycle exit=0
+stdout:
+check: rearm-resurface
+
+stderr:
+
+actual launch ledger:
+1793478710 start=1 pid=75565
+1793478720 start=2 pid=84698
+1793478730 start=3 pid=92190
+1793478740 start=4 pid=98233
+
+final recovery: announced:downtime:92447.1793478740.0shjpm
+final durable queue:
+1793478740	1	check	concurrent	check: queued during quiet rotation
+
+OBSERVED: delayed successor surfaced the retained wake; recovery generation preserved
+CASE acked: actual Droid cycle/checkpoint, actual watcher; four-second launch delay from start 4; checkpoint=10s
+live watcher rotation=1 pid=8789
+live watcher rotation=2 pid=17261
+live watcher rotation=3 pid=25427
+Persisted before timeout: pending:downtime:26058.1793478782.IWFZ5n
+1793478782	1	check	concurrent	check: queued during quiet rotation
+
+Timed-out stopped watcher has already exited; successor owns recovery
+cycle exit=0
+stdout:
+check: rearm-resurface
+
+stderr:
+
+actual launch ledger:
+1793478751 start=1 pid=8789
+1793478762 start=2 pid=17261
+1793478772 start=3 pid=25427
+1793478782 start=4 pid=34324
+
+final recovery: announced:downtime:26058.1793478782.IWFZ5n
+final durable queue:
+1793478782	1	check	concurrent	check: queued during quiet rotation
+
+OBSERVED: delayed successor surfaced the retained wake; recovery generation preserved

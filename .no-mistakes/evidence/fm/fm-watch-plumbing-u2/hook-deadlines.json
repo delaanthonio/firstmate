@@ -1,0 +1,20 @@
+{
+  "claude": {
+    "event": "Stop",
+    "guard_registrations": 1,
+    "explicit_timeout_seconds": null,
+    "deadline_source": "native harness default"
+  },
+  "codex": {
+    "event": "Stop",
+    "guard_registrations": 1,
+    "explicit_timeout_seconds": 30,
+    "deadline_source": "tracked registration"
+  },
+  "droid": {
+    "event": "Stop",
+    "guard_registrations": 1,
+    "explicit_timeout_seconds": null,
+    "deadline_source": "native harness default"
+  }
+}

@@ -1,0 +1,12 @@
+CASE absent: actual Droid cycle/checkpoint, actual watcher; four-second launch delay from start 4; checkpoint=10s
+live watcher rotation=1 pid=31243
+live watcher rotation=2 pid=39598
+live watcher rotation=3 pid=46355
+Persisted before timeout: pending:downtime:46556.1793478679.xoMdg7
+1793478679	1	check	concurrent	check: queued during quiet rotation
+
+Traceback (most recent call last):
+  File "/Users/dela/.no-mistakes/evidence/01M69T3KBCD1G1QNNJGT8JFA3T/delayed-rotation.py", line 60, in <module>
+    os.kill(observed[-1], signal.SIGCONT)
+    ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ProcessLookupError: [Errno 3] No such process

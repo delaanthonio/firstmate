@@ -1,0 +1,225 @@
+registered: state/contributions.check.sh
+
+CASE explicit-120-real-78: ordinary=unset (upstream 30s), contributions=120, registered workload=78s, sibling=False
+EXEC bash /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69T3KBCD1G1QNNJGT8JFA3T/bin/fm-watch-checkpoint.sh --seconds 105
+exit=0; elapsed=79.27s
+stdout:
+check: /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69T3KBCD1G1QNNJGT8JFA3T/.test-watch-plumbing-live/explicit-120-real-78/state/contributions.check.sh: contributions: workload completed after 78s
+
+stderr:
+
+PERSISTED WAKE QUEUE:
+1793478604	1	check	/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69T3KBCD1G1QNNJGT8JFA3T/.test-watch-plumbing-live/explicit-120-real-78/state/contributions.check.sh	check: /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69T3KBCD1G1QNNJGT8JFA3T/.test-watch-plumbing-live/explicit-120-real-78/state/contributions.check.sh: contributions: workload completed after 78s
+
+OBSERVED explicit-120-real-78: expected runtime and durable-wake behavior confirmed
+registered: state/contributions.check.sh
+
+CASE untuned-upstream-30: ordinary=unset (upstream 30s), contributions=None, registered workload=32s, sibling=False
+EXEC bash /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69T3KBCD1G1QNNJGT8JFA3T/bin/fm-turnend-guard.sh
+exit=2; elapsed=30.64s
+stdout:
+
+stderr:
+fm-turnend-guard: check timed out after 30s: /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69T3KBCD1G1QNNJGT8JFA3T/.test-watch-plumbing-live/untuned-upstream-30/state/contributions.check.sh
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  TURN WOULD END BLIND - SUPERVISION IS OFF
+●  1 registered custom check(s), but no live watcher holds this home lock (last beat: never).
+●  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PERSISTED WAKE QUEUE:
+(absent)
+OBSERVED untuned-upstream-30: expected runtime and durable-wake behavior confirmed
+registered: state/contributions.check.sh
+registered: state/ordinary.check.sh
+
+CASE tuned-with-ordinary-sibling: ordinary=1, contributions=4, registered workload=2s, sibling=True
+EXEC bash /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69T3KBCD1G1QNNJGT8JFA3T/bin/fm-turnend-guard.sh
+exit=2; elapsed=3.75s
+stdout:
+
+stderr:
+fm-turnend-guard: check timed out after 1s: /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69T3KBCD1G1QNNJGT8JFA3T/.test-watch-plumbing-live/tuned-with-ordinary-sibling/state/ordinary.check.sh
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  TURN WOULD END WITH A DUE CHECK WAKE
+●  /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69T3KBCD1G1QNNJGT8JFA3T/.test-watch-plumbing-live/tuned-with-ordinary-sibling/state/contributions.check.sh
+●  contributions: workload completed after 2s
+●  Drain queued wakes before ending the turn: bin/fm-wake-drain.sh
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PERSISTED WAKE QUEUE:
+1793478639	1	check	/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69T3KBCD1G1QNNJGT8JFA3T/.test-watch-plumbing-live/tuned-with-ordinary-sibling/state/contributions.check.sh	check: /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69T3KBCD1G1QNNJGT8JFA3T/.test-watch-plumbing-live/tuned-with-ordinary-sibling/state/contributions.check.sh: contributions: workload completed after 2s
+
+OBSERVED tuned-with-ordinary-sibling: expected runtime and durable-wake behavior confirmed
+registered: state/contributions.check.sh
+
+CASE larger-ordinary-budget: ordinary=4, contributions=1, registered workload=2s, sibling=False
+EXEC bash /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69T3KBCD1G1QNNJGT8JFA3T/bin/fm-turnend-guard.sh
+exit=2; elapsed=2.49s
+stdout:
+
+stderr:
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  TURN WOULD END WITH A DUE CHECK WAKE
+●  /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69T3KBCD1G1QNNJGT8JFA3T/.test-watch-plumbing-live/larger-ordinary-budget/state/contributions.check.sh
+●  contributions: workload completed after 2s
+●  Drain queued wakes before ending the turn: bin/fm-wake-drain.sh
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PERSISTED WAKE QUEUE:
+1793478642	1	check	/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69T3KBCD1G1QNNJGT8JFA3T/.test-watch-plumbing-live/larger-ordinary-budget/state/contributions.check.sh	check: /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69T3KBCD1G1QNNJGT8JFA3T/.test-watch-plumbing-live/larger-ordinary-budget/state/contributions.check.sh: contributions: workload completed after 2s
+
+OBSERVED larger-ordinary-budget: expected runtime and durable-wake behavior confirmed
+registered: state/contributions.check.sh
+
+CASE fallback-unset: ordinary=1, contributions=None, registered workload=2s, sibling=False
+EXEC bash /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69T3KBCD1G1QNNJGT8JFA3T/bin/fm-turnend-guard.sh
+exit=2; elapsed=1.59s
+stdout:
+
+stderr:
+fm-turnend-guard: check timed out after 1s: /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69T3KBCD1G1QNNJGT8JFA3T/.test-watch-plumbing-live/fallback-unset/state/contributions.check.sh
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  TURN WOULD END BLIND - SUPERVISION IS OFF
+●  1 registered custom check(s), but no live watcher holds this home lock (last beat: never).
+●  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PERSISTED WAKE QUEUE:
+(absent)
+OBSERVED fallback-unset: expected runtime and durable-wake behavior confirmed
+registered: state/contributions.check.sh
+
+CASE fallback-empty: ordinary=1, contributions='', registered workload=2s, sibling=False
+EXEC bash /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69T3KBCD1G1QNNJGT8JFA3T/bin/fm-turnend-guard.sh
+exit=2; elapsed=1.55s
+stdout:
+
+stderr:
+fm-turnend-guard: check timed out after 1s: /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69T3KBCD1G1QNNJGT8JFA3T/.test-watch-plumbing-live/fallback-empty/state/contributions.check.sh
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  TURN WOULD END BLIND - SUPERVISION IS OFF
+●  1 registered custom check(s), but no live watcher holds this home lock (last beat: never).
+●  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PERSISTED WAKE QUEUE:
+(absent)
+OBSERVED fallback-empty: expected runtime and durable-wake behavior confirmed
+registered: state/contributions.check.sh
+
+CASE fallback-zero: ordinary=1, contributions='0', registered workload=2s, sibling=False
+EXEC bash /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69T3KBCD1G1QNNJGT8JFA3T/bin/fm-turnend-guard.sh
+exit=2; elapsed=1.56s
+stdout:
+
+stderr:
+fm-turnend-guard: check timed out after 1s: /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69T3KBCD1G1QNNJGT8JFA3T/.test-watch-plumbing-live/fallback-zero/state/contributions.check.sh
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  TURN WOULD END BLIND - SUPERVISION IS OFF
+●  1 registered custom check(s), but no live watcher holds this home lock (last beat: never).
+●  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PERSISTED WAKE QUEUE:
+(absent)
+OBSERVED fallback-zero: expected runtime and durable-wake behavior confirmed
+registered: state/contributions.check.sh
+
+CASE fallback-leading-zero: ordinary=1, contributions='01', registered workload=2s, sibling=False
+EXEC bash /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69T3KBCD1G1QNNJGT8JFA3T/bin/fm-turnend-guard.sh
+exit=2; elapsed=1.67s
+stdout:
+
+stderr:
+fm-turnend-guard: check timed out after 1s: /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69T3KBCD1G1QNNJGT8JFA3T/.test-watch-plumbing-live/fallback-leading-zero/state/contributions.check.sh
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  TURN WOULD END BLIND - SUPERVISION IS OFF
+●  1 registered custom check(s), but no live watcher holds this home lock (last beat: never).
+●  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PERSISTED WAKE QUEUE:
+(absent)
+OBSERVED fallback-leading-zero: expected runtime and durable-wake behavior confirmed
+registered: state/contributions.check.sh
+
+CASE fallback-negative: ordinary=1, contributions='-1', registered workload=2s, sibling=False
+EXEC bash /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69T3KBCD1G1QNNJGT8JFA3T/bin/fm-turnend-guard.sh
+exit=2; elapsed=1.55s
+stdout:
+
+stderr:
+fm-turnend-guard: check timed out after 1s: /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69T3KBCD1G1QNNJGT8JFA3T/.test-watch-plumbing-live/fallback-negative/state/contributions.check.sh
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  TURN WOULD END BLIND - SUPERVISION IS OFF
+●  1 registered custom check(s), but no live watcher holds this home lock (last beat: never).
+●  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PERSISTED WAKE QUEUE:
+(absent)
+OBSERVED fallback-negative: expected runtime and durable-wake behavior confirmed
+registered: state/contributions.check.sh
+
+CASE fallback-invalid: ordinary=1, contributions='invalid', registered workload=2s, sibling=False
+EXEC bash /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69T3KBCD1G1QNNJGT8JFA3T/bin/fm-turnend-guard.sh
+exit=2; elapsed=1.56s
+stdout:
+
+stderr:
+fm-turnend-guard: check timed out after 1s: /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69T3KBCD1G1QNNJGT8JFA3T/.test-watch-plumbing-live/fallback-invalid/state/contributions.check.sh
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  TURN WOULD END BLIND - SUPERVISION IS OFF
+●  1 registered custom check(s), but no live watcher holds this home lock (last beat: never).
+●  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PERSISTED WAKE QUEUE:
+(absent)
+OBSERVED fallback-invalid: expected runtime and durable-wake behavior confirmed
+registered: state/contributions.check.sh
+
+CASE explicit-bound: ordinary=1, contributions=2, registered workload=4s, sibling=False
+EXEC bash /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69T3KBCD1G1QNNJGT8JFA3T/bin/fm-turnend-guard.sh
+exit=2; elapsed=2.63s
+stdout:
+
+stderr:
+fm-turnend-guard: check timed out after 2s: /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69T3KBCD1G1QNNJGT8JFA3T/.test-watch-plumbing-live/explicit-bound/state/contributions.check.sh
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  TURN WOULD END BLIND - SUPERVISION IS OFF
+●  1 registered custom check(s), but no live watcher holds this home lock (last beat: never).
+●  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PERSISTED WAKE QUEUE:
+(absent)
+Traceback (most recent call last):
+  File "/Users/dela/.no-mistakes/evidence/01M69T3KBCD1G1QNNJGT8JFA3T/live-timeout-scenarios.py", line 70, in <module>
+    run_case('explicit-bound', 1, 2, 4)
+    ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dela/.no-mistakes/evidence/01M69T3KBCD1G1QNNJGT8JFA3T/live-timeout-scenarios.py", line 55, in run_case
+    assert f'timed out after {expected}s:' in result.stderr
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError
+
+DRIVER CORRECTION: the explicit bound is max(ordinary=1, allowance=2), so the expected diagnostic is 2s. Initial failure was in the driver assertion, after the product correctly timed out at 2s. Re-driving with the corrected assertion.
+registered: state/contributions.check.sh
+
+CASE explicit-bound: ordinary=1, contributions=2, registered workload=4s, sibling=False
+EXEC bash /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69T3KBCD1G1QNNJGT8JFA3T/bin/fm-turnend-guard.sh
+exit=2; elapsed=2.53s
+stdout:
+
+stderr:
+fm-turnend-guard: check timed out after 2s: /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69T3KBCD1G1QNNJGT8JFA3T/.test-watch-plumbing-live/explicit-bound/state/contributions.check.sh
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  TURN WOULD END BLIND - SUPERVISION IS OFF
+●  1 registered custom check(s), but no live watcher holds this home lock (last beat: never).
+●  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PERSISTED WAKE QUEUE:
+(absent)
+OBSERVED explicit-bound: expected runtime and durable-wake behavior confirmed
