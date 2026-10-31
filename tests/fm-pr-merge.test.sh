@@ -1068,6 +1068,98 @@ SH
   pass "explicit and flagless orphan registration preserve replacement workers without publishing stale polls"
 }
 
+test_orphan_merge_retains_context_under_control() {
+  local case_dir entry rc script
+  for entry in after-registration changed-binding second-recording stack-reacquisition; do
+    if [ "$entry" = stack-reacquisition ]; then
+      case_dir=$(make_stack_case "orphan-control-$entry")
+    else
+      case_dir=$(make_case "orphan-control-$entry")
+      add_gh_mocks "$case_dir" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    fi
+    cp "$case_dir/state/task-x1.meta" "$case_dir/replacement.expected"
+    if [ "$entry" = changed-binding ]; then
+      printf 'kind=orphan\npr=https://github.com/example/repo/pull/8\n' > "$case_dir/replacement.expected"
+    elif [ "$entry" = stack-reacquisition ]; then
+      printf 'pr=https://github.com/example/repo/pull/9\n' >> "$case_dir/replacement.expected"
+    fi
+    printf 'kind=orphan\npr=https://github.com/example/repo/pull/9\n' > "$case_dir/state/task-x1.meta"
+    printf '%s\n' "$entry" > "$case_dir/replacement-mode"
+    mkdir "$case_dir/scripts"
+    for script in "$ROOT"/bin/*.sh; do
+      ln -s "$script" "$case_dir/scripts/${script##*/}"
+    done
+    rm "$case_dir/scripts/fm-pr-merge.sh" "$case_dir/scripts/fm-pr-check.sh"
+    cp "$PR_MERGE" "$case_dir/scripts/fm-pr-merge.sh"
+    cat > "$case_dir/scripts/fm-pr-check.sh" <<'SH'
+#!/usr/bin/env bash
+case_dir=${FM_STATE_OVERRIDE%/state}
+entry=$(cat "$case_dir/replacement-mode")
+call=$(( $(cat "$case_dir/recording-calls" 2>/dev/null || echo 0) + 1 ))
+printf '%s\n' "$call" > "$case_dir/recording-calls"
+bash -c '
+  . "$1/bin/fm-wake-lib.sh"
+  if fm_lock_try_acquire "$2/.control-task-x1.lock"; then
+    fm_lock_release "$2/.control-task-x1.lock"
+    exit 1
+  fi
+' bash "$FM_TEST_ROOT" "$FM_STATE_OVERRIDE" || exit 1
+touch "$case_dir/recording-under-control"
+replace() {
+  cp "$case_dir/replacement.expected" "$FM_STATE_OVERRIDE/task-x1.meta"
+  chmod 0600 "$FM_STATE_OVERRIDE/task-x1.meta"
+  rm -f "$FM_STATE_OVERRIDE/task-x1.check.sh" "$FM_STATE_OVERRIDE/task-x1.pr-poll" \
+    "$FM_STATE_OVERRIDE/task-x1.pr-poll-registration"
+  touch "$case_dir/record-replaced"
+}
+if [ "$entry" = second-recording ] && [ "$call" = 2 ]; then
+  replace
+fi
+"$FM_TEST_ROOT/bin/fm-pr-check.sh" "$@" || exit $?
+case "$entry:$call" in after-registration:1|changed-binding:1) replace ;; esac
+SH
+    chmod +x "$case_dir/scripts/fm-pr-check.sh"
+    if [ "$entry" = stack-reacquisition ]; then
+      mv "$case_dir/fakebin/gh" "$case_dir/fakebin/gh-real"
+      cat > "$case_dir/fakebin/gh" <<'SH'
+#!/usr/bin/env bash
+case_dir=${FM_STATE_OVERRIDE%/state}
+case "${1:-}:${2:-}" in
+  api:*'/stacks?pull_request='*)
+    if [ ! -f "$case_dir/record-replaced" ]; then
+      cp "$case_dir/replacement.expected" "$FM_STATE_OVERRIDE/task-x1.meta"
+      chmod 0600 "$FM_STATE_OVERRIDE/task-x1.meta"
+      rm -f "$FM_STATE_OVERRIDE/task-x1.check.sh" "$FM_STATE_OVERRIDE/task-x1.pr-poll" \
+        "$FM_STATE_OVERRIDE/task-x1.pr-poll-registration"
+      touch "$case_dir/record-replaced"
+    fi
+    ;;
+esac
+exec "$case_dir/fakebin/gh-real" "$@"
+SH
+      chmod +x "$case_dir/fakebin/gh"
+    fi
+    rc=0
+    PR_MERGE="$case_dir/scripts/fm-pr-merge.sh" \
+      run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 --orphan > "$case_dir/out" 2>&1 || rc=$?
+    [ -f "$case_dir/recording-under-control" ] || fail "$entry recorded an orphan without task control"
+    [ -f "$case_dir/record-replaced" ] || fail "$entry did not exercise replacement"
+    [ "$rc" -ne 0 ] || fail "$entry adopted a replacement task"
+    cmp "$case_dir/replacement.expected" "$case_dir/state/task-x1.meta" || fail "$entry changed replacement metadata"
+    [ ! -e "$case_dir/state/task-x1.pr-poll" ] || fail "$entry republished a stale orphan poll"
+    [ ! -e "$case_dir/state/task-x1.pr-poll-registration" ] || fail "$entry republished stale poll registration"
+    if [ "$entry" = second-recording ]; then
+      [ "$(cat "$case_dir/recording-calls")" = 2 ] || fail "second recorder was not exercised"
+      assert_contains "$(cat "$case_dir/out")" '--orphan refuses to replace' "second recorder lost explicit orphan context"
+    else
+      assert_contains "$(cat "$case_dir/out")" 'no longer owns the requested PR' "$entry did not refuse at the binding guard"
+    fi
+    ! grep -q '^stack merge ' "$case_dir/gh.log" || fail "$entry reached stack dispatch"
+    [ "$entry" = stack-reacquisition ] || ! grep -q '^pr merge ' "$case_dir/gh.log" || fail "$entry reached forge merge"
+  done
+  pass "explicit orphan merges retain binding and task control across registration, re-recording and stack lock reacquisition"
+}
+
 test_orphan_identity_is_fixed_at_publication() {
   local case_dir entry rc meta_before poll_before
   for entry in record merge; do
@@ -5135,6 +5227,7 @@ test_allow_no_pipeline_is_attended_only_and_gitlab_only() {
 test_stack_merge_preserves_method_and_records_outcome
 test_stack_participant_locks_and_authority
 test_orphan_registration_refuses_worker_replacement
+test_orphan_merge_retains_context_under_control
 test_orphan_identity_is_fixed_at_publication
 test_registration_serializes_orphan_discovery
 test_registration_waits_for_stack_dispatch

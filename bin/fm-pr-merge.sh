@@ -515,21 +515,28 @@ META="$STATE/$ID.meta"
 . "$SCRIPT_DIR/fm-lease-lib.sh"
 fm_lease_forbid_branch "PR merge (fm-pr-merge)" --away-relocated
 
-# Orphan recording is explicit and runs only after the actor partition gate.
-# fm-pr-check.sh owns creation and the normal PR/poll publication transaction.
-if [ "$ORPHAN" = true ]; then
-  FM_PR_CHECK_MERGE=1 "$SCRIPT_DIR/fm-pr-check.sh" "$ID" "$URL" --orphan || exit 1
-fi
+require_explicit_orphan_binding() {
+  [ "$ORPHAN" = true ] || return 0
+  if ! { [ -f "$META" ] && [ ! -L "$META" ] && [ "$(fm_pr_file_link_count "$META")" = 1 ] \
+    && [ "$(grep '^kind=' "$META" | tail -1 | cut -d= -f2- || true)" = orphan ] \
+    && fm_pr_urls_equal "$(grep '^pr=' "$META" | tail -1 | cut -d= -f2- || true)" "$URL"; }; then
+    echo "error: orphan task $ID no longer owns the requested PR; refusing replacement incarnation" >&2
+    return 1
+  fi
+}
 
-if [ ! -f "$META" ] || [ -L "$META" ]; then
-  echo "error: task metadata is unavailable" >&2
-  exit 1
+MERGE_EXPECTED_SPAWN_GEN=
+if [ "$ORPHAN" != true ]; then
+  if [ ! -f "$META" ] || [ -L "$META" ]; then
+    echo "error: task metadata is unavailable" >&2
+    exit 1
+  fi
+  if ! fm_backlog_meta_spawn_gen_optional "$META" "$STATE"; then
+    echo "error: PR merge refused: $FM_BACKLOG_TRANSITION_ERROR" >&2
+    exit 1
+  fi
+  MERGE_EXPECTED_SPAWN_GEN=$FM_BACKLOG_META_SPAWN_GEN
 fi
-if ! fm_backlog_meta_spawn_gen_optional "$META" "$STATE"; then
-  echo "error: PR merge refused: $FM_BACKLOG_TRANSITION_ERROR" >&2
-  exit 1
-fi
-MERGE_EXPECTED_SPAWN_GEN=$FM_BACKLOG_META_SPAWN_GEN
 
 MERGE_CONTROL_LOCK=
 MERGE_META_LOCK=
@@ -541,6 +548,17 @@ merge_control_cleanup() {
 trap merge_control_cleanup EXIT
 MERGE_CONTROL_LOCK="$STATE/.control-$ID.lock"
 fm_lock_acquire_wait "$MERGE_CONTROL_LOCK"
+# Creation, binding validation, and incarnation capture share task control so
+# cleanup and spawn cannot replace an orphan between those operations.
+if [ "$ORPHAN" = true ]; then
+  FM_PR_CHECK_MERGE=1 "$SCRIPT_DIR/fm-pr-check.sh" "$ID" "$URL" --orphan || exit 1
+  require_explicit_orphan_binding || exit 1
+  if ! fm_backlog_meta_spawn_gen_optional "$META" "$STATE"; then
+    echo "error: PR merge refused: $FM_BACKLOG_TRANSITION_ERROR" >&2
+    exit 1
+  fi
+  MERGE_EXPECTED_SPAWN_GEN=$FM_BACKLOG_META_SPAWN_GEN
+fi
 if ! fm_backlog_meta_spawn_gen_optional "$META" "$STATE"; then
   echo "error: task $ID changed while waiting to merge; refusing: $FM_BACKLOG_TRANSITION_ERROR" >&2
   exit 1
@@ -1448,6 +1466,8 @@ github_stack_snapshot() {
 # must not escape into the target task's outcome recording.
 github_merge_stack() (
   local scratch status=0 lock
+  # These locals are shared only with the checked helper inside this subshell.
+  # shellcheck disable=SC2030
   local STACK_CONTROL_LOCKS=() STACK_TASK_SET_LOCK=
   scratch=$(mktemp -d "${TMPDIR:-/tmp}/fm-pr-stack.XXXXXX") || exit 1
   trap '
@@ -1531,6 +1551,7 @@ github_merge_stack_checked() {
           echo "error: another lifecycle action is running for stack participant $ID; retry" >&2
           return 1
         }
+        # shellcheck disable=SC2031 # The caller and this helper share the stack subshell.
         STACK_CONTROL_LOCKS+=("$STATE/.control-$ID.lock")
         [ "$ID" != "$original_id" ] || target_locked=true
         participants+=("$other")
@@ -1544,11 +1565,12 @@ MEMBERS
   done
   [ "$target_locked" = true ] || { echo "error: target task no longer owns the stack PR; retry" >&2; return 1; }
   ID=$original_id
-  fm_backlog_meta_spawn_gen_optional "$META" "$STATE" \
+  if ! { require_explicit_orphan_binding \
+    && fm_backlog_meta_spawn_gen_optional "$META" "$STATE" \
     && [ "$FM_BACKLOG_META_SPAWN_GEN" = "$MERGE_EXPECTED_SPAWN_GEN" ] \
-    && require_recorded_pr_identity || {
+    && require_recorded_pr_identity; }; then
       echo "error: target task changed while acquiring stack locks; retry" >&2; return 1;
-    }
+  fi
   for ((i=0; i<${#participants[@]}; i++)); do
     fm_pr_urls_equal "$(grep '^pr=' "${participants[$i]}" | tail -1 | cut -d= -f2- || true)" "${participant_urls[$i]}" || return 1
     ID=${participant_ids[$i]}
@@ -1596,7 +1618,9 @@ MEMBERS
 }
 
 record_pr_metadata() {
-  if ! FM_PR_CHECK_MERGE=1 "$SCRIPT_DIR/fm-pr-check.sh" "$ID" "$URL"; then
+  local orphan_args=()
+  [ "$ORPHAN" != true ] || orphan_args+=(--orphan)
+  if ! FM_PR_CHECK_MERGE=1 "$SCRIPT_DIR/fm-pr-check.sh" "$ID" "$URL" "${orphan_args[@]+"${orphan_args[@]}"}"; then
     return 1
   fi
   grep -qxF "pr=$URL" "$META" || {
