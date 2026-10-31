@@ -1,0 +1,40 @@
+bash-3.2$ cd -- '/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69SW8ZHZ0QCHZPN4JJQZKKX/.validation-tmp/round2-live-
+lab/worktree'
+bash-3.2$ export GOTMPDIR=/tmp/fm-firstmate-76c3c841/live-droid/gotmp
+bash-3.2$ export COMPACT_ADVISER_DISABLE=1
+bash-3.2$ export FM_TASK_ID=live-droid
+bash-3.2$ . '/tmp/fm-live-droid+76c3c841f648c8e8813b5b51c906efaac9db590f74130a38a211644e2b09951b/launch.s1793487010.5171
+8.4269.sh'
+
+
+                                 █████████    █████████     ████████    ███   █████████
+                                 ███    ███   ███    ███   ███    ███   ███   ███    ███
+                                 ███    ███   ███    ███   ███    ███   ███   ███    ███
+                                 ███    ███   █████████    ███    ███   ███   ███    ███
+                                 ███    ███   ███    ███   ███    ███   ███   ███    ███
+                                 ███    ███   ███    ███   ███    ███   ███   ███    ███
+                                 █████████    ███    ███    ████████    ███   █████████
+
+                                                         v1.1.0
+
+                                        TIP: Use /review to start a code review
+
+                                   shift+tab to cycle modes · ctrl+N to cycle models
+                                        ctrl+L for autonomy · tab for reasoning
+
+                                  Skills (…)  MCPs (0) ✗  Connectors (…)  AGENTS.md ✗
+
+╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                      │
+│ Welcome to Factory CLI                                                                                               │
+│ Factory is an AI-powered software development assistant that helps you build, understand, and improve your code.     │
+│                                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+Please login with your Factory account to continue.
+
+> Login
+  Sign into a Factory Private deployment
+  Exit
+
+

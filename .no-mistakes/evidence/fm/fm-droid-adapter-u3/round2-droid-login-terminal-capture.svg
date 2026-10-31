@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1340" height="960" viewBox="0 0 1340 960">
+<rect width="1340" height="960" fill="#10151b"/>
+<g font-family="monospace" font-size="16" fill="#edf1f7">
+<text x="24" y="28">Actual isolated Droid 1.1.0 terminal capture — 120 columns × 40 rows</text>
+<text x="24" y="56" fill="#b9c6d3">Rendered from tmux capture. Authentication required; trust/model success remains unproven.</text>
+<text x="24" y="94" xml:space="preserve">bash-3.2$ cd -- &#x27;/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69SW8ZHZ0QCHZPN4JJQZKKX/.validation-tmp/round2-live-</text>
+<text x="24" y="114" xml:space="preserve">lab/worktree&#x27;</text>
+<text x="24" y="134" xml:space="preserve">bash-3.2$ export GOTMPDIR=/tmp/fm-firstmate-76c3c841/live-droid/gotmp</text>
+<text x="24" y="154" xml:space="preserve">bash-3.2$ export COMPACT_ADVISER_DISABLE=1</text>
+<text x="24" y="174" xml:space="preserve">bash-3.2$ export FM_TASK_ID=live-droid</text>
+<text x="24" y="194" xml:space="preserve">bash-3.2$ . &#x27;/tmp/fm-live-droid+76c3c841f648c8e8813b5b51c906efaac9db590f74130a38a211644e2b09951b/launch.s1793487010.5171</text>
+<text x="24" y="214" xml:space="preserve">8.4269.sh&#x27;</text>
+<text x="24" y="234" xml:space="preserve"></text>
+<text x="24" y="254" xml:space="preserve"></text>
+<text x="24" y="274" xml:space="preserve">                                 █████████    █████████     ████████    ███   █████████</text>
+<text x="24" y="294" xml:space="preserve">                                 ███    ███   ███    ███   ███    ███   ███   ███    ███</text>
+<text x="24" y="314" xml:space="preserve">                                 ███    ███   ███    ███   ███    ███   ███   ███    ███</text>
+<text x="24" y="334" xml:space="preserve">                                 ███    ███   █████████    ███    ███   ███   ███    ███</text>
+<text x="24" y="354" xml:space="preserve">                                 ███    ███   ███    ███   ███    ███   ███   ███    ███</text>
+<text x="24" y="374" xml:space="preserve">                                 ███    ███   ███    ███   ███    ███   ███   ███    ███</text>
+<text x="24" y="394" xml:space="preserve">                                 █████████    ███    ███    ████████    ███   █████████</text>
+<text x="24" y="414" xml:space="preserve"></text>
+<text x="24" y="434" xml:space="preserve">                                                         v1.1.0</text>
+<text x="24" y="454" xml:space="preserve"></text>
+<text x="24" y="474" xml:space="preserve">                                        TIP: Use /review to start a code review</text>
+<text x="24" y="494" xml:space="preserve"></text>
+<text x="24" y="514" xml:space="preserve">                                   shift+tab to cycle modes · ctrl+N to cycle models</text>
+<text x="24" y="534" xml:space="preserve">                                        ctrl+L for autonomy · tab for reasoning</text>
+<text x="24" y="554" xml:space="preserve"></text>
+<text x="24" y="574" xml:space="preserve">                                  Skills (…)  MCPs (0) ✗  Connectors (…)  AGENTS.md ✗</text>
+<text x="24" y="594" xml:space="preserve"></text>
+<text x="24" y="614" xml:space="preserve">╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮</text>
+<text x="24" y="634" xml:space="preserve">│                                                                                                                      │</text>
+<text x="24" y="654" xml:space="preserve">│ Welcome to Factory CLI                                                                                               │</text>
+<text x="24" y="674" xml:space="preserve">│ Factory is an AI-powered software development assistant that helps you build, understand, and improve your code.     │</text>
+<text x="24" y="694" xml:space="preserve">│                                                                                                                      │</text>
+<text x="24" y="714" xml:space="preserve">╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯</text>
+<text x="24" y="734" xml:space="preserve"></text>
+<text x="24" y="754" xml:space="preserve">Please login with your Factory account to continue.</text>
+<text x="24" y="774" xml:space="preserve"></text>
+<text x="24" y="794" xml:space="preserve">&gt; Login</text>
+<text x="24" y="814" xml:space="preserve">  Sign into a Factory Private deployment</text>
+<text x="24" y="834" xml:space="preserve">  Exit</text>
+<text x="24" y="854" xml:space="preserve"></text>
+<text x="24" y="874" xml:space="preserve"></text>
+</g></svg>

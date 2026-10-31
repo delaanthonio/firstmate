@@ -1,0 +1,2 @@
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69SW8ZHZ0QCHZPN4JJQZKKX/.validation-tmp/round2-live-lab
+error: Droid did not start processing its launch brief after folder-trust handling; inspect window primary:fm-live-droid

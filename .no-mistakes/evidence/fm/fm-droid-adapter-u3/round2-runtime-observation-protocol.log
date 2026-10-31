@@ -1,0 +1,28 @@
+Before observation (registered PR poll valid):
+harness=droid
+model=default
+effective_model=unknown-at-spawn
+spawn_gen=live-generation
+pr=https://github.com/example/repo/pull/1
+pr_head=0123456789012345678901234567890123456789
+x_request=runtime-review
+
+After observation (registered PR poll still valid):
+effective_model=glm-5.3-flash
+harness=droid
+model=default
+spawn_gen=live-generation
+pr=https://github.com/example/repo/pull/1
+pr_head=0123456789012345678901234567890123456789
+x_request=runtime-review
+
+After deferred reconciliation (registered PR poll still valid):
+effective_model=custom:updated-accounting
+harness=droid
+model=default
+spawn_gen=live-generation
+pr=https://github.com/example/repo/pull/1
+pr_head=0123456789012345678901234567890123456789
+x_request=runtime-review
+
+Retired generation observation ignored; selection remains default; PR registration authenticates.

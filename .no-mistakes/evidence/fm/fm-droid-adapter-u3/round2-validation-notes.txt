@@ -1,0 +1,20 @@
+Current-run targeted validation only. No full suite, lint, pipeline-control, publication, or remote live-environment retry was performed.
+
+Targeted checks:
+python3 /Users/dela/.no-mistakes/evidence/01M69SW8ZHZ0QCHZPN4JJQZKKX/round2-select-tests.py
+TMPDIR="$PWD/.validation-tmp" bin/fm-test-run.sh --jobs 1 tests/.phase-fm-spawn-dispatch-profile.test.sh tests/.phase-fm-control-relaunch.test.sh tests/fm-remote-secondmate-relaunch.test.sh
+All selected checks passed. Droid/terminal and remote-transport dependencies in these regression checks are simulated; they are not live end-to-end evidence. The full dispatch and full control suites were not run.
+
+Protocol evidence:
+bash /Users/dela/.no-mistakes/evidence/01M69SW8ZHZ0QCHZPN4JJQZKKX/round2-reproduce-runtime-observation.sh
+The executable observer updated accounting, preserved requested selection and registered PR identity, deferred writes under the metadata lock, and rejected an obsolete generation. Its runtime sidecar input is synthetic; it is not authenticated Droid evidence.
+
+Live attempt:
+python3 /Users/dela/.no-mistakes/evidence/01M69SW8ZHZ0QCHZPN4JJQZKKX/round2-reproduce-live-droid.py
+Real Droid 1.1.0 and tmux ran through fm-spawn.sh in a marked disposable home on a private socket with a 120x40 grid. Inherited FM_*, FACTORY_*, DROID_* overrides were removed; Factory HOME, OS HOME, XDG and temporary data were isolated. No operator data or credentials were copied or changed. The real login screen remained selected. Spawn emitted its bounded readiness refusal and never reported success. The isolation workaround cannot prove authenticated trust, actual model use, recovery, or runtime hooks without an isolated-process Factory credential.
+
+Visual evidence:
+round2-droid-login-terminal-capture.png is a browser-rendered image of the actual tmux text capture, explicitly labeled as such. It is not a native TUI screenshot. Python Pillow was unavailable; SVG plus the existing browser renderer produced the image without installing packages. The temporary browser tab was closed.
+
+The user remote-live deferral was preserved. No duplicate finding is raised for the previously declined live-evidence limitation.
+All private tmux processes and disposable homes were stopped/removed. Temporary selected-test copies and node compile cache were removed. Source remains unchanged.
