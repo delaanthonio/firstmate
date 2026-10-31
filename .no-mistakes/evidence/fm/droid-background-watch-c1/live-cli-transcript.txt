@@ -1,0 +1,110 @@
+
+SCENARIO: quiet rotations, recovery=absent
+{"cycle_pid": 79116, "checkpoint": 1, "watcher_pid": "79129", "cycle_running": true, "stdout_bytes": 0, "stderr_bytes": 0, "queue": "", "recovery": ""}
+{"cycle_pid": 79116, "checkpoint": 2, "watcher_pid": "80194", "cycle_running": true, "stdout_bytes": 0, "stderr_bytes": 0, "queue": "", "recovery": ""}
+{"cycle_pid": 79116, "checkpoint": 3, "watcher_pid": "80958", "cycle_running": true, "stdout_bytes": 0, "stderr_bytes": 0, "queue": "", "recovery": ""}
+Paused watcher 80958 across checkpoint timeout; appending a durable real wake through fm_wake_append.
+$ bash -c . "$1"; fm_wake_append check concurrent "check: event queued during rotation" _ /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M694GRQYDD44K8ZT36BVTW8R/bin/fm-wake-lib.sh
+exit=0
+stdout:
+stderr:
+
+cycle exit=0
+stdout:
+check: rearm-resurface
+stderr:
+
+durable queue:
+1793458395	1	check	concurrent	check: event queued during rotation
+recovery:
+announced:downtime:81058.1793458395.bQckcq
+
+
+SCENARIO: quiet rotations, recovery=acked
+{"cycle_pid": 81808, "checkpoint": 1, "watcher_pid": "81821", "cycle_running": true, "stdout_bytes": 0, "stderr_bytes": 0, "queue": "", "recovery": "acked:downtime:previous.1.aaa\n"}
+{"cycle_pid": 81808, "checkpoint": 2, "watcher_pid": "82392", "cycle_running": true, "stdout_bytes": 0, "stderr_bytes": 0, "queue": "", "recovery": "acked:downtime:previous.1.aaa\n"}
+{"cycle_pid": 81808, "checkpoint": 3, "watcher_pid": "82864", "cycle_running": true, "stdout_bytes": 0, "stderr_bytes": 0, "queue": "", "recovery": "acked:downtime:previous.1.aaa\n"}
+Paused watcher 82864 across checkpoint timeout; appending a durable real wake through fm_wake_append.
+$ bash -c . "$1"; fm_wake_append check concurrent "check: event queued during rotation" _ /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M694GRQYDD44K8ZT36BVTW8R/bin/fm-wake-lib.sh
+exit=0
+stdout:
+stderr:
+
+cycle exit=0
+stdout:
+check: rearm-resurface
+stderr:
+
+durable queue:
+1793458408	1	check	concurrent	check: event queued during rotation
+recovery:
+announced:downtime:82951.1793458408.12cHvP
+
+
+SCENARIO: real singleton failure terminates at configured retry bound
+$ /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M694GRQYDD44K8ZT36BVTW8R/bin/fm-watch-droid-background.sh
+exit=1
+stdout:
+watcher: already running pid 83661
+watcher: already running pid 83661
+stderr:
+checkpoint: watcher is already running outside this foreground checkpoint
+checkpoint: watcher is already running outside this foreground checkpoint
+droid-background: checkpoint failed 2 consecutive times; exiting with code 1
+
+
+SCENARIO: ordinary foreground fallback retains bounded timeout and downtime recovery
+$ /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M694GRQYDD44K8ZT36BVTW8R/bin/fm-watch-checkpoint.sh --seconds 2
+exit=124
+stdout:
+checkpoint: no actionable wake within 2s
+stderr:
+
+fallback recovery: pending:downtime:84345.1793458416.GapGk1
+
+
+SCENARIO: Droid rotation preserves away cleanup and posture
+$ /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M694GRQYDD44K8ZT36BVTW8R/bin/fm-watch-checkpoint.sh --seconds 2
+exit=124
+stdout:
+checkpoint: no actionable wake within 2s
+stderr:
+
+posture: away
+recovery: pending:downtime:84814.1793458418.AKZZ1X
+
+
+SCENARIO: Droid rotation preserves quiet cleanup and posture
+$ /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M694GRQYDD44K8ZT36BVTW8R/bin/fm-watch-checkpoint.sh --seconds 2
+exit=124
+stdout:
+checkpoint: no actionable wake within 2s
+stderr:
+
+posture: quiet
+recovery: pending:downtime:85333.1793458420.VE35mB
+
+
+SCENARIO: tracked Execute payload policy: bin/fm-watch-droid-background.sh
+exit=0
+stdout:
+stderr:
+
+
+SCENARIO: tracked Execute payload policy: bin/fm-watch-droid-background.sh &
+exit=2
+stdout:
+{"decision":"deny","reason":"[watcher-background] a protected watcher command cannot run in an asynchronous shell list or through nohup/disown"}
+stderr:
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":"[watcher-background] a protected watcher command cannot run in an asynchronous shell list or through nohup/disown"}
+
+
+SCENARIO: tracked Execute payload policy: nohup bin/fm-watch-droid-background.sh
+exit=2
+stdout:
+{"decision":"deny","reason":"[watcher-background] a protected watcher command cannot run in an asynchronous shell list or through nohup/disown"}
+stderr:
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":"[watcher-background] a protected watcher command cannot run in an asynchronous shell list or through nohup/disown"}
+
+
+All independent live CLI assertions passed. Native Droid completion remains unproven: isolated interactive Droid requires login.

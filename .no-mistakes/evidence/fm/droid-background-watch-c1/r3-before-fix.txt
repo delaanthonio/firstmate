@@ -1,0 +1,7 @@
+Counterfactual: current background wrapper and checkpoint with the base watcher cleanup implementation, empty isolated home, no event injected.
+exit=0
+stdout:
+check: rearm-resurface
+stderr:
+queue:
+(absent)

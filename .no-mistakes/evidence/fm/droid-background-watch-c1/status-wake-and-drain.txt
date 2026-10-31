@@ -1,0 +1,18 @@
+Real background cycle; after watcher startup write demo.status with done: ready for review.
+exit=0
+stdout:
+signal: /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M694GRQYDD44K8ZT36BVTW8R/.validation/live-status/state/demo.status
+stderr:
+persisted queue:
+1793458437	1	signal	demo.status	signal: /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M694GRQYDD44K8ZT36BVTW8R/.validation/live-status/state/demo.status
+1793458437	2	signal	demo.status	signal: /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M694GRQYDD44K8ZT36BVTW8R/.validation/live-status/state/demo.status
+
+$ bin/fm-wake-drain.sh
+exit=0
+stdout:
+1793458437	2	signal	demo.status	signal: /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M694GRQYDD44K8ZT36BVTW8R/.validation/live-status/state/demo.status
+wake annotation: latest wake-EVENT observed at drain, not current state: demo.status: done: ready for review
+STATUS OUTCOME BACKSTOP (newest captain-facing task event has no covering branch outcome):
+demo done: ready for review
+stderr:
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 86070.1793458437.w9z2sG
