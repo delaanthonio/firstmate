@@ -10,7 +10,7 @@
 # are all accepted, including a merge request or change on a self-hosted
 # instance.
 # A GitHub pull request the forge reports as a draft is refused, naming the draft
-# state and recording and arming nothing: a draft cannot be merged, so a poll armed on it
+# state and arming nothing: a draft cannot be merged, so a poll armed on it
 # would wait for an event that cannot occur while nobody is asked to act.
 # Mark the pull request ready for review, then arm again; a lane that keeps a
 # draft on purpose declares a wait instead of reporting done. An unreadable
@@ -24,6 +24,15 @@
 # reuses only the same orphan ID and URL. This is a forge-only record, not a
 # claim that a worker copy passed the ship custody gate; the merge helper still
 # applies all live forge, hold, and authority checks before merging.
+# Its initial mode-0600 metadata contains only kind=orphan and pr=<canonical URL>;
+# the ordinary recording path adds any available head and arms the merge poll.
+# Initial metadata creation precedes registration checks and is not rolled back
+# when those checks refuse.
+# Orphan identity remains fixed after merging, including on flagless recording.
+# Publication rechecks that an explicit orphan request or an initially observed
+# orphan still names an orphan; replacement by a worker refuses without binding
+# or poll publication. The task-set lock serializes ownership discovery with PR
+# binding publication, with the metadata lock acquired after it.
 # Usage: fm-pr-check.sh <task-id> <pr-url> [--orphan]
 set -eu
 

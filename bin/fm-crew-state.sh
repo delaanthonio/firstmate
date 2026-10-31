@@ -28,6 +28,9 @@
 #
 # Logic, in order:
 #   1. Resolve worktree + backend target + kind from state/<id>.meta. A meta
+#      with kind=orphan has no worker copy: invalid PR identity reports unknown,
+#      a matching merge-notification marker reports done, otherwise paused.
+#      bin/fm-pr-check.sh owns creation of these forge-only records. A meta
 #      recording remote_host= is a remote secondmate: its worktree and endpoint
 #      live on that host, so the local worktree and pane reads are skipped and
 #      the remote host is asked for the endpoint's recovery-grade state

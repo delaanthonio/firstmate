@@ -46,11 +46,11 @@
 # github_branch_rules_unavailable_on_plan owns the narrow plan-unavailable
 # exception; every other unreadable required source refuses.
 # Every failing condition is reported, not just the first.
-# The verified head is then passed to gh as
+# For an ordinary PR merge, the verified head is then passed to gh as
 # --match-head-commit, so a push that lands between that read and the merge
 # fails the merge instead of landing commits nothing verified. Reading that
-# state needs gh and jq, and either one absent stops the merge before any
-# state is recorded. An attended --allow-red <check-name> may be passed once,
+# state needs gh and jq, and either one absent stops the merge.
+# An attended --allow-red <check-name> may be passed once,
 # with the name as a separate argument; it waives only checks with that exact
 # name, still requires every other check green, and still binds the head. Its
 # twin, an attended --allow-missing <check-name>, follows the same rules for one
@@ -110,7 +110,7 @@
 # the merge instead of landing commits nothing verified. A recorded pr_head that disagrees with the live head is
 # reported rather than trusted, because a rebase moves the head and leaves the
 # recorded value stale. Reading that state needs glab and jq, and either one
-# absent stops the merge before any state is recorded.
+# absent stops the merge.
 #
 # A Forgejo merge is refused unless every pre-merge condition holds, each read
 # live at merge time: the pull request is open, not a draft, mergeable is
@@ -131,8 +131,8 @@
 # glab take one, so the login registered for the parsed host is re-resolved
 # fresh at merge time (bin/fm-pr-check.sh already required one at arm time,
 # but a login can be renamed or removed afterwards). Reading and merging both
-# need tea and jq, and either one absent stops the merge before any state is
-# recorded. Forgejo has no merge-queue or scheduled-merge concept, so unlike
+# need tea and jq, and either one absent stops the merge.
+# Forgejo has no merge-queue or scheduled-merge concept, so unlike
 # GitHub and GitLab there is no away-mode async/queued case to detect: every
 # accepted Forgejo merge here is immediate, and any caller-passed extra
 # argument beyond a merge method is refused rather than silently dropped,
@@ -166,11 +166,12 @@
 # Extra args must not include --repo or -R in any form, including a bundled
 # short-option cluster such as -yR, because the repository comes only from the
 # URL, nor --sha or --match-head-commit because the head comes only from the
-# live read. An existing task-meta pr= must equal the requested canonical URL,
-# unless that bound PR has already merged - proven by its recorded merge
+# live read. An existing task-meta pr= must identify the requested canonical URL,
+# unless a worker's bound PR has already merged - proven by its recorded merge
 # notification - in which case the task's next PR is accepted so several PRs
 # from one task can each merge in turn; while the bound PR is still unmerged a
-# different URL is refused. Auto-merge (--auto), a protection bypass
+# different URL is refused. An orphan's identity is fixed even after merging;
+# bin/fm-pr-check.sh owns its recording contract. Auto-merge (--auto), a protection bypass
 # (--admin), and branch
 # deletion (--delete-branch, -d and short-flag clusters, and GitLab's
 # --remove-source-branch) are refused by default; --attended-override, parsed
@@ -178,22 +179,40 @@
 # explicit captain instruction and never skips the live green check, the
 # away-record read, or a captain hold.
 #
-# An explicit --orphan creates a minimal kind=orphan record for a PR with no
-# owning task, or reuses that same orphan record and URL. It never replaces a
-# worker record or another task's PR binding. No worker copy is asserted for an
-# orphan: fm-pr-check.sh records its forge head and arms the ordinary merge
-# poll, and all live merge, hold, authority, and outcome guards still apply.
+# An explicit --orphan uses bin/fm-pr-check.sh's forge-only recording contract;
+# all live merge, hold, authority, and outcome guards still apply. The helper
+# retains that requirement on every recording call and revalidates the binding
+# under task control before capturing the incarnation and after reacquiring stack locks.
+# Registration precedes merge preflight, so a refusal can leave a recorded PR
+# and armed poll without a merge.
 #
 # GitHub's stacked-PR refusal triggers gh stack merge --yes, with the requested
-# merge method (default --squash). The official extension owns atomic stack
+# merge method (default --squash). This fallback requires git and the installed
+# official gh stack extension, which owns atomic stack
 # semantics. Every unmerged member through the requested PR gets the same live
 # preflight, and the stack heads are read again immediately before dispatch.
 # Unlike gh pr merge, gh stack merge has no expected-head argument: the accepted
 # limitation is a seconds-wide race after that last read, with GitHub still
 # enforcing branch protection at merge time. Stack merging is asynchronous and
 # attended-only. Unsupported extra flags and ambiguous PR/stack numbers refuse.
+# Numeric stack collisions are checked both before participant discovery and
+# immediately before dispatch; any successful stack lookup for the PR number
+# refuses, and only a 404 proves absence. PR binding publication shares the
+# task-set lock with participant discovery, and every owned participant's
+# control lock protects its hold check through dispatch and result publication.
 # A temporary empty git repository pins the extension's repository selection to
 # the URL without changing a project or trusting the caller's current directory.
+# A successful stack command records authority for every owned participant.
+# A nonzero exit is reconciled only when the extension reports a post-submission
+# status-read failure or an in-progress timeout. Without that affirmative
+# acceptance evidence it fails without authority or uncertainty publication.
+# Reconciliation makes one bounded PR merged-state read: true records participant
+# authority and the target's landed outcome; false fails without authority or
+# outcome publication; an unreadable or invalid answer fails with unresolved
+# markers for all owned participants and a firstmate reconciliation wake, never
+# authority or a landed outcome. bin/fm-merge-authority-lib.sh owns those markers
+# and their poll-consumption contract. tests/fm-pr-merge.test.sh covers these
+# acceptance and refusal paths.
 #
 # Usage: fm-pr-merge.sh <task-id> <pr-url> [--orphan] [--attended-override] [--allow-red <check-name>] [--allow-missing <check-name>] [--allow-no-pipeline] [-- <extra forge merge args>]
 #
@@ -570,9 +589,8 @@ if [ "$FM_BACKLOG_META_SPAWN_GEN" != "$MERGE_EXPECTED_SPAWN_GEN" ]; then
   exit 1
 fi
 
-# Reading the merge request state needs both tools. Report them together and
-# before anything is recorded, so a missing tool is a named prerequisite rather
-# than a merge that is armed and then refused for an unexplained reason.
+# Reading the merge request state needs both tools. Report them together before
+# ordinary recording; explicit orphan registration has already run at this point.
 GITLAB_MISSING=
 if [ "$PROVIDER" = gitlab ]; then
   command -v glab >/dev/null 2>&1 || GITLAB_MISSING="glab"

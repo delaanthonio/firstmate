@@ -23,16 +23,36 @@
 # and lifecycle locks and refuses a mismatch. The file is atomically published,
 # mode 0600, single-link, and on the state filesystem. A poll consumes it only
 # when all identity fields match its own validated snapshot. Missing, malformed,
-# or mismatched state means external; it is never resolved again from a later
-# away-posture record.
+# or mismatched authority state means external unless a matching unresolved
+# marker below defers attribution; authority is never resolved again from a
+# later away-posture record.
 #
 # Resolution authorizes nothing by itself. bin/fm-pr-merge.sh owns the merge
-# gate and persists only after a forge command succeeds, before releasing the
-# task lifecycle lock. After observing a landed merge, bin/fm-watch.sh acquires
+# gate, including the stack acceptance and bounded reconciliation conditions.
+# Authority is persisted after success or a confirmed post-submission landing,
+# before releasing each owned participant's lifecycle lock.
+# After observing a landed merge, bin/fm-watch.sh acquires
 # that same lock, revalidates the poll, publishes its durable outcome, and
 # retires only the exact authority record it read. Teardown uses the same lock,
 # so it cannot interleave with that consumption transaction, and removes any
 # remaining record.
+#
+# An accepted stack request whose reconciliation cannot read the merged state
+# instead persists one private marker for each owned participant, without
+# publishing merge authority:
+#   state/<task-id>.merge-unresolved
+#   accepted-uncertain
+#   <provider>
+#   <host>
+#   <path>
+#   <number>
+# The marker is atomically published, mode 0600, single-link, on the state
+# filesystem, and bound to the participant's current PR metadata. A merged poll
+# with that exact marker emits an unresolved-merge wake for firstmate, retaining
+# the marker and poll without publishing a landed outcome or external label.
+# A marker for another PR does not suppress ordinary attribution. Persisting
+# matching authority removes the marker; teardown also removes it. The polling
+# and cleanup regressions are in tests/fm-pr-check-security.test.sh.
 #
 # Sourced by those scripts and by tests. No side effects on source beyond its
 # sourced libraries.

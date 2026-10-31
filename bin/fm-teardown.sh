@@ -2,9 +2,11 @@
 # Tear down a finished task: return the treehouse worktree, release the Orca
 # worktree, or retire a secondmate home; kill the recorded runtime endpoint,
 # clear volatile state, and transition this home's backlog item for ship and
-# scout tasks before reporting success (a secondmate teardown transitions none,
-# since secondmates are not backlog items), then refresh/prune the project's
+# scout tasks before reporting success (secondmates and forge-only orphans
+# transition none, since they are not backlog items), then refresh/prune the project's
 # clone for PR-based ship tasks.
+# A valid orphan PR record with no window, backend, worktree, or project fields
+# takes records-only cleanup, without a worker endpoint or project refresh.
 # An endpoint whose close could not do its job REFUSES before any record naming
 # it is removed: those records are the only thing that names what survived, so
 # reporting such a close as a completed cleanup strands the endpoint instead of
