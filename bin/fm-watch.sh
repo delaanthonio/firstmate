@@ -2282,6 +2282,7 @@ FM_ACTIVE_CHECK_PGID=
 FM_CHECK_OUTPUT=
 FM_CHECK_RESULT=
 FM_CHECK_SIGNAL_PENDING=
+FM_WATCH_STOP_SIGNAL=
 
 fm_check_output_cleanup() {
   [ -z "$FM_CHECK_OUTPUT" ] || rm -f -- "$FM_CHECK_OUTPUT"
@@ -2326,7 +2327,7 @@ fm_active_check_stop() {
 # its trap because bash ignores a direct SIGINT while a child runs.
 watcher_stop_signals() {
   trap - HUP TERM
-  trap 'exit 1' INT
+  trap 'FM_WATCH_STOP_SIGNAL=INT; exit 1' INT
 }
 
 run_check_capture() {
@@ -2339,7 +2340,8 @@ run_check_capture() {
   # Defer stop signals only until the check's process group is recorded for
   # watcher_cleanup. Keep command substitutions out of this window: bash 5.2
   # can drop a trap that is pending when one is parsed (watcher_stop_signals).
-  trap 'FM_CHECK_SIGNAL_PENDING=1' HUP INT TERM
+  trap 'FM_CHECK_SIGNAL_PENDING=1' HUP TERM
+  trap 'FM_WATCH_STOP_SIGNAL=INT; FM_CHECK_SIGNAL_PENDING=1' INT
   set -m
   ( FM_CHECK_OWNED_GROUP=1 run_check_process "$@" ) > "$FM_CHECK_OUTPUT" 2>/dev/null &
   FM_ACTIVE_CHECK_PID=$!
@@ -2378,7 +2380,8 @@ watcher_capture() {  # <backend> <target> <lines> [expected-label]
   WATCHER_CAPTURE=
   FM_CAPTURE_OUTPUT=$(mktemp "$STATE/.fm-capture-output.XXXXXX") || return 1
   FM_CHECK_SIGNAL_PENDING=
-  trap 'FM_CHECK_SIGNAL_PENDING=1' HUP INT TERM
+  trap 'FM_CHECK_SIGNAL_PENDING=1' HUP TERM
+  trap 'FM_WATCH_STOP_SIGNAL=INT; FM_CHECK_SIGNAL_PENDING=1' INT
   # The group's stderr is redirected before the fork: bash 3.2 on macOS can
   # print a harmless "child setpgid ... Operation not permitted" race from the
   # child before the command's own redirections apply.
@@ -2770,11 +2773,19 @@ watcher_cleanup() {
   fm_check_output_cleanup
   fm_capture_output_cleanup
   fm_custom_check_snapshot_cleanup
-  if [ "$owns_lock" -eq 1 ] \
-    && ! fm_recovery_transition "$WATCHER_DOWNTIME_MARKER" "$transition" "$WATCH_LOCK" \
+  if [ "$owns_lock" -eq 1 ]; then
+    if [ "$cleanup_status" -eq 0 ] \
+      && [ "${FM_WATCH_QUIET_ROTATION:-0}" = 1 ] \
+      && [ "${FM_WATCH_FOREGROUND_CHECKPOINT:-0}" = 1 ] \
+      && [ "${FM_WATCH_STOP_SIGNAL:-}" = INT ] \
+      && [ -z "${FM_WATCH_DELIVERED_REASON:-}" ] \
+      && ! afk_present; then
+      fm_lock_release "$WATCH_LOCK" || cleanup_status=1
+    elif ! fm_recovery_transition "$WATCHER_DOWNTIME_MARKER" "$transition" "$WATCH_LOCK" \
       downtime "$CLEANUP_LOCK_BOUND"; then
-    echo "watcher: recovery state could not be persisted; retaining stale lock evidence" >&2
-    cleanup_status=1
+      echo "watcher: recovery state could not be persisted; retaining stale lock evidence" >&2
+      cleanup_status=1
+    fi
   fi
   return "$cleanup_status"
 }

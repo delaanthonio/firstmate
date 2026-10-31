@@ -58,7 +58,7 @@ trap 'rm -f "$OUT" "$ERR"' EXIT
 FAILURES=0
 while [ "$FAILURES" -lt "$MAX_FAILURES" ]; do
   RC=0
-  "$SCRIPT_DIR/fm-watch-checkpoint.sh" --seconds "$CHECKPOINT_SECONDS" >"$OUT" 2>"$ERR" || RC=$?
+  FM_DROID_BACKGROUND_CYCLE=1 "$SCRIPT_DIR/fm-watch-checkpoint.sh" --seconds "$CHECKPOINT_SECONDS" >"$OUT" 2>"$ERR" || RC=$?
   if [ "$RC" -eq 124 ] && grep -q '^checkpoint:' "$OUT"; then
     FAILURES=0
     continue

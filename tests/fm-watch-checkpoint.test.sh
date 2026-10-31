@@ -38,7 +38,29 @@ test_quiet_checkpoint_exits_124_cleanly() {
   expect_code 124 "$status" "quiet checkpoint exit"
   assert_contains "$(cat "$out")" "checkpoint: no actionable wake within 1s" "quiet checkpoint line missing"
   assert_absent "$home/state/.watch.lock/pid" "watch lock pid survived quiet checkpoint timeout"
+  case "$(cat "$home/state/.watcher-down")" in
+    pending:downtime:*) ;;
+    *) fail "foreground checkpoint did not preserve its downtime recovery contract" ;;
+  esac
   pass "quiet checkpoint exits 124 with a clean checkpoint line and no live lock"
+}
+
+test_droid_rotation_keeps_away_and_quiet_cleanup() {
+  local home mode status
+  for mode in away quiet; do
+    home=$(make_home "droid-rotation-$mode")
+    printf '%s\n' "$mode" > "$home/state/.afk"
+    status=0
+    FM_HOME="$home" FM_DROID_BACKGROUND_CYCLE=1 FM_POLL=1 FM_CHECK_INTERVAL=999999 \
+      "$CHECKPOINT" --seconds 1 >"$home/out.txt" 2>"$home/err.txt" || status=$?
+    expect_code 124 "$status" "$mode checkpoint exit"
+    case "$(cat "$home/state/.watcher-down")" in
+      pending:downtime:*) ;;
+      *) fail "Droid rotation changed $mode recovery cleanup" ;;
+    esac
+    assert_equals "$(cat "$home/state/.afk")" "$mode" "Droid rotation changed the active posture"
+    pass "Droid rotation leaves $mode cleanup unchanged"
+  done
 }
 
 test_perl_timeout_fallback_honors_cleanup_bound_before_escalating() {
@@ -456,9 +478,9 @@ test_droid_running_cycle_allows_turn_end() {
 #!/usr/bin/env bash
 exit 0
 SH
-  chmod +x "$home/state/idle.check.sh"
-  printf 'fm-custom-check-v1\n%s\n' "$(shasum -a 256 "$home/state/idle.check.sh" | awk '{print $1}')" > "$home/state/idle.check-trust"
-  chmod 600 "$home/state/idle.check-trust"
+  chmod 0700 "$home/state/idle.check.sh"
+  FM_HOME="$home" "$ROOT/bin/fm-check-register.sh" idle >/dev/null \
+    || fail "could not register the idle check for the Droid turn-end test"
   status=0
   out=$(printf '{"stop_hook_active":false}' | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" bash "$ROOT/bin/fm-turnend-guard.sh" 2>&1) || status=$?
   expect_code 2 "$status" "the same primary must block Stop before the background watcher starts"
@@ -496,12 +518,75 @@ SH
   pass "Droid background cycle satisfies the existing turn-end guard without a guard change"
 }
 
+test_droid_real_quiet_rotations_preserve_recovery_and_concurrent_wakes() {
+  local initial home cycle_pid watcher_pid previous rotations i status marker
+  for initial in absent acked; do
+    home=$(make_home "droid-real-rotations-$initial")
+    marker='acked:downtime:previous.1.aaa'
+    [ "$initial" = absent ] || printf '%s\n' "$marker" > "$home/state/.watcher-down"
+    fm_test_track_watcher_state "$home/state"
+    FM_HOME="$home" FM_DROID_WATCH_CHECKPOINT=3 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+      FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+      "$ROOT/bin/fm-watch-droid-background.sh" >"$home/out.txt" 2>"$home/err.txt" &
+    cycle_pid=$!
+    fm_test_track_child "$cycle_pid"
+    previous=
+    rotations=0
+    i=0
+    while [ "$rotations" -lt 3 ] && [ "$i" -lt 600 ]; do
+      kill -0 "$cycle_pid" 2>/dev/null \
+        || fail "Droid cycle ended during quiet rotation: $(cat "$home/out.txt" "$home/err.txt")"
+      watcher_pid=$(cat "$home/state/.watch.lock/pid" 2>/dev/null || true)
+      if [ -n "$watcher_pid" ] && [ "$watcher_pid" != "$previous" ] \
+        && [ -e "$home/state/.last-watcher-beat" ] \
+        && kill -0 "$watcher_pid" 2>/dev/null; then
+        previous=$watcher_pid
+        rotations=$((rotations + 1))
+      fi
+      sleep 0.05
+      i=$((i + 1))
+    done
+    [ "$rotations" -eq 3 ] || fail "Droid cycle did not run multiple real quiet checkpoints"
+    [ ! -s "$home/out.txt" ] && [ ! -s "$home/err.txt" ] \
+      || fail "real quiet checkpoints leaked output: $(cat "$home/out.txt" "$home/err.txt")"
+    [ ! -s "$home/state/.wake-queue" ] || fail "quiet rotation invented a durable event"
+    if [ "$initial" = absent ]; then
+      assert_absent "$home/state/.watcher-down" "quiet rotation invented downtime"
+    else
+      assert_equals "$(cat "$home/state/.watcher-down")" "$marker" "quiet rotation changed acknowledged recovery"
+    fi
+
+    kill -STOP "$watcher_pid" || fail "could not pause the real watcher before its timeout"
+    append_wake "$home/state" check concurrent 'check: queued during quiet rotation' \
+      || fail "could not append during the real checkpoint"
+    marker=$(cat "$home/state/.watcher-down")
+    sleep 4
+    kill -CONT "$watcher_pid" 2>/dev/null || true
+    i=0
+    while kill -0 "$cycle_pid" 2>/dev/null && [ "$i" -lt 300 ]; do
+      sleep 0.05
+      i=$((i + 1))
+    done
+    kill -0 "$cycle_pid" 2>/dev/null && fail "Droid cycle did not deliver the queued real event"
+    status=0
+    wait "$cycle_pid" || status=$?
+    expect_code 0 "$status" "Droid real wake after quiet rotation"
+    assert_contains "$(cat "$home/out.txt")" 'check: rearm-resurface' "queued real event was not resurfaced"
+    assert_not_contains "$(cat "$home/out.txt")" 'checkpoint: no actionable' "quiet rotation leaked checkpoint output"
+    assert_contains "$(cat "$home/state/.wake-queue")" 'check: queued during quiet rotation' "real event was discarded"
+    assert_equals "$(cat "$home/state/.watcher-down")" "announced:${marker#pending:}" "real recovery generation was replaced during cleanup"
+    pass "Droid real quiet rotations preserve $initial recovery and an event queued at timeout"
+  done
+}
+
+test_droid_real_quiet_rotations_preserve_recovery_and_concurrent_wakes
 test_droid_quiet_checkpoints_loop_without_output
 test_droid_actionable_outputs_and_away_delegation
 test_droid_failure_bound_and_reset
 test_droid_invalid_failure_bound
 test_droid_running_cycle_allows_turn_end
 test_quiet_checkpoint_exits_124_cleanly
+test_droid_rotation_keeps_away_and_quiet_cleanup
 test_perl_timeout_fallback_honors_cleanup_bound_before_escalating
 test_announced_recovery_is_not_reannounced_by_next_checkpoint
 test_never_announced_recovery_is_announced_once
