@@ -45,7 +45,7 @@ if ! fm_lock_try_acquire "$LOCK"; then LOCK=; exit 0; fi
 [ "$(fm_meta_get "$META" spawn_gen)" = "$GEN" ] || exit 0
 [ "$(fm_meta_get "$META" effective_model)" != "$MODEL" ] || exit 0
 TMP=$(mktemp "$META.droid-model.XXXXXX")
-awk '!/^effective_model=/' "$META" > "$TMP"
-printf 'effective_model=%s\n' "$MODEL" >> "$TMP"
+printf 'effective_model=%s\n' "$MODEL" > "$TMP"
+awk '!/^effective_model=/' "$META" >> "$TMP"
 mv -f "$TMP" "$META"
 TMP=

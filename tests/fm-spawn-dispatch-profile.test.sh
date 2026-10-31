@@ -1295,7 +1295,7 @@ test_droid_observes_default_model_without_pinning_it() {
 }
 
 test_droid_runtime_model_reconciliation() {
-  local rec id out status meta settings hook gen payload
+  local rec id out status meta settings hook gen payload event
   id=droid-runtime-model
   rec=$(make_spawn_case "$id" droid "$id")
   read_case_record "$rec"
@@ -1309,6 +1309,16 @@ test_droid_runtime_model_reconciliation() {
   settings="$HOME_DIR/state/$id.droid-settings.json"
   hook=$(jq -r '.hooks.SessionStart[0].hooks[0].command' "$settings")
   gen=$(sed -n 's/^spawn_gen=//p' "$meta")
+  printf '%s\n' 'pr=https://github.com/example/repo/pull/1' \
+    'pr_head=0123456789012345678901234567890123456789' 'x_request=runtime-review' >> "$meta"
+  # shellcheck source=bin/fm-pr-lib.sh
+  . "$ROOT/bin/fm-pr-lib.sh"
+  fm_pr_poll_prepare "$HOME_DIR/state" "$id" github \
+    https://github.com/example/repo/pull/1 github.com example/repo 1 "$ROOT/bin/fm-pr-poll.sh" \
+    || fail 'could not prepare the runtime accounting PR registration'
+  fm_pr_poll_publish_prepared || fail 'could not publish the runtime accounting PR registration'
+  fm_pr_poll_artifacts_valid "$HOME_DIR/state" "$id" "$ROOT/bin/fm-pr-poll.sh" \
+    || fail 'PR registration was invalid before runtime reconciliation'
   printf '%s\n' '{"model":"runtime-model","secret":"must-not-copy"}' > "$CASE_DIR/session.settings.json"
   payload=$(jq -n --arg path "$CASE_DIR/session.jsonl" '{transcript_path:$path}')
   mkdir "$HOME_DIR/state/.meta-$id.lock"
@@ -1321,11 +1331,18 @@ test_droid_runtime_model_reconciliation() {
   assert_equals "runtime-model" "$(sed -n 's/^effective_model=//p' "$meta")" 'runtime model was not reconciled'
   assert_equals "default" "$(sed -n 's/^model=//p' "$meta")" 'runtime observation changed the requested selection'
   assert_not_contains "$(cat "$meta")" must-not-copy 'runtime reconciliation copied credentials'
-  printf '%s\n' '{"model":"custom:my-latest-model"}' > "$CASE_DIR/session.settings.json"
-  printf '%s' "$payload" | bash -c "$hook" || fail 'first-contact reconciliation failed'
-  assert_equals "custom:my-latest-model" "$(sed -n 's/^effective_model=//p' "$meta")" 'first contact did not update accounting'
+  fm_pr_poll_artifacts_valid "$HOME_DIR/state" "$id" "$ROOT/bin/fm-pr-poll.sh" \
+    || fail 'post-launch reconciliation invalidated registered PR identity'
+  for event in SessionStart PreToolUse Stop; do
+    hook=$(jq -r --arg event "$event" '.hooks[$event][0].hooks[-1].command' "$settings")
+    printf '{"model":"custom:my-latest-model-%s"}\n' "$event" > "$CASE_DIR/session.settings.json"
+    printf '%s' "$payload" | bash -c "$hook" || fail "$event reconciliation failed"
+    assert_equals "custom:my-latest-model-$event" "$(sed -n 's/^effective_model=//p' "$meta")" "$event did not update accounting"
+    fm_pr_poll_artifacts_valid "$HOME_DIR/state" "$id" "$ROOT/bin/fm-pr-poll.sh" \
+      || fail "$event reconciliation invalidated registered PR identity"
+  done
   printf '%s' "$payload" | bash "$ROOT/bin/fm-droid-model.sh" observe "$meta" retired-generation
-  assert_equals "custom:my-latest-model" "$(sed -n 's/^effective_model=//p' "$meta")" 'retired incarnation overwrote accounting'
+  assert_equals "custom:my-latest-model-Stop" "$(sed -n 's/^effective_model=//p' "$meta")" 'retired incarnation overwrote accounting'
   pass "Droid reconciles runtime accounting without pinning selection or blocking spawn"
 }
 
