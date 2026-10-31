@@ -1,0 +1,178 @@
+Live CLI verification
+
+The registered contributions check injects 78 seconds of local latency, then invokes the real fm-contributions.sh poll against an empty isolated home. No forge, harness, backend, watcher, or guard executable was replaced in these live checks. This proves scheduling budgets; it does not measure production forge or fleet snapshot latency.
+
+Turn-end guard exit 2 is the expected blocking result; watcher exit 0 delivers the wake. A quiet bounded checkpoint exits 124. Native vendor hook dispatch was not invoked; the shared hook executable was driven directly.
+
+guard-ordinary30-allowancedefault-delay78
+Environment: {"FM_CHECK_INTERVAL": "300", "FM_CHECK_TIMEOUT": "30", "FM_HEARTBEAT": "999999", "FM_HOME": "/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/guard-ordinary30-allowancedefault-delay78", "FM_POLL": "1", "FM_ROOT_OVERRIDE": "/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/guard-ordinary30-allowancedefault-delay78", "FM_SIGNAL_GRACE": "1"}
+$ bash /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/bin/fm-turnend-guard.sh
+exit=2 elapsed=108.94s
+
+fm-turnend-guard: check timed out after 30s: /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/guard-ordinary30-allowancedefault-delay78/state/a-ordinary.check.sh
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  TURN WOULD END WITH A DUE CHECK WAKE
+●  /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/guard-ordinary30-allowancedefault-delay78/state/contributions.check.sh
+●  whole contributions poll completed
+●  Drain queued wakes before ending the turn: bin/fm-wake-drain.sh
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Persisted wake queue:
+1793471967	1	check	/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/guard-ordinary30-allowancedefault-delay78/state/contributions.check.sh	check: /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/guard-ordinary30-allowancedefault-delay78/state/contributions.check.sh: whole contributions poll completed
+
+Contributions completed: True; ordinary sibling completed: False; watcher lock survived: False
+
+watcher-ordinary30-allowancedefault-delay78
+Environment: {"FM_CHECK_INTERVAL": "300", "FM_CHECK_TIMEOUT": "30", "FM_HEARTBEAT": "999999", "FM_HOME": "/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/watcher-ordinary30-allowancedefault-delay78", "FM_POLL": "1", "FM_SIGNAL_GRACE": "1"}
+$ bash /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/bin/fm-watch-checkpoint.sh --seconds 150
+exit=0 elapsed=109.73s
+check: /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/watcher-ordinary30-allowancedefault-delay78/state/contributions.check.sh: whole contributions poll completed
+
+
+Persisted wake queue:
+1793471967	1	check	/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/watcher-ordinary30-allowancedefault-delay78/state/contributions.check.sh	check: /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/watcher-ordinary30-allowancedefault-delay78/state/contributions.check.sh: whole contributions poll completed
+
+Contributions completed: True; ordinary sibling completed: False; watcher lock survived: False
+
+guard-ordinary1-allowance2-delay6
+Environment: {"FM_CHECK_INTERVAL": "300", "FM_CHECK_TIMEOUT": "1", "FM_CONTRIBUTIONS_CHECK_TIMEOUT": "2", "FM_HEARTBEAT": "999999", "FM_HOME": "/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/guard-ordinary1-allowance2-delay6", "FM_POLL": "1", "FM_ROOT_OVERRIDE": "/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/guard-ordinary1-allowance2-delay6", "FM_SIGNAL_GRACE": "1"}
+$ bash /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/bin/fm-turnend-guard.sh
+exit=2 elapsed=2.64s
+
+fm-turnend-guard: check timed out after 2s: /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/guard-ordinary1-allowance2-delay6/state/contributions.check.sh
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  TURN WOULD END BLIND - SUPERVISION IS OFF
+●  1 registered custom check(s), but no live watcher holds this home lock (last beat: never).
+●  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Persisted wake queue:
+
+Contributions completed: False; ordinary sibling completed: False; watcher lock survived: False
+
+guard-ordinary6-allowance1-delay3
+Environment: {"FM_CHECK_INTERVAL": "300", "FM_CHECK_TIMEOUT": "6", "FM_CONTRIBUTIONS_CHECK_TIMEOUT": "1", "FM_HEARTBEAT": "999999", "FM_HOME": "/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/guard-ordinary6-allowance1-delay3", "FM_POLL": "1", "FM_ROOT_OVERRIDE": "/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/guard-ordinary6-allowance1-delay3", "FM_SIGNAL_GRACE": "1"}
+$ bash /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/bin/fm-turnend-guard.sh
+exit=2 elapsed=3.92s
+
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  TURN WOULD END WITH A DUE CHECK WAKE
+●  /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/guard-ordinary6-allowance1-delay3/state/contributions.check.sh
+●  whole contributions poll completed
+●  Drain queued wakes before ending the turn: bin/fm-wake-drain.sh
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Persisted wake queue:
+1793471975	1	check	/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/guard-ordinary6-allowance1-delay3/state/contributions.check.sh	check: /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/guard-ordinary6-allowance1-delay3/state/contributions.check.sh: whole contributions poll completed
+
+Contributions completed: True; ordinary sibling completed: False; watcher lock survived: False
+
+guard-ordinary1-allowanceinvalid-delay3
+Environment: {"FM_CHECK_INTERVAL": "300", "FM_CHECK_TIMEOUT": "1", "FM_CONTRIBUTIONS_CHECK_TIMEOUT": "invalid", "FM_HEARTBEAT": "999999", "FM_HOME": "/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/guard-ordinary1-allowanceinvalid-delay3", "FM_POLL": "1", "FM_ROOT_OVERRIDE": "/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/guard-ordinary1-allowanceinvalid-delay3", "FM_SIGNAL_GRACE": "1"}
+$ bash /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/bin/fm-turnend-guard.sh
+exit=2 elapsed=4.01s
+
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  TURN WOULD END WITH A DUE CHECK WAKE
+●  /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/guard-ordinary1-allowanceinvalid-delay3/state/contributions.check.sh
+●  whole contributions poll completed
+●  Drain queued wakes before ending the turn: bin/fm-wake-drain.sh
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Persisted wake queue:
+1793471979	1	check	/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/guard-ordinary1-allowanceinvalid-delay3/state/contributions.check.sh	check: /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/guard-ordinary1-allowanceinvalid-delay3/state/contributions.check.sh: whole contributions poll completed
+
+Contributions completed: True; ordinary sibling completed: False; watcher lock survived: False
+
+watcher-ordinary1-allowance2-delay6
+Environment: {"FM_CHECK_INTERVAL": "300", "FM_CHECK_TIMEOUT": "1", "FM_CONTRIBUTIONS_CHECK_TIMEOUT": "2", "FM_HEARTBEAT": "999999", "FM_HOME": "/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/watcher-ordinary1-allowance2-delay6", "FM_POLL": "1", "FM_SIGNAL_GRACE": "1"}
+$ bash /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/bin/fm-watch-checkpoint.sh --seconds 12
+exit=124 elapsed=12.17s
+checkpoint: no actionable wake within 12s
+
+
+Persisted wake queue:
+
+Contributions completed: False; ordinary sibling completed: False; watcher lock survived: False
+
+watcher-ordinary6-allowance1-delay3
+Environment: {"FM_CHECK_INTERVAL": "300", "FM_CHECK_TIMEOUT": "6", "FM_CONTRIBUTIONS_CHECK_TIMEOUT": "1", "FM_HEARTBEAT": "999999", "FM_HOME": "/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/watcher-ordinary6-allowance1-delay3", "FM_POLL": "1", "FM_SIGNAL_GRACE": "1"}
+$ bash /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/bin/fm-watch-checkpoint.sh --seconds 12
+exit=0 elapsed=4.64s
+check: /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/watcher-ordinary6-allowance1-delay3/state/contributions.check.sh: whole contributions poll completed
+
+
+Persisted wake queue:
+1793471996	1	check	/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/watcher-ordinary6-allowance1-delay3/state/contributions.check.sh	check: /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/watcher-ordinary6-allowance1-delay3/state/contributions.check.sh: whole contributions poll completed
+
+Contributions completed: True; ordinary sibling completed: False; watcher lock survived: False
+
+watcher-ordinary1-allowanceinvalid-delay3
+Environment: {"FM_CHECK_INTERVAL": "300", "FM_CHECK_TIMEOUT": "1", "FM_CONTRIBUTIONS_CHECK_TIMEOUT": "invalid", "FM_HEARTBEAT": "999999", "FM_HOME": "/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/watcher-ordinary1-allowanceinvalid-delay3", "FM_POLL": "1", "FM_SIGNAL_GRACE": "1"}
+$ bash /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/bin/fm-watch-checkpoint.sh --seconds 12
+exit=0 elapsed=4.66s
+check: /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/watcher-ordinary1-allowanceinvalid-delay3/state/contributions.check.sh: whole contributions poll completed
+
+
+Persisted wake queue:
+1793472001	1	check	/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/watcher-ordinary1-allowanceinvalid-delay3/state/contributions.check.sh	check: /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/watcher-ordinary1-allowanceinvalid-delay3/state/contributions.check.sh: whole contributions poll completed
+
+Contributions completed: True; ordinary sibling completed: False; watcher lock survived: False
+
+Teardown after an actual home-directory rename (no backend stub):
+A missing old-tag temporary root was accepted. Unsafe parent, wrong-task, and foreign-home records were refused without metadata changes. The live setup never created roots outside the worktree. Present-root deletion, symlink escape, and permissions are additionally covered by the targeted teardown regression test (with its stubbed backend); those supplementary cases are not claimed as live.
+
+$ FM_HOME=/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/relocation-moved bash bin/fm-teardown.sh moved-missing
+tasktmp=/tmp/fm-firstmate-79e746c1/moved-missing
+exit=0
+teardown moved-missing complete (window fm-lab-dead:fm-moved-missing, worktree /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/missing-worktree-moved-missing)
+Backlog: moved-missing just finished (config/backlog-backend selects manual editing). Update /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/relocation-moved/data/backlog.md - move moved-missing to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/relocation-moved
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+metadata present=False unchanged=False
+
+$ FM_HOME=/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/relocation-moved bash bin/fm-teardown.sh unsafe-recorded
+tasktmp=/tmp
+exit=1
+
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/relocation-moved
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+REFUSED: unsafe task temp root removal target /tmp is not the expected firstmate task temp root
+
+metadata present=True unchanged=True
+
+$ FM_HOME=/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/relocation-moved bash bin/fm-teardown.sh unsafe-task
+tasktmp=/tmp/fm-firstmate-79e746c1/other-task
+exit=1
+
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/relocation-moved
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+REFUSED: unsafe task temp root removal target /tmp/fm-firstmate-79e746c1/other-task is not the expected firstmate task temp root
+
+metadata present=True unchanged=True
+
+$ FM_HOME=/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/relocation-moved bash bin/fm-teardown.sh unsafe-foreign
+tasktmp=/tmp/fm-2ndmate-foreign-12345678/unsafe-foreign
+exit=1
+
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/relocation-moved
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+REFUSED: unsafe task temp root removal target /tmp/fm-2ndmate-foreign-12345678/unsafe-foreign is not the expected firstmate task temp root
+
+metadata present=True unchanged=True
+
+Before/after controls:
+The base guard times out a 3-second contributions check under an ordinary 1-second bound with no queued wake; the target completes it and durably queues the wake. The base teardown refuses the exact moved-home record that the target successfully retired. See counterfactual.json and relocation-counterfactual.json.
+
+Baseline targeted command:
+TMPDIR="$PWD/.validation-temp" bash bin/fm-test-run.sh tests/fm-gotmp.test.sh tests/fm-standing-checks.test.sh tests/fm-watch-checkpoint.test.sh tests/fm-turnend-guard.test.sh tests/fm-droid-primary.test.sh --jobs 1
+All selected scripts exited 0. No lint, formatting, static-analysis, broad-suite, PR, push, or CI phase was run.
+No screenshot was captured because the changed runtime surfaces are CLI supervision and teardown; their real output and persisted wake state are retained above.

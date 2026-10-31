@@ -1,0 +1,20 @@
+[
+  {
+    "version": "base",
+    "command": "bash /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/base/bin/fm-turnend-guard.sh",
+    "exit": 2,
+    "elapsed_seconds": 1.97,
+    "stdout": "",
+    "stderr": "fm-turnend-guard: check timed out after FM_CHECK_TIMEOUT: /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/counterfactual-base/state/contributions.check.sh\n\u25cf\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\u25cf  TURN WOULD END BLIND - SUPERVISION IS OFF\n\u25cf  1 registered custom check(s), but no live watcher holds this home lock (last beat: never).\n\u25cf  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180.\n\u25cf\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n",
+    "wake_queue": ""
+  },
+  {
+    "version": "target",
+    "command": "bash /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/bin/fm-turnend-guard.sh",
+    "exit": 2,
+    "elapsed_seconds": 3.66,
+    "stdout": "",
+    "stderr": "\u25cf\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\u25cf  TURN WOULD END WITH A DUE CHECK WAKE\n\u25cf  /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/counterfactual-target/state/contributions.check.sh\n\u25cf  completed contributions poll\n\u25cf  Drain queued wakes before ending the turn: bin/fm-wake-drain.sh\n\u25cf\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n",
+    "wake_queue": "1793471978\t1\tcheck\t/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/counterfactual-target/state/contributions.check.sh\tcheck: /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/counterfactual-target/state/contributions.check.sh: completed contributions poll\n"
+  }
+]

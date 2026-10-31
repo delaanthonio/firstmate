@@ -1,0 +1,12 @@
+{
+  "name": "unsafe-task",
+  "command": "bash bin/fm-teardown.sh unsafe-task",
+  "home": "/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/relocation-moved",
+  "recorded_temp": "/tmp/fm-firstmate-79e746c1/other-task",
+  "exit": 1,
+  "elapsed_seconds": 2.08,
+  "stdout": "",
+  "stderr": "fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/relocation-moved\nWARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\nREFUSED: unsafe task temp root removal target /tmp/fm-firstmate-79e746c1/other-task is not the expected firstmate task temp root\n",
+  "meta_present": true,
+  "meta_unchanged": true
+}

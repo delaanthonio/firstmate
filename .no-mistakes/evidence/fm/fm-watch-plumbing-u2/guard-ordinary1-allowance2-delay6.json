@@ -1,0 +1,33 @@
+{
+  "name": "guard-ordinary1-allowance2-delay6",
+  "environment": {
+    "FM_HOME": "/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/guard-ordinary1-allowance2-delay6",
+    "FM_POLL": "1",
+    "FM_SIGNAL_GRACE": "1",
+    "FM_CHECK_INTERVAL": "300",
+    "FM_CHECK_TIMEOUT": "1",
+    "FM_HEARTBEAT": "999999",
+    "FM_CONTRIBUTIONS_CHECK_TIMEOUT": "2",
+    "FM_ROOT_OVERRIDE": "/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/guard-ordinary1-allowance2-delay6"
+  },
+  "steps": [
+    {
+      "command": "bash /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/bin/fm-check-register.sh contributions",
+      "exit": 0,
+      "elapsed_seconds": 0.15,
+      "stdout": "registered: state/contributions.check.sh\n",
+      "stderr": ""
+    },
+    {
+      "command": "bash /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/bin/fm-turnend-guard.sh",
+      "exit": 2,
+      "elapsed_seconds": 2.64,
+      "stdout": "",
+      "stderr": "fm-turnend-guard: check timed out after 2s: /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/guard-ordinary1-allowance2-delay6/state/contributions.check.sh\n\u25cf\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\u25cf  TURN WOULD END BLIND - SUPERVISION IS OFF\n\u25cf  1 registered custom check(s), but no live watcher holds this home lock (last beat: never).\n\u25cf  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180.\n\u25cf\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+    }
+  ],
+  "contributions_completed": false,
+  "ordinary_completed": false,
+  "wake_queue": "",
+  "watcher_lock_survived": false
+}

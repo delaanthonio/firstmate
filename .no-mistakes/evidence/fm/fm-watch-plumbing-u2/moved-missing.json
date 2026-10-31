@@ -1,0 +1,12 @@
+{
+  "name": "moved-missing",
+  "command": "bash bin/fm-teardown.sh moved-missing",
+  "home": "/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/relocation-moved",
+  "recorded_temp": "/tmp/fm-firstmate-79e746c1/moved-missing",
+  "exit": 0,
+  "elapsed_seconds": 5.67,
+  "stdout": "teardown moved-missing complete (window fm-lab-dead:fm-moved-missing, worktree /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/missing-worktree-moved-missing)\nBacklog: moved-missing just finished (config/backlog-backend selects manual editing). Update /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/relocation-moved/data/backlog.md - move moved-missing to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.\n",
+  "stderr": "fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/relocation-moved\n\u25cf\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\u25cf  WATCHER DOWN - SUPERVISION IS OFF\n\u25cf  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).\n\u25cf  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.\n\u25cf  This is a supervision warning only; the guarded operation WILL still run.\n\u25cf  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180.\n\u25cf\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n",
+  "meta_present": false,
+  "meta_unchanged": false
+}

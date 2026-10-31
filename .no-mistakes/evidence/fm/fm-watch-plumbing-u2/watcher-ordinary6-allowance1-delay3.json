@@ -1,0 +1,32 @@
+{
+  "name": "watcher-ordinary6-allowance1-delay3",
+  "environment": {
+    "FM_HOME": "/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/watcher-ordinary6-allowance1-delay3",
+    "FM_POLL": "1",
+    "FM_SIGNAL_GRACE": "1",
+    "FM_CHECK_INTERVAL": "300",
+    "FM_CHECK_TIMEOUT": "6",
+    "FM_HEARTBEAT": "999999",
+    "FM_CONTRIBUTIONS_CHECK_TIMEOUT": "1"
+  },
+  "steps": [
+    {
+      "command": "bash /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/bin/fm-check-register.sh contributions",
+      "exit": 0,
+      "elapsed_seconds": 0.15,
+      "stdout": "registered: state/contributions.check.sh\n",
+      "stderr": ""
+    },
+    {
+      "command": "bash /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/bin/fm-watch-checkpoint.sh --seconds 12",
+      "exit": 0,
+      "elapsed_seconds": 4.64,
+      "stdout": "check: /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/watcher-ordinary6-allowance1-delay3/state/contributions.check.sh: whole contributions poll completed\n",
+      "stderr": ""
+    }
+  ],
+  "contributions_completed": true,
+  "ordinary_completed": false,
+  "wake_queue": "1793471996\t1\tcheck\t/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/watcher-ordinary6-allowance1-delay3/state/contributions.check.sh\tcheck: /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69KKFF9E37XAEP269Z4Y68R/.validation-temp/watcher-ordinary6-allowance1-delay3/state/contributions.check.sh: whole contributions poll completed\n",
+  "watcher_lock_survived": false
+}
