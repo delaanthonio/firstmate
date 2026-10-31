@@ -86,16 +86,20 @@ fi
 jq -e '(.sessionDefaultSettings // {}) | has("model") | not' \
   "$FLEET_HOME/state/$SPAWN_ID.droid-settings.json" >/dev/null \
   || fail "Droid $(droid --version): default observation pinned the model"
-configured_model=
-for settings in "$HOME/.factory/settings.json" "$HOME/.factory/settings.local.json"; do
-  [ -f "$settings" ] || continue
-  value=$(jq -r '.sessionDefaultSettings.model // .model // empty' "$settings")
-  [ -z "$value" ] || configured_model=$value
+assert_equals "default" "$(sed -n 's/^model=//p' "$FLEET_HOME/state/$SPAWN_ID.meta")" 'live Droid launch lost default selection'
+spawn_gen=$(sed -n 's/^spawn_gen=//p' "$FLEET_HOME/state/$SPAWN_ID.meta")
+observation="$FLEET_HOME/state/$SPAWN_ID.meta.droid-model.$spawn_gen"
+observed_model=
+for _ in $(seq 1 120); do
+  [ ! -s "$observation" ] || observed_model=$(cat "$observation")
+  [ -z "$observed_model" ] || break
+  sleep 0.5
 done
-assert_grep "model=${configured_model:-default}" "$FLEET_HOME/state/$SPAWN_ID.meta" \
-  'live Droid record lost its configured model default'
-printf 'Droid %s live spawn: trust cleared; model=%s; runtime model override absent\n' \
-  "$(droid --version)" "${configured_model:-default}"
+case "$observed_model" in ''|default|unknown-at-spawn) fail 'live Droid did not report a concrete runtime model' ;; esac
+bash "$ROOT/bin/fm-droid-model.sh" reconcile "$FLEET_HOME/state/$SPAWN_ID.meta" "$spawn_gen"
+assert_equals "$observed_model" "$(sed -n 's/^effective_model=//p' "$FLEET_HOME/state/$SPAWN_ID.meta")" 'live Droid runtime reconciliation failed'
+printf 'Droid %s live spawn: trust cleared; effective_model=%s; runtime model override absent\n' \
+  "$(droid --version)" "$observed_model"
 pass "Droid live spawn: fresh-worktree folder trust is answered and the default model is observed"
 
 if [ "${FM_DROID_SPAWN_LIVE_ONLY:-0}" = 1 ]; then

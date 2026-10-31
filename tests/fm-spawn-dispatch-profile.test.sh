@@ -90,6 +90,14 @@ fi
 exit 0
 SH
   chmod +x "$fakebin/timeout" "$fakebin/cursor-agent"
+  cat > "$fakebin/droid" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = exec ] && [ "${2:-}" = --help ]; then
+  [ ! -e "${0%/*}/droid-no-catalog" ] || exit 1
+  printf '%s\n' 'Available Models:' '  catalog-model  Catalog Model (default)' '' 'Custom Models:'
+fi
+SH
+  chmod +x "$fakebin/droid"
   make_spawn_pi_probe "$fakebin" pi
   make_spawn_pi_probe "$fakebin" pi-signed
   printf '%s\n' "$fakebin"
@@ -1235,7 +1243,7 @@ test_droid_threads_custom_model_and_dynamic_effort_through_settings() {
 
 test_droid_observes_default_model_without_pinning_it() {
   local rec id out status scenario expected
-  for scenario in omitted sentinel local project absent invalid; do
+  for scenario in omitted sentinel local project absent unknown invalid; do
     id="droid-default-$scenario"
     rec=$(make_spawn_case "$id" droid "$id")
     read_case_record "$rec"
@@ -1253,7 +1261,11 @@ test_droid_observes_default_model_without_pinning_it() {
         printf '%s\n' '{"sessionDefaultSettings":{"model":"project-default"}}' \
           > "$WT_DIR/.factory/settings.local.json"
         expected=project-default ;;
-      absent) rm "$HOME_DIR/user-home/.factory/settings.json"; expected=default ;;
+      absent) rm "$HOME_DIR/user-home/.factory/settings.json"; expected=catalog-model ;;
+      unknown)
+        rm "$HOME_DIR/user-home/.factory/settings.json"
+        touch "$FAKEBIN_DIR/droid-no-catalog"
+        expected=unknown-at-spawn ;;
       invalid) printf '%s\n' '{bad json' > "$HOME_DIR/user-home/.factory/settings.json" ;;
     esac
     if [ "$scenario" = sentinel ]; then
@@ -1271,7 +1283,8 @@ test_droid_observes_default_model_without_pinning_it() {
       continue
     fi
     expect_code 0 "$status" "Droid default observation failed: $scenario"$'\n'"$out"
-    assert_meta_profile "$HOME_DIR/state/$id.meta" droid "$expected" default
+    assert_meta_profile "$HOME_DIR/state/$id.meta" droid default default
+    assert_equals "$expected" "$(sed -n 's/^effective_model=//p' "$HOME_DIR/state/$id.meta")" 'Droid accounting model mismatch'
     jq -e '(.sessionDefaultSettings // {}) | has("model") | not' \
       "$HOME_DIR/state/$id.droid-settings.json" >/dev/null \
       || fail "observing the Droid default must not pin it"
@@ -1279,6 +1292,41 @@ test_droid_observes_default_model_without_pinning_it() {
       'not-for-task-state' 'Droid model observation copied unrelated settings'
   done
   pass "Droid records configured defaults and local overrides without changing model selection"
+}
+
+test_droid_runtime_model_reconciliation() {
+  local rec id out status meta settings hook gen payload
+  id=droid-runtime-model
+  rec=$(make_spawn_case "$id" droid "$id")
+  read_case_record "$rec"
+  touch "$FAKEBIN_DIR/droid-no-catalog"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --harness droid)
+  status=$?
+  expect_code 0 "$status" "Droid unknown-model launch failed"$'\n'"$out"
+  meta="$HOME_DIR/state/$id.meta"
+  assert_equals "unknown-at-spawn" "$(sed -n 's/^effective_model=//p' "$meta")" 'unresolved model was not marked unknown'
+  settings="$HOME_DIR/state/$id.droid-settings.json"
+  hook=$(jq -r '.hooks.SessionStart[0].hooks[0].command' "$settings")
+  gen=$(sed -n 's/^spawn_gen=//p' "$meta")
+  printf '%s\n' '{"model":"runtime-model","secret":"must-not-copy"}' > "$CASE_DIR/session.settings.json"
+  payload=$(jq -n --arg path "$CASE_DIR/session.jsonl" '{transcript_path:$path}')
+  mkdir "$HOME_DIR/state/.meta-$id.lock"
+  printf '%s\n' "$$" > "$HOME_DIR/state/.meta-$id.lock/pid"
+  printf '%s' "$payload" | bash -c "$hook" || fail 'accounting hook blocked launch under spawn lock'
+  assert_equals "unknown-at-spawn" "$(sed -n 's/^effective_model=//p' "$meta")" 'hook ignored metadata lock'
+  rm "$HOME_DIR/state/.meta-$id.lock/pid"
+  rmdir "$HOME_DIR/state/.meta-$id.lock"
+  bash "$ROOT/bin/fm-droid-model.sh" reconcile "$meta" "$gen" || fail 'post-launch reconciliation failed'
+  assert_equals "runtime-model" "$(sed -n 's/^effective_model=//p' "$meta")" 'runtime model was not reconciled'
+  assert_equals "default" "$(sed -n 's/^model=//p' "$meta")" 'runtime observation changed the requested selection'
+  assert_not_contains "$(cat "$meta")" must-not-copy 'runtime reconciliation copied credentials'
+  printf '%s\n' '{"model":"custom:my-latest-model"}' > "$CASE_DIR/session.settings.json"
+  printf '%s' "$payload" | bash -c "$hook" || fail 'first-contact reconciliation failed'
+  assert_equals "custom:my-latest-model" "$(sed -n 's/^effective_model=//p' "$meta")" 'first contact did not update accounting'
+  printf '%s' "$payload" | bash "$ROOT/bin/fm-droid-model.sh" observe "$meta" retired-generation
+  assert_equals "custom:my-latest-model" "$(sed -n 's/^effective_model=//p' "$meta")" 'retired incarnation overwrote accounting'
+  pass "Droid reconciles runtime accounting without pinning selection or blocking spawn"
 }
 
 droid_test_trust_screen() {
@@ -1519,7 +1567,7 @@ test_droid_secondmate_uses_settings_for_profile_without_turn_end_hook() {
   settings="$HOME_DIR/state/$id.droid-settings.json"
   assert_contains "$launch" "droid --settings '$settings' --auto high" \
     "droid secondmate launch did not use the process-only settings merge"
-  jq -e '.sessionDefaultSettings == {"model":"custom:GPT-5.6-Sol-0","reasoningEffort":"dynamic"} and (has("hooks") | not)' "$settings" >/dev/null \
+  jq -e '.sessionDefaultSettings == {"model":"custom:GPT-5.6-Sol-0","reasoningEffort":"dynamic"} and (.hooks.Stop[0].hooks | length == 1)' "$settings" >/dev/null \
     || fail "droid secondmate settings did not pin both axes or unexpectedly installed a turn-end hook"
   pass "droid secondmates receive configured model and effort through settings without a turn-end hook"
 }
@@ -2720,6 +2768,7 @@ test_pi_signed_missing_binary_refuses_before_endpoint_or_metadata
 test_pi_signed_persistent_secondmate_uses_pi_extensions_and_identity
 test_droid_threads_custom_model_and_dynamic_effort_through_settings
 test_droid_observes_default_model_without_pinning_it
+test_droid_runtime_model_reconciliation
 test_droid_trust_gate
 test_droid_refuses_backends_without_viewport_capture
 test_droid_stop_hook_quotes_apostrophe_paths

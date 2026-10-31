@@ -31,10 +31,9 @@ Control uses Escape for interrupt and `/quit` for exit.
 ## Launch settings
 
 `../../../../../bin/fm-spawn.sh` writes `state/<id>.droid-settings.json` before endpoint allocation and launches Droid with that file through `--settings`.
-The settings file carries the crewmate turn-end hook plus optional model and reasoning-effort pins.
+The settings file carries accounting hooks, the crewmate turn-end hook, and optional model and reasoning-effort pins.
 It is task-local runtime state and `../../../../../bin/fm-teardown.sh` removes it.
-When the model is omitted or `default`, spawn observes the user and worktree settings for the task's `model=` record without adding a model override to the runtime settings.
-An unresolved product default remains `default`; spawn never substitutes a different model for accounting.
+[Task model selection and accounting](../../../../../docs/configuration.md) defines the separate requested and effective fields, catalog resolution, runtime reconciliation, and their consumers.
 `../../../../../bin/fm-spawn.sh` owns the folder-trust gate, its bounded wait, and the refusal on backends without verified viewport capture.
 Factory's [settings reference](https://docs.factory.com/droid-cli/settings) documents no settings-based folder-trust bypass, so spawn uses the verified control-plane answer instead of writing an undocumented trust store.
 

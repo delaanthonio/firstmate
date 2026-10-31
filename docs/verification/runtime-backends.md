@@ -541,7 +541,7 @@ The composer-classification record below observes the same gate from the other s
 ## Droid folder trust and model accounting
 
 Verified 2026-10-31 on macOS arm64 with Droid 1.1.0 and tmux 3.8.
-The [Droid adapter reference](../../.agents/skills/harness-adapters/references/harness/droid.md#launch-settings) owns the operating contract; `bin/fm-spawn.sh` owns the executable gate.
+The [Droid adapter reference](../../.agents/skills/harness-adapters/references/harness/droid.md#launch-settings) owns the launch contract; [configuration](../configuration.md) owns task model selection and accounting, and `bin/fm-spawn.sh` owns the executable gate.
 Refresh the live evidence with:
 
 ```sh
@@ -554,6 +554,8 @@ ok - Droid live spawn: fresh-worktree folder trust is answered and the default m
 ok - Droid 1.1.0 spawn live verification complete
 ```
 
+This captured output predates the split into requested and effective model fields and does not establish runtime-sidecar reconciliation.
+The current guard also requires a concrete model observation from the real session sidecar and checks its reconciliation into `effective_model`; that extended live assertion still needs a fresh run.
 The guard first opens a fresh linked worktree without a prompt and verifies the affirmative-selected folder-trust dialog.
 It then drives the real spawn path on a private tmux socket, verifies that the dialog cleared and the brief started processing, and checks that metadata records the configured default without adding a runtime model pin.
 Only the worktree provider is a fixture; the Droid binary, viewport reads, key delivery, and launch settings are real.

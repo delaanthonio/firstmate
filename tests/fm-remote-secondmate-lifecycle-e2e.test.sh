@@ -880,12 +880,13 @@ assert_absent "$PARENT/state/ios.meta" "failed remote inheritance published laun
 out=$(remote_env "$ROOT/bin/fm-spawn.sh" ios --secondmate)
 assert_contains "$out" 'remote=remote-mac backend=herdr' "remote spawn did not report separate host and backend dimensions"
 assert_grep 'harness=droid' "$PARENT/state/ios.meta" "configured remote Droid launch lost its harness"
-remote_model=$(sed -n 's/^model=//p' "$REMOTE_HOME/state/parent-route/ios.meta")
-assert_grep "model=$remote_model" "$PARENT/state/ios.meta" \
+assert_equals "default" "$(sed -n 's/^model=//p' "$PARENT/state/ios.meta")" "parent Droid record lost default selection"
+remote_model=$(sed -n 's/^effective_model=//p' "$REMOTE_HOME/state/parent-route/ios.meta")
+assert_grep "effective_model=$remote_model" "$PARENT/state/ios.meta" \
   "parent Droid record did not preserve the remote host's observed model"
 assert_grep 'effort=dynamic' "$PARENT/state/ios.meta" "configured remote Droid launch lost dynamic effort in parent metadata"
 assert_grep 'effort=dynamic' "$REMOTE_HOME/state/parent-route/ios.meta" "configured remote Droid launch lost dynamic effort in host metadata"
-jq -e '.sessionDefaultSettings == {"reasoningEffort":"dynamic"} and .hooks == null' \
+jq -e '.sessionDefaultSettings == {"reasoningEffort":"dynamic"} and (.hooks.Stop[0].hooks | length == 1)' \
   "$REMOTE_HOME/state/parent-route/ios.droid-settings.json" >/dev/null \
   || fail "configured remote Droid launch lost dynamic effort in runtime settings"
 assert_grep 'remote_host=remote-mac' "$PARENT/state/ios.meta" "parent metadata omitted the remote host"
@@ -926,7 +927,7 @@ remote_env "$ROOT/bin/fm-spawn.sh" ios --secondmate --harness droid --effort dyn
   || fail "explicit remote Droid dynamic recovery failed"
 assert_grep 'effort=dynamic' "$REMOTE_HOME/state/parent-route/ios.meta" \
   "explicit remote Droid recovery lost dynamic effort"
-jq -e '.sessionDefaultSettings == {"reasoningEffort":"dynamic"} and .hooks == null' \
+jq -e '.sessionDefaultSettings == {"reasoningEffort":"dynamic"} and (.hooks.Stop[0].hooks | length == 1)' \
   "$REMOTE_HOME/state/parent-route/ios.droid-settings.json" >/dev/null \
   || fail "explicit remote Droid recovery lost dynamic runtime settings"
 pass "explicit remote Droid recovery preserves dynamic effort end to end"
@@ -937,7 +938,7 @@ remote_env "$ROOT/bin/fm-spawn.sh" ios --secondmate >/dev/null \
   || fail "configured remote Droid recovery failed"
 assert_grep 'effort=dynamic' "$REMOTE_HOME/state/parent-route/ios.meta" \
   "configured remote Droid recovery lost dynamic effort"
-jq -e '.sessionDefaultSettings == {"reasoningEffort":"dynamic"} and .hooks == null' \
+jq -e '.sessionDefaultSettings == {"reasoningEffort":"dynamic"} and (.hooks.Stop[0].hooks | length == 1)' \
   "$REMOTE_HOME/state/parent-route/ios.droid-settings.json" >/dev/null \
   || fail "configured remote Droid recovery lost dynamic runtime settings"
 pass "configured remote Droid recovery preserves dynamic effort end to end"
