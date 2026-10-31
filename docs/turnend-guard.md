@@ -44,7 +44,8 @@ When the guard acts, the harness integration must do one of two things:
 - Force one bounded follow-up that uses the recovery instruction from the emitted session-start protocol.
 
 The same boundary also runs any due authenticated standing check under the watcher's cadence lock; actionable output is queued durably before the guard blocks or requests its bounded follow-up.
-The Relay shim, registered PR polls, and trusted custom checks retain the watcher's validation and immutable-snapshot rules, and each execution remains bounded by `FM_CHECK_TIMEOUT`.
+The Relay shim, registered PR polls, and trusted custom checks retain the watcher's validation and immutable-snapshot rules, and each execution remains bounded by `FM_CHECK_TIMEOUT`, with the whole-poll contributions allowance owned by `fm_custom_check_timeout` in `bin/fm-check-lib.sh`.
+The tracked Claude, Codex, and Droid Stop registrations allow 180 seconds so their outer hook deadline accommodates that check; Grok already uses that allowance, Cursor parks under its longer bound, and the OpenCode, Pi, and omp adapters await the guard without a separate short deadline.
 An unauthenticated state check is never executed and its rejection becomes an actionable notification; the due sweep scans every matching check before publication, so a rejection after valid actionable output is included in that same durable notification rather than hidden.
 An execution failure or timeout is logged and lets the turn end continue without that optional protection.
 The mid-turn pull warning uses the model-aware supervision verdict described below, while the turn-end guard keeps the PID-strict watcher predicate.

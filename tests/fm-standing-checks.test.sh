@@ -129,6 +129,44 @@ SH
   pass "fm_supervision_run_due_checks: timeout fails open without wedging"
 }
 
+slow_check() {  # <path> <seconds>
+  cat > "$1" <<SH
+#!/usr/bin/env bash
+sleep "$2"
+printf 'completed\n'
+SH
+  register_check "$1"
+}
+
+test_contributions_timeout_is_separate_and_bounded() {
+  local state="$TMP_ROOT/contributions-budget/state" rc out
+  mkdir -p "$state"
+  use_state_home "$state"
+  slow_check "$state/contributions.check.sh" 2
+  slow_check "$state/ordinary.check.sh" 2
+  out=$(fm_supervision_run_due_checks "$state" 300 1 true 2>&1); rc=$?
+  expect_code 0 "$rc" "contributions should finish beyond the ordinary timeout"
+  assert_contains "$out" 'timed out after 1s:' "the ordinary check lost its shorter bound"
+  assert_grep 'contributions.check.sh: completed' "$state/.wake-queue" "contributions completion was lost"
+  assert_equals "$(fm_custom_check_timeout contributions 30)" 120 "default must accommodate the full local snapshot and forge poll"
+
+  rm "$state/.last-check" "$state/.wake-queue" "$state/ordinary.check.sh"
+  out=$(FM_CONTRIBUTIONS_CHECK_TIMEOUT=1 fm_supervision_run_due_checks "$state" 300 1 true 2>&1); rc=$?
+  expect_code 1 "$rc" "the contributions override must remain a real bound"
+  assert_contains "$out" 'timed out after 1s:' "timeout diagnostics lost the effective budget"
+  assert_absent "$state/.wake-queue" "timed-out contributions queued a late completion"
+
+  rm "$state/.last-check"
+  FM_CONTRIBUTIONS_CHECK_TIMEOUT=1 fm_supervision_run_due_checks "$state" 300 4 true; rc=$?
+  expect_code 0 "$rc" "contributions must preserve a larger ordinary timeout"
+  assert_grep 'contributions.check.sh: completed' "$state/.wake-queue" "larger ordinary budget was shortened"
+  for out in 0 01 -1 invalid; do
+    assert_equals "$(FM_CONTRIBUTIONS_CHECK_TIMEOUT="$out" fm_custom_check_timeout contributions 30)" 120 \
+      "invalid contributions budget must use the bounded default"
+  done
+  pass "contributions has its own bounded allowance without widening ordinary checks or shortening larger budgets"
+}
+
 test_concurrent_runner_lock_prevents_double_run() {
   local state="$TMP_ROOT/locked/state" count rc holder owner lock
   mkdir -p "$state"
@@ -265,6 +303,7 @@ test_not_due_check_does_not_run_again
 test_missing_and_silent_checks_do_not_queue
 test_erroring_check_fails_open_and_logs_when_requested
 test_timeout_check_fails_open_and_stamps_schedule
+test_contributions_timeout_is_separate_and_bounded
 test_concurrent_runner_lock_prevents_double_run
 test_unauthenticated_check_is_rejected_without_execution
 test_leading_dangling_check_does_not_hide_valid_due_check

@@ -3020,7 +3020,8 @@ while :; do
           out=$FM_CHECK_RESULT
         elif fm_custom_check_snapshot_prepare "$STATE" "$id"; then
           custom_snapshot=$FM_CUSTOM_CHECK_SNAPSHOT
-          run_check_capture "$custom_snapshot" || exit 1
+          CHECK_TIMEOUT=$(fm_custom_check_timeout "$id" "$CHECK_TIMEOUT") \
+            run_check_capture "$custom_snapshot" || exit 1
           out=$FM_CHECK_RESULT
           fm_custom_check_snapshot_cleanup
         else
