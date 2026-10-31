@@ -19,7 +19,12 @@
 # skips this refusal, because its own merge-time draft refusal is authoritative.
 # The recorded pr= also frees the task's place in a declared project capacity
 # (bin/fm-project-capacity-lib.sh).
-# Usage: fm-pr-check.sh <task-id> <pr-url>
+# --orphan, used by fm-pr-merge.sh, explicitly creates a private kind=orphan
+# record when the requested ID and PR have no owning task. Repeated recording
+# reuses only the same orphan ID and URL. This is a forge-only record, not a
+# claim that a worker copy passed the ship custody gate; the merge helper still
+# applies all live forge, hold, and authority checks before merging.
+# Usage: fm-pr-check.sh <task-id> <pr-url> [--orphan]
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -36,7 +41,7 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 # shellcheck source=bin/fm-dod-lib.sh
 . "$SCRIPT_DIR/fm-dod-lib.sh"
 
-if [ "$#" -ne 2 ]; then
+if [ "$#" -lt 2 ] || [ "$#" -gt 3 ] || { [ "$#" -eq 3 ] && [ "$3" != --orphan ]; }; then
   echo "error: invalid PR check request" >&2
   exit 2
 fi
@@ -54,6 +59,51 @@ NUMBER=$FM_PR_NUMBER
 
 # Task-derived paths are constructed only after the canonical ID validation.
 META="$STATE/$ID.meta"
+# The task-set lock serializes record creation with spawn and teardown.
+# Existing tasks are never converted into orphans, and another record's PR
+# binding cannot be bypassed by choosing a fresh task ID.
+record_orphan() (
+  local lock meta_lock other tmp=''
+  [ -d "$STATE" ] && [ ! -L "$STATE" ] || {
+    echo "error: orphan recording requires a real state directory" >&2
+    exit 1
+  }
+  lock=$(fm_task_set_lock_path "$STATE") || exit 1
+  meta_lock=$(fm_meta_lock_path "$META") || exit 1
+  trap '[ -z "$tmp" ] || rm -f -- "$tmp"; fm_lock_release "$meta_lock" || true; fm_lock_release "$lock" || true' EXIT
+  fm_lock_acquire_wait "$lock" || exit 1
+  fm_lock_acquire_wait "$meta_lock" || exit 1
+  for other in "$STATE"/*.meta; do
+    [ -e "$other" ] || [ -L "$other" ] || continue
+    [ "$other" = "$META" ] && continue
+    [ -f "$other" ] && [ ! -L "$other" ] && [ -r "$other" ] || {
+      echo "error: cannot establish orphan ownership: unreadable task record $other" >&2
+      exit 1
+    }
+    if grep -qxF "pr=$URL" "$other"; then
+      echo "error: $URL already belongs to task $(basename "$other" .meta); use that task's merge record" >&2
+      exit 1
+    fi
+  done
+  if [ -e "$META" ] || [ -L "$META" ]; then
+    if ! { [ -f "$META" ] && [ ! -L "$META" ] && [ "$(fm_pr_file_link_count "$META")" = 1 ] \
+      && grep -qxF 'kind=orphan' "$META" && grep -qxF "pr=$URL" "$META"; }; then
+      echo "error: --orphan refuses to replace an existing task or change its PR identity" >&2
+      exit 1
+    fi
+    exit 0
+  fi
+  umask 077
+  tmp=$(mktemp "$STATE/.fm-pr-orphan.XXXXXX") || exit 1
+  printf 'kind=orphan\npr=%s\n' "$URL" > "$tmp" || exit 1
+  chmod 0600 "$tmp" || exit 1
+  mv -- "$tmp" "$META" || exit 1
+  tmp=''
+)
+if [ "${3:-}" = --orphan ]; then
+  record_orphan || exit 1
+fi
+
 if [ ! -f "$META" ] || [ -L "$META" ] || [ "$(fm_pr_file_link_count "$META")" != 1 ]; then
   echo "error: task metadata is unavailable" >&2
   exit 1
@@ -150,8 +200,8 @@ fi
 # authoritative.
 WT=$(grep '^worktree=' "$META" | tail -1 | cut -d= -f2- || true)
 PR_HEAD=
-if [ "$PROVIDER" = github ] && [ -n "$WT" ] && [ -d "$WT" ] && command -v gh >/dev/null 2>&1; then
-  if REMOTE_HEAD=$(cd "$WT" && gh pr view "$URL" --json headRefOid -q .headRefOid 2>/dev/null) \
+if [ "$PROVIDER" = github ] && { [ -n "$WT" ] && [ -d "$WT" ] || [ "$KIND" = orphan ]; } && command -v gh >/dev/null 2>&1; then
+  if REMOTE_HEAD=$(if [ -n "$WT" ]; then cd "$WT" || exit 1; fi; gh pr view "$URL" --json headRefOid -q .headRefOid 2>/dev/null) \
     && fm_pr_head_valid "$REMOTE_HEAD"; then
     PR_HEAD=$REMOTE_HEAD
   fi
