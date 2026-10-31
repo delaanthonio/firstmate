@@ -46,11 +46,11 @@
 # github_branch_rules_unavailable_on_plan owns the narrow plan-unavailable
 # exception; every other unreadable required source refuses.
 # Every failing condition is reported, not just the first.
-# The verified head is then passed to gh as
+# For an ordinary PR merge, the verified head is then passed to gh as
 # --match-head-commit, so a push that lands between that read and the merge
 # fails the merge instead of landing commits nothing verified. Reading that
-# state needs gh and jq, and either one absent stops the merge before any
-# state is recorded. An attended --allow-red <check-name> may be passed once,
+# state needs gh and jq, and either one absent stops the merge.
+# An attended --allow-red <check-name> may be passed once,
 # with the name as a separate argument; it waives only checks with that exact
 # name, still requires every other check green, and still binds the head. Its
 # twin, an attended --allow-missing <check-name>, follows the same rules for one
@@ -110,7 +110,7 @@
 # the merge instead of landing commits nothing verified. A recorded pr_head that disagrees with the live head is
 # reported rather than trusted, because a rebase moves the head and leaves the
 # recorded value stale. Reading that state needs glab and jq, and either one
-# absent stops the merge before any state is recorded.
+# absent stops the merge.
 #
 # A Forgejo merge is refused unless every pre-merge condition holds, each read
 # live at merge time: the pull request is open, not a draft, mergeable is
@@ -131,8 +131,8 @@
 # glab take one, so the login registered for the parsed host is re-resolved
 # fresh at merge time (bin/fm-pr-check.sh already required one at arm time,
 # but a login can be renamed or removed afterwards). Reading and merging both
-# need tea and jq, and either one absent stops the merge before any state is
-# recorded. Forgejo has no merge-queue or scheduled-merge concept, so unlike
+# need tea and jq, and either one absent stops the merge.
+# Forgejo has no merge-queue or scheduled-merge concept, so unlike
 # GitHub and GitLab there is no away-mode async/queued case to detect: every
 # accepted Forgejo merge here is immediate, and any caller-passed extra
 # argument beyond a merge method is refused rather than silently dropped,
@@ -166,11 +166,12 @@
 # Extra args must not include --repo or -R in any form, including a bundled
 # short-option cluster such as -yR, because the repository comes only from the
 # URL, nor --sha or --match-head-commit because the head comes only from the
-# live read. An existing task-meta pr= must equal the requested canonical URL,
-# unless that bound PR has already merged - proven by its recorded merge
+# live read. An existing task-meta pr= must identify the requested canonical URL,
+# unless a worker's bound PR has already merged - proven by its recorded merge
 # notification - in which case the task's next PR is accepted so several PRs
 # from one task can each merge in turn; while the bound PR is still unmerged a
-# different URL is refused. Auto-merge (--auto), a protection bypass
+# different URL is refused. An orphan's identity is fixed even after merging;
+# bin/fm-pr-check.sh owns its recording contract. Auto-merge (--auto), a protection bypass
 # (--admin), and branch
 # deletion (--delete-branch, -d and short-flag clusters, and GitLab's
 # --remove-source-branch) are refused by default; --attended-override, parsed
@@ -178,7 +179,42 @@
 # explicit captain instruction and never skips the live green check, the
 # away-record read, or a captain hold.
 #
-# Usage: fm-pr-merge.sh <task-id> <pr-url> [--attended-override] [--allow-red <check-name>] [--allow-missing <check-name>] [--allow-no-pipeline] [-- <extra forge merge args>]
+# An explicit --orphan uses bin/fm-pr-check.sh's forge-only recording contract;
+# all live merge, hold, authority, and outcome guards still apply. The helper
+# retains that requirement on every recording call and revalidates the binding
+# under task control before capturing the incarnation and after reacquiring stack locks.
+# Registration precedes merge preflight, so a refusal can leave a recorded PR
+# and armed poll without a merge.
+#
+# GitHub's stacked-PR refusal triggers gh stack merge --yes, with the requested
+# merge method (default --squash). This fallback requires git and the installed
+# official gh stack extension, which owns atomic stack
+# semantics. Every unmerged member through the requested PR gets the same live
+# preflight, and the stack heads are read again immediately before dispatch.
+# Unlike gh pr merge, gh stack merge has no expected-head argument: the accepted
+# limitation is a seconds-wide race after that last read, with GitHub still
+# enforcing branch protection at merge time. Stack merging is asynchronous and
+# attended-only. Unsupported extra flags and ambiguous PR/stack numbers refuse.
+# Numeric stack collisions are checked both before participant discovery and
+# immediately before dispatch; any successful stack lookup for the PR number
+# refuses, and only a 404 proves absence. PR binding publication shares the
+# task-set lock with participant discovery, and every owned participant's
+# control lock protects its hold check through dispatch and result publication.
+# A temporary empty git repository pins the extension's repository selection to
+# the URL without changing a project or trusting the caller's current directory.
+# A successful stack command records authority for every owned participant.
+# A nonzero exit is reconciled only when the extension reports a post-submission
+# status-read failure or an in-progress timeout. Without that affirmative
+# acceptance evidence it fails without authority or uncertainty publication.
+# Reconciliation makes one bounded PR merged-state read: true records participant
+# authority and the target's landed outcome; false fails without authority or
+# outcome publication; an unreadable or invalid answer fails with unresolved
+# markers for all owned participants and a firstmate reconciliation wake, never
+# authority or a landed outcome. bin/fm-merge-authority-lib.sh owns those markers
+# and their poll-consumption contract. tests/fm-pr-merge.test.sh covers these
+# acceptance and refusal paths.
+#
+# Usage: fm-pr-merge.sh <task-id> <pr-url> [--orphan] [--attended-override] [--allow-red <check-name>] [--allow-missing <check-name>] [--allow-no-pipeline] [-- <extra forge merge args>]
 #
 # On GitLab, this script confirms the MR is actually merged before reporting it;
 # an auto-merge-queued or unconfirmed request leaves the poll armed and records
@@ -201,6 +237,8 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 . "$SCRIPT_DIR/fm-merge-outcome-lib.sh"
 # shellcheck source=bin/fm-merge-authority-lib.sh
 . "$SCRIPT_DIR/fm-merge-authority-lib.sh"
+# shellcheck source=bin/fm-timeout-lib.sh
+. "$SCRIPT_DIR/fm-timeout-lib.sh"
 # shellcheck source=bin/fm-afk-contract.sh
 . "$SCRIPT_DIR/fm-afk-contract.sh"
 
@@ -237,11 +275,20 @@ if [ "$PROVIDER" = gerrit ]; then
 fi
 shift 2
 ATTENDED_OVERRIDE=false
+ORPHAN=false
 ALLOW_NO_PIPELINE=false
 ALLOW_RED=()
 ALLOW_MISSING=()
 while [ "$#" -gt 0 ]; do
   case "$1" in
+    --orphan)
+      ORPHAN=true
+      shift
+      ;;
+    --orphan=*)
+      echo "error: --orphan takes no value" >&2
+      exit 2
+      ;;
     --attended-override)
       ATTENDED_OVERRIDE=true
       shift
@@ -346,10 +393,32 @@ caller_merge_method() {
       --merge) method=merge ;;
       --rebase) method=rebase ;;
       --method) pending=true ;;
-      --method=*) method=${arg#--method=} ;;
+      --method=*) method=${arg#*=} ;;
     esac
   done
   printf '%s' "$method"
+}
+
+github_prepare_pr_args() {
+  local method
+  FM_PR_GITHUB_PR_ARGS=()
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --method)
+        [ -n "${2:-}" ] || { echo "error: merge method requires a value" >&2; return 1; }
+        method=$2; shift
+        case "$method" in merge|squash|rebase) ;; *) echo "error: invalid merge method $method" >&2; return 1 ;; esac
+        FM_PR_GITHUB_PR_ARGS+=("--$method")
+        ;;
+      --method=*)
+        method=${1#*=}
+        case "$method" in merge|squash|rebase) ;; *) echo "error: invalid merge method $method" >&2; return 1 ;; esac
+        FM_PR_GITHUB_PR_ARGS+=("--$method")
+        ;;
+      *) FM_PR_GITHUB_PR_ARGS+=("$1") ;;
+    esac
+    shift
+  done
 }
 
 # Whether the caller's own extra arguments asked for auto-merge, including the
@@ -467,15 +536,28 @@ META="$STATE/$ID.meta"
 . "$SCRIPT_DIR/fm-lease-lib.sh"
 fm_lease_forbid_branch "PR merge (fm-pr-merge)" --away-relocated
 
-if [ ! -f "$META" ] || [ -L "$META" ]; then
-  echo "error: task metadata is unavailable" >&2
-  exit 1
+require_explicit_orphan_binding() {
+  [ "$ORPHAN" = true ] || return 0
+  if ! { [ -f "$META" ] && [ ! -L "$META" ] && [ "$(fm_pr_file_link_count "$META")" = 1 ] \
+    && [ "$(grep '^kind=' "$META" | tail -1 | cut -d= -f2- || true)" = orphan ] \
+    && fm_pr_urls_equal "$(grep '^pr=' "$META" | tail -1 | cut -d= -f2- || true)" "$URL"; }; then
+    echo "error: orphan task $ID no longer owns the requested PR; refusing replacement incarnation" >&2
+    return 1
+  fi
+}
+
+MERGE_EXPECTED_SPAWN_GEN=
+if [ "$ORPHAN" != true ]; then
+  if [ ! -f "$META" ] || [ -L "$META" ]; then
+    echo "error: task metadata is unavailable" >&2
+    exit 1
+  fi
+  if ! fm_backlog_meta_spawn_gen_optional "$META" "$STATE"; then
+    echo "error: PR merge refused: $FM_BACKLOG_TRANSITION_ERROR" >&2
+    exit 1
+  fi
+  MERGE_EXPECTED_SPAWN_GEN=$FM_BACKLOG_META_SPAWN_GEN
 fi
-if ! fm_backlog_meta_spawn_gen_optional "$META" "$STATE"; then
-  echo "error: PR merge refused: $FM_BACKLOG_TRANSITION_ERROR" >&2
-  exit 1
-fi
-MERGE_EXPECTED_SPAWN_GEN=$FM_BACKLOG_META_SPAWN_GEN
 
 MERGE_CONTROL_LOCK=
 MERGE_META_LOCK=
@@ -487,6 +569,17 @@ merge_control_cleanup() {
 trap merge_control_cleanup EXIT
 MERGE_CONTROL_LOCK="$STATE/.control-$ID.lock"
 fm_lock_acquire_wait "$MERGE_CONTROL_LOCK"
+# Creation, binding validation, and incarnation capture share task control so
+# cleanup and spawn cannot replace an orphan between those operations.
+if [ "$ORPHAN" = true ]; then
+  FM_PR_CHECK_MERGE=1 "$SCRIPT_DIR/fm-pr-check.sh" "$ID" "$URL" --orphan || exit 1
+  require_explicit_orphan_binding || exit 1
+  if ! fm_backlog_meta_spawn_gen_optional "$META" "$STATE"; then
+    echo "error: PR merge refused: $FM_BACKLOG_TRANSITION_ERROR" >&2
+    exit 1
+  fi
+  MERGE_EXPECTED_SPAWN_GEN=$FM_BACKLOG_META_SPAWN_GEN
+fi
 if ! fm_backlog_meta_spawn_gen_optional "$META" "$STATE"; then
   echo "error: task $ID changed while waiting to merge; refusing: $FM_BACKLOG_TRANSITION_ERROR" >&2
   exit 1
@@ -496,9 +589,8 @@ if [ "$FM_BACKLOG_META_SPAWN_GEN" != "$MERGE_EXPECTED_SPAWN_GEN" ]; then
   exit 1
 fi
 
-# Reading the merge request state needs both tools. Report them together and
-# before anything is recorded, so a missing tool is a named prerequisite rather
-# than a merge that is armed and then refused for an unexplained reason.
+# Reading the merge request state needs both tools. Report them together before
+# ordinary recording; explicit orphan registration has already run at this point.
 GITLAB_MISSING=
 if [ "$PROVIDER" = gitlab ]; then
   command -v glab >/dev/null 2>&1 || GITLAB_MISSING="glab"
@@ -1364,8 +1456,226 @@ METHODS
   fi
 }
 
+# Keep stack discovery and verification read-only. The extension, not this
+# helper, decides and executes the atomic merge range.
+github_stack_snapshot() {
+  local json
+  json=$(gh api "repos/$PR_OWNER/$PR_REPO/stacks?pull_request=$PR_NUMBER") || return 1
+  printf '%s' "$json" | jq -ce --argjson target "$PR_NUMBER" '
+    if type != "array" or length != 1 then error("expected one stack") else .[0] end
+    | if (.number | type) != "number" or .number < 1
+        or (.base.ref | type) != "string" or .base.ref == ""
+        or (.pull_requests | type) != "array"
+      then error("invalid stack") else . end
+    | . as $stack | [.pull_requests[].number] | index($target) as $i
+    | if $i == null then error("target missing from stack") else
+        {number: $stack.number, base: $stack.base.ref,
+         members: $stack.pull_requests[:$i + 1]}
+      end
+    | if all(.members[];
+        (.number | type) == "number" and .number > 0 and
+        (.head.sha | type) == "string" and
+        (.head.sha | test("^[0-9a-fA-F]{40,64}$")) and
+        (.state == "open" or .state == "closed") and
+        (.draft | type) == "boolean" and
+        (.merged_at == null or (.merged_at | type) == "string"))
+      then . else error("invalid stack member") end' 2>/dev/null
+}
+
+github_require_unambiguous_stack_target() {
+  local err=$1
+  if gh api "repos/$PR_OWNER/$PR_REPO/stacks/$PR_NUMBER" > /dev/null 2>"$err"; then
+    echo "error: the number in $URL also selects a stack; refusing ambiguous gh stack merge target" >&2
+    return 1
+  elif ! grep -q 'HTTP 404' "$err"; then
+    cat "$err" >&2
+    echo "error: could not rule out a conflicting stack number; stack merge refused" >&2
+    return 1
+  fi
+}
+
+# Run in a subshell: temporary repository state and per-member PR identities
+# must not escape into the target task's outcome recording.
+github_merge_stack() (
+  local scratch status=0 lock
+  # These locals are shared only with the checked helper inside this subshell.
+  # shellcheck disable=SC2030
+  local STACK_CONTROL_LOCKS=() STACK_TASK_SET_LOCK=
+  scratch=$(mktemp -d "${TMPDIR:-/tmp}/fm-pr-stack.XXXXXX") || exit 1
+  trap '
+    [ -z "$MERGE_META_LOCK" ] || fm_lock_release "$MERGE_META_LOCK" || true
+    fm_afk_contract_lock_release || true
+    for lock in "${STACK_CONTROL_LOCKS[@]+"${STACK_CONTROL_LOCKS[@]}"}"; do
+      fm_lock_release "$lock" || true
+    done
+    [ -z "$STACK_TASK_SET_LOCK" ] || fm_lock_release "$STACK_TASK_SET_LOCK" || true
+    rm -rf -- "$scratch"
+  ' EXIT
+  unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GH_REPO
+  export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_COUNT=0
+  github_merge_stack_checked "$scratch" "$@" || status=$?
+  exit "$status"
+)
+
+github_merge_stack_checked() {
+  local scratch=$1
+  shift
+  local URL=$URL PR_NUMBER=$PR_NUMBER ID=$ID META=$META PR_PATH=$PR_PATH
+  local FM_PR_MERGE_HEAD=$FM_PR_MERGE_HEAD FM_PR_GITHUB_BASE=$FM_PR_GITHUB_BASE
+  local FM_PR_GITHUB_REQUIRED FM_PR_GITHUB_REQUIRED_ERROR
+  local snapshot current members member number head err method arg participant_url merged
+  local completion_status=0 publication_status=0 persist=persist_accepted_merge_authority
+  local extension_output extension_status=0
+  local participants=() participant_ids=() participant_urls=() i
+  local LC_ALL=C
+  local original_url=$URL original_id=$ID target_head=$FM_PR_MERGE_HEAD other target_locked=false
+  [ "$FM_PR_AWAY_POSTURE" = false ] || {
+    echo "error: gh stack merge is asynchronous and attended-only; nothing was handed to the stack merger" >&2
+    return 2
+  }
+  # Stack merging cannot honor admin, auto, deletion, or arbitrary gh-pr flags.
+  # Refuse rather than silently losing an explicitly requested behavior.
+  method=squash
+  while [ "$#" -gt 0 ]; do
+    arg=$1
+    case "$arg" in
+      --squash|--merge|--rebase) method=${arg#--} ;;
+      --method)
+        [ -n "${2:-}" ] || { echo "error: stack merge method requires a value" >&2; return 2; }
+        method=$2; shift ;;
+      --method=*) method=${arg#*=} ;;
+      *) echo "error: gh stack merge does not support extra argument $arg; retry with only a merge method" >&2; return 2 ;;
+    esac
+    shift
+  done
+  case "$method" in merge|squash|rebase) ;; *) echo "error: invalid stack merge method $method" >&2; return 2 ;; esac
+  snapshot=$(github_stack_snapshot) || {
+    echo "error: could not read a unique stack for $original_url; stack merge refused" >&2
+    return 1
+  }
+  err="$scratch/collision.err"
+  github_require_unambiguous_stack_target "$err" || return 1
+  # An empty repository with exactly one remote gives repository.Current() an
+  # unambiguous URL. No checkout, worktree allocation, or project mutation occurs.
+  git init -q "$scratch/repo" || return 1
+  git -C "$scratch/repo" remote add origin "https://$PR_HOST/$PR_OWNER/$PR_REPO.git" || return 1
+  members=$(printf '%s' "$snapshot" | jq -c '.members[] | select(.merged_at == null)') || return 1
+  [ -n "$members" ] || { echo "error: stack has no unmerged target" >&2; return 1; }
+  STACK_TASK_SET_LOCK=$(fm_task_set_lock_path "$STATE") || return 1
+  fm_lock_acquire_wait "$STACK_TASK_SET_LOCK" || return 1
+  for other in "$STATE"/*.meta; do
+    [ -e "$other" ] || [ -L "$other" ] || continue
+    [ -f "$other" ] && [ ! -L "$other" ] && [ -r "$other" ] || {
+      echo "error: cannot read task holds for stack $original_url" >&2; return 1;
+    }
+    participant_url=$(grep '^pr=' "$other" | tail -1 | cut -d= -f2- || true)
+    while IFS= read -r member; do
+      number=$(printf '%s' "$member" | jq -r '.number') || return 1
+      if fm_pr_urls_equal "$participant_url" "https://$PR_HOST/$PR_OWNER/$PR_REPO/pull/$number"; then
+        ID=$(basename "$other" .meta)
+        fm_pr_task_id_valid "$ID" || return 1
+        fm_lock_try_acquire "$STATE/.control-$ID.lock" || {
+          echo "error: another lifecycle action is running for stack participant $ID; retry" >&2
+          return 1
+        }
+        # shellcheck disable=SC2031 # The caller and this helper share the stack subshell.
+        STACK_CONTROL_LOCKS+=("$STATE/.control-$ID.lock")
+        [ "$ID" != "$original_id" ] || target_locked=true
+        participants+=("$other")
+        participant_ids+=("$ID")
+        participant_urls+=("$participant_url")
+        break
+      fi
+    done <<MEMBERS
+$members
+MEMBERS
+  done
+  [ "$target_locked" = true ] || { echo "error: target task no longer owns the stack PR; retry" >&2; return 1; }
+  ID=$original_id
+  if ! { require_explicit_orphan_binding \
+    && fm_backlog_meta_spawn_gen_optional "$META" "$STATE" \
+    && [ "$FM_BACKLOG_META_SPAWN_GEN" = "$MERGE_EXPECTED_SPAWN_GEN" ] \
+    && require_recorded_pr_identity; }; then
+      echo "error: target task changed while acquiring stack locks; retry" >&2; return 1;
+  fi
+  for ((i=0; i<${#participants[@]}; i++)); do
+    fm_pr_urls_equal "$(grep '^pr=' "${participants[$i]}" | tail -1 | cut -d= -f2- || true)" "${participant_urls[$i]}" || return 1
+    ID=${participant_ids[$i]}
+    require_released_captain_hold || return 1
+  done
+  ID=$original_id
+  hold_away_record_for_merge || return 1
+  require_current_away_authority || return 1
+  [ "$FM_PR_AWAY_POSTURE" = false ] || {
+    echo "error: gh stack merge is asynchronous and attended-only" >&2; return 2;
+  }
+  while IFS= read -r member; do
+    number=$(printf '%s' "$member" | jq -r '.number') || return 1
+    head=$(printf '%s' "$member" | jq -r '.head.sha') || return 1
+    URL="https://$PR_HOST/$PR_OWNER/$PR_REPO/pull/$number"
+    PR_NUMBER=$number
+    github_verify_mergeable || return 1
+    [ "$FM_PR_MERGE_HEAD" = "$head" ] || {
+      echo "error: stack head changed during preflight for $URL; retry" >&2; return 1;
+    }
+    if [ "$number" = "${original_url##*/}" ] && [ "$FM_PR_MERGE_HEAD" != "$target_head" ]; then
+      echo "error: target head changed after the original merge preflight; retry" >&2; return 1
+    fi
+  done <<MEMBERS
+$members
+MEMBERS
+  URL=$original_url
+  PR_NUMBER=${original_url##*/}
+  current=$(github_stack_snapshot) || { echo "error: stack heads could not be re-read; refusing merge" >&2; return 1; }
+  [ "$current" = "$snapshot" ] || {
+    echo "error: stack changed immediately before merge; retry" >&2; return 1;
+  }
+  github_require_unambiguous_stack_target "$err" || return 1
+  printf 'verified: stack heads re-read for %s; invoking gh stack merge --yes --%s (no atomic expected-head flag)\n' "$URL" "$method" >&2
+  extension_output=$(cd "$scratch/repo" && NO_COLOR=1 CLICOLOR_FORCE=0 gh stack merge "$PR_NUMBER" --yes "--$method" 2>&1) || extension_status=$?
+  [ -z "$extension_output" ] || printf '%s\n' "$extension_output" >&2
+  if [ "$extension_status" -ne 0 ]; then
+    if ! printf '%s\n' "$extension_output" | grep -Eq '^(✗ failed to check merge status: .+|⚠ Merge is still in progress\. Check the pull requests on GitHub\.)$'; then
+      echo "error: gh stack merge failed without submission acceptance evidence; no participant authority recorded" >&2
+      return 4
+    fi
+    if merged=$(fm_exec_timed 30 2 gh api "repos/$PR_OWNER/$PR_REPO/pulls/$PR_NUMBER" --jq '.merged') \
+      && { [ "$merged" = true ] || [ "$merged" = false ]; }; then
+      if [ "$merged" = false ]; then
+        echo "error: gh stack merge failed and $URL has not merged; no participant authority recorded" >&2
+        return 4
+      fi
+      completion_status=3
+    else
+      persist=persist_unresolved_merge
+      completion_status=5
+    fi
+  fi
+  for ((i=0; i<${#participants[@]}; i++)); do
+    META=${participants[$i]}
+    ID=${participant_ids[$i]}
+    if ! fm_pr_metadata_identity_parse "$META" \
+      || [ "$FM_PR_META_URL" != "${participant_urls[$i]}" ]; then
+      echo "actionable: stack merge dispatched but participant $ID binding changed; firstmate reconciliation required" >&2
+      publication_status=1
+      continue
+    fi
+    URL=$FM_PR_META_URL
+    PR_PATH=$FM_PR_META_PATH
+    PR_NUMBER=$FM_PR_META_NUMBER
+    if ! "$persist"; then
+      echo "actionable: stack merge dispatched but participant $ID result could not be recorded; firstmate reconciliation required" >&2
+      publication_status=1
+    fi
+  done
+  [ "$publication_status" -eq 0 ] || return 6
+  return "$completion_status"
+}
+
 record_pr_metadata() {
-  if ! FM_PR_CHECK_MERGE=1 "$SCRIPT_DIR/fm-pr-check.sh" "$ID" "$URL"; then
+  local orphan_args=()
+  [ "$ORPHAN" != true ] || orphan_args+=(--orphan)
+  if ! FM_PR_CHECK_MERGE=1 "$SCRIPT_DIR/fm-pr-check.sh" "$ID" "$URL" "${orphan_args[@]+"${orphan_args[@]}"}"; then
     return 1
   fi
   grep -qxF "pr=$URL" "$META" || {
@@ -1466,6 +1776,20 @@ persist_accepted_merge_authority() {
   return 1
 }
 
+persist_unresolved_merge() {
+  local status=0
+  MERGE_META_LOCK=$(fm_meta_lock_path "$META") || return 1
+  fm_lock_acquire_wait "$MERGE_META_LOCK" || return 1
+  fm_merge_unresolved_persist "$STATE" "$ID" "$META" \
+    "$PROVIDER" "$PR_HOST" "$PR_PATH" "$PR_NUMBER" || status=1
+  fm_lock_release "$MERGE_META_LOCK" || status=1
+  MERGE_META_LOCK=
+  [ "$status" -eq 0 ] || return 1
+  fm_wake_append check "unresolved-merge-$ID-$URL" \
+    "check: unresolved merge: $ID $URL accepted-uncertain; firstmate reconciliation required" || return 1
+  printf 'actionable: %s accepted-uncertain; unresolved merge recorded for firstmate reconciliation, no merge authority published\n' "$URL" >&2
+}
+
 # While away, a merge proceeds only when the base branch's rules prove no
 # merge queue, because a queued merge can land after its away authority
 # lapses with the record's archive. A repository whose
@@ -1492,7 +1816,7 @@ require_recorded_pr_identity() {
   local existing
   existing=$(grep '^pr=' "$META" | tail -1 | cut -d= -f2- || true)
   [ -n "$existing" ] || return 0
-  [ "$existing" = "$URL" ] && return 0
+  fm_pr_urls_equal "$existing" "$URL" && return 0
   # Parsed in a subshell so FM_PR_* stays the new URL's identity for every
   # caller after this gate; only the already-notified verdict escapes.
   if ( fm_pr_url_parse "$existing" \
@@ -1669,6 +1993,9 @@ require_released_captain_hold || exit 1
 case "$PROVIDER" in
   github)
     merge_output=
+    stack_accepted=false
+    stack_reconciled=false
+    github_prepare_pr_args "$@" || exit 2
     merge_args=()
     if ! caller_has_merge_method "$@"; then
       merge_args=(--squash)
@@ -1713,10 +2040,43 @@ case "$PROVIDER" in
     merge_status=0
     merge_output=$(gh pr merge "$PR_NUMBER" --repo "$PR_OWNER/$PR_REPO" \
       --match-head-commit "$FM_PR_MERGE_HEAD" \
-      "${merge_args[@]+"${merge_args[@]}"}" "$@" 2>&1) || merge_status=$?
+      "${merge_args[@]+"${merge_args[@]}"}" "${FM_PR_GITHUB_PR_ARGS[@]+"${FM_PR_GITHUB_PR_ARGS[@]}"}" 2>&1) || merge_status=$?
+    if [ "$merge_status" -ne 0 ]; then
+      case "$merge_output" in
+        *"part of a stack"*|*"must be merged using the asynchronous merge REST API"*)
+          printf 'notice: %s requires GitHub atomic stack merging; retrying with gh stack merge\n' "$URL" >&2
+          fm_afk_contract_lock_release || exit 1
+          fm_lock_release "$MERGE_CONTROL_LOCK" || exit 1
+          MERGE_CONTROL_LOCK=
+          stack_output=''
+          stack_status=0
+          stack_output=$(github_merge_stack "$@" 2>&1) || stack_status=$?
+          case "$stack_status" in
+            0|3)
+              merge_status=0
+              stack_accepted=true
+              [ "$stack_status" -ne 3 ] || stack_reconciled=true
+              merge_output=$stack_output
+              ;;
+            4|5|6)
+              printf '%s\n' "$stack_output" >&2
+              exit 1
+              ;;
+            *)
+              merge_output="$merge_output
+error: gh stack merge failed for $URL (exit $stack_status)
+$stack_output"
+              merge_status=$stack_status
+              ;;
+          esac
+          ;;
+      esac
+    fi
     if [ "$merge_status" -eq 0 ]; then
       FM_PR_GITHUB_MERGE_ACCEPTED=true
-      persist_accepted_merge_authority || exit 1
+      if [ "$stack_accepted" != true ]; then
+        persist_accepted_merge_authority || exit 1
+      fi
       fm_afk_contract_lock_release || true
       fm_lock_release "$MERGE_CONTROL_LOCK" || true
       MERGE_CONTROL_LOCK=
@@ -1735,7 +2095,11 @@ case "$PROVIDER" in
       fi
       exit "$merge_status"
     fi
-    if ! github_read_outcome; then
+    if [ "$stack_reconciled" = true ]; then
+      FM_PR_GITHUB_STATE=MERGED
+      FM_PR_GITHUB_MERGED=true
+      FM_PR_GITHUB_QUEUED=false
+    elif ! github_read_outcome; then
       github_report_forge_output "$merge_output"
       exit 1
     fi
