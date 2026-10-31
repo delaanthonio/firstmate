@@ -2,7 +2,8 @@
 # Run one Droid tracked background supervision cycle, keeping quiet bounded
 # checkpoints inside this foreground process until a wake or bounded failure.
 # Each pass delegates watcher ownership, home scoping, and away/host behavior
-# to fm-watch-checkpoint.sh unchanged. No shell backgrounding is used here.
+# to fm-watch-checkpoint.sh, requesting quiet rotation for the attended watcher.
+# No shell backgrounding is used here.
 #
 # Usage: fm-watch-droid-background.sh
 # FM_DROID_WATCH_CHECKPOINT sets each checkpoint's seconds (default 180).

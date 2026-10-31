@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Run one bounded foreground watcher checkpoint for harnesses that should not
-# rely on background-task completion to wake the model.
+# Run one bounded foreground watcher checkpoint, used directly by foreground
+# protocols and as a bounded pass inside Droid's tracked background cycle.
 #
 # SUPERVISION HOST. A home opted in with config/supervision-host
 # (docs/configuration.md "Supervision host" owns the gate;
