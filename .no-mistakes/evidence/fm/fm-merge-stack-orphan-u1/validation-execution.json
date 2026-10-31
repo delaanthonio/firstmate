@@ -1,0 +1,84 @@
+{
+  "commit": "895e02cf1ef738c06455ca9d31bbba552798b55d",
+  "source_changes": false,
+  "live_scripts": {
+    "orphan-live": {
+      "exit_code": 0,
+      "log": "orphan-live.log",
+      "isolation": "Disposable marked FM_HOME inside worktree, real gh CLI, empty GH_CONFIG_DIR, no credentials or remote mutations, removed on EXIT"
+    },
+    "orphan-race-live": {
+      "exit_code": 0,
+      "log": "orphan-race-live.log",
+      "isolation": "Disposable marked FM_HOME inside worktree, real gh CLI, empty GH_CONFIG_DIR, no credentials or remote mutations, removed on EXIT"
+    },
+    "orphan-concurrent-live": {
+      "exit_code": 0,
+      "log": "orphan-concurrent-live.log",
+      "isolation": "Disposable marked FM_HOME inside worktree, real gh CLI, empty GH_CONFIG_DIR, no credentials or remote mutations, removed on EXIT"
+    }
+  },
+  "regressions": {
+    "merge-focused": {
+      "exit_code": 0,
+      "live": false,
+      "forge": "Mocked gh boundary from existing behavioral tests",
+      "selectors": [
+        "test_stack_merge_preserves_method_and_records_outcome",
+        "test_stack_participant_locks_and_authority",
+        "test_stack_collision_is_rechecked_before_dispatch",
+        "test_stack_failure_before_submission_publishes_nothing",
+        "test_stack_failure_reconciles_once_for_all_participants",
+        "test_orphan_registration_refuses_worker_replacement",
+        "test_orphan_merge_retains_context_under_control",
+        "test_orphan_identity_is_fixed_at_publication",
+        "test_registration_serializes_orphan_discovery",
+        "test_registration_waits_for_stack_dispatch",
+        "test_busy_stack_participant_refuses_without_deadlock",
+        "test_stack_extra_aliases_refuse",
+        "test_orphan_lifecycle",
+        "test_stack_merge_refuses_unsafe_state",
+        "test_orphan_recording_preserves_guards",
+        "test_orphan_never_overwrites_an_owner"
+      ],
+      "log": "merge-focused.log"
+    },
+    "monitoring-focused": {
+      "exit_code": 0,
+      "live": false,
+      "forge": "Mocked gh boundary from existing behavioral tests",
+      "selectors": [
+        "test_merged_poll_row_carries_the_merge_authority",
+        "test_merged_poll_row_names_no_authority_when_no_record_grants_one",
+        "test_unresolved_merge_poll_requires_reconciliation",
+        "test_authority_persistence_refuses_rebound_metadata",
+        "test_authority_persists_before_control_unlock",
+        "test_external_merge_transition_retires_only_terminal_poll"
+      ],
+      "log": "monitoring-focused.log"
+    }
+  },
+  "setup_attempts": [
+    {
+      "log": "orphan-live-setup-attempt.log",
+      "exit_code": 1,
+      "cause": "Driver left its intentionally incomplete worker fixture in inventory. Removed that fixture before the orphan-only inventory scenario; corrected rerun exited 0."
+    },
+    {
+      "log": "additional-baseline-interrupted.log",
+      "exit_code": 143,
+      "cause": "Temporary selection initially included early top-level baseline invocations. Ten baseline cases completed successfully; stopped the extra baseline execution, removed those calls from the disposable selector, and reran only the affected named functions."
+    }
+  ],
+  "tool_probes": [
+    "gh extension list: github/gh-stack v0.2.0",
+    "tasks-axi --version: 0.2.6",
+    "gh stack merge --help: exit 0"
+  ],
+  "not_run": [
+    "Full repository suite",
+    "Lint/format/static-analysis phases",
+    "Actual remote PR or stack merge"
+  ],
+  "prior_broad_suites": "Prior success was supplied in the prompt for 22de571c. Those external logs were not independently reopened; current affected-path regressions were executed here."
+}

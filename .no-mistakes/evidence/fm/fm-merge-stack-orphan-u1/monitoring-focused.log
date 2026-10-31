@@ -1,0 +1,121 @@
+RUN test_merged_poll_row_carries_the_merge_authority
+ok - queued merges retain their away authority after captain return
+RUN test_merged_poll_row_names_no_authority_when_no_record_grants_one
+ok - poll distinguishes attended authorization from external landing
+RUN test_unresolved_merge_poll_requires_reconciliation
+ok - unresolved merges retain reconciliation evidence without false external attribution
+RUN test_authority_persistence_refuses_rebound_metadata
+ok - accepted merge authority refuses rebound task metadata
+RUN test_authority_persists_before_control_unlock
+ok - accepted merge authority persists under the lifecycle lock
+RUN test_external_merge_transition_retires_only_terminal_poll
+ok - open/red, closed-unmerged, malformed, and forge errors remain armed until an exact merged transition
+
+CASE external-merge-transition
+
+PRODUCT ARTIFACT gh.log
+
+CASE merge-authority-control-lock
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/o/r/pull/1 --json isDraft
+pr view https://github.com/o/r/pull/1 --json headRefOid -q .headRefOid
+pr view https://github.com/o/r/pull/1 --json headRefOid -q .headRefOid
+pr view https://github.com/o/r/pull/1 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/o/r/branches/main
+api --paginate repos/o/r/rules/branches/main
+pr merge 1 --repo o/r --match-head-commit 0123456789abcdef0123456789abcdef01234567 --squash
+api graphql -f query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}} -F owner=o -F repo=r -F number=1 --jq .data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")
+
+CASE merge-authority-rebound-metadata
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/o/r/pull/1 --json isDraft
+pr view https://github.com/o/r/pull/1 --json headRefOid -q .headRefOid
+pr view https://github.com/o/r/pull/1 --json headRefOid -q .headRefOid
+pr view https://github.com/o/r/pull/1 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/o/r/branches/main
+api --paginate repos/o/r/rules/branches/main
+pr merge 1 --repo o/r --match-head-commit 0123456789abcdef0123456789abcdef01234567 --squash
+pr view https://github.com/o/r/pull/2 --json isDraft
+pr view https://github.com/o/r/pull/2 --json headRefOid -q .headRefOid
+
+CASE merged-poll-authority-external
+
+PRODUCT ARTIFACT watch.out
+check: /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69TE5C0HF0TJ00KV4A1XZXJ/.phase-test/tmp/fm-pr-check-security.8ZakKA/merged-poll-authority-external/home/state/task-a.check.sh: merged
+
+PRODUCT ARTIFACT watch.err
+
+PRODUCT ARTIFACT gh.log
+
+CASE queued-merge-authority-attended
+
+PRODUCT ARTIFACT watch.out
+check: /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69TE5C0HF0TJ00KV4A1XZXJ/.phase-test/tmp/fm-pr-check-security.8ZakKA/queued-merge-authority-attended/home/state/task-a.check.sh: merged
+
+PRODUCT ARTIFACT watch.err
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/o/r/pull/1 --json isDraft
+pr view https://github.com/o/r/pull/1 --json headRefOid -q .headRefOid
+pr view https://github.com/o/r/pull/1 --json headRefOid -q .headRefOid
+pr view https://github.com/o/r/pull/1 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/o/r/branches/main
+api --paginate repos/o/r/rules/branches/main
+pr merge 1 --repo o/r --match-head-commit 0123456789abcdef0123456789abcdef01234567 --squash
+api graphql -f query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}} -F owner=o -F repo=r -F number=1 --jq .data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")
+
+CASE queued-merge-authority-words
+
+PRODUCT ARTIFACT watch.out
+check: /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69TE5C0HF0TJ00KV4A1XZXJ/.phase-test/tmp/fm-pr-check-security.8ZakKA/queued-merge-authority-words/home/state/task-a.check.sh: merged
+
+PRODUCT ARTIFACT watch.err
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/o/r/pull/1 --json isDraft
+pr view https://github.com/o/r/pull/1 --json headRefOid -q .headRefOid
+pr view https://github.com/o/r/pull/1 --json headRefOid -q .headRefOid
+pr view https://github.com/o/r/pull/1 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/o/r/branches/main
+api --paginate repos/o/r/rules/branches/main
+api --paginate repos/o/r/rules/branches/main --jq .[] | select(.type == "merge_queue") | "merge_method=" + (.parameters.merge_method // "")
+pr merge 1 --repo o/r --match-head-commit 0123456789abcdef0123456789abcdef01234567 --squash
+api graphql -f query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}} -F owner=o -F repo=r -F number=1 --jq .data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")
+
+CASE queued-merge-authority-yolo
+
+PRODUCT ARTIFACT watch.out
+check: /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69TE5C0HF0TJ00KV4A1XZXJ/.phase-test/tmp/fm-pr-check-security.8ZakKA/queued-merge-authority-yolo/home/state/task-a.check.sh: merged
+
+PRODUCT ARTIFACT watch.err
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/o/r/pull/1 --json isDraft
+pr view https://github.com/o/r/pull/1 --json headRefOid -q .headRefOid
+pr view https://github.com/o/r/pull/1 --json headRefOid -q .headRefOid
+pr view https://github.com/o/r/pull/1 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/o/r/branches/main
+api --paginate repos/o/r/rules/branches/main
+api --paginate repos/o/r/rules/branches/main --jq .[] | select(.type == "merge_queue") | "merge_method=" + (.parameters.merge_method // "")
+pr merge 1 --repo o/r --match-head-commit 0123456789abcdef0123456789abcdef01234567 --squash
+api graphql -f query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}} -F owner=o -F repo=r -F number=1 --jq .data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")
+
+CASE unresolved-merge-poll-matching
+
+PRODUCT ARTIFACT watch.out
+check: unresolved merge: task-a https://github.com/o/r/pull/1 accepted-uncertain; firstmate reconciliation required
+
+PRODUCT ARTIFACT watch.err
+
+PRODUCT ARTIFACT gh.log
+
+CASE unresolved-merge-poll-other-pr
+
+PRODUCT ARTIFACT watch.out
+check: /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69TE5C0HF0TJ00KV4A1XZXJ/.phase-test/tmp/fm-pr-check-security.8ZakKA/unresolved-merge-poll-other-pr/home/state/task-a.check.sh: merged
+
+PRODUCT ARTIFACT watch.err
+
+PRODUCT ARTIFACT gh.log

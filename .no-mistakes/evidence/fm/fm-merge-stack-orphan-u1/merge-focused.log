@@ -1,0 +1,1676 @@
+RUN test_stack_merge_preserves_method_and_records_outcome
+ok - stack fallback delegates atomic merging to gh stack merge with methods, preflight and recorded outcome
+RUN test_stack_participant_locks_and_authority
+ok - stack holds serialize through dispatch and every owned participant receives matching authority before unlock
+RUN test_stack_collision_is_rechecked_before_dispatch
+ok - stack dispatch refuses newly colliding and unreadable numeric targets
+RUN test_stack_failure_before_submission_publishes_nothing
+ok - pre-submission and unproven stack failures publish neither authority nor uncertainty
+RUN test_stack_failure_reconciles_once_for_all_participants
+ok - stack errors reconcile landed, unmerged and unreadable outcomes once for every owned participant
+RUN test_orphan_registration_refuses_worker_replacement
+ok - explicit and flagless orphan registration preserve replacement workers without publishing stale polls
+RUN test_orphan_merge_retains_context_under_control
+ok - explicit orphan merges retain binding and task control across registration, re-recording and stack lock reacquisition
+RUN test_orphan_identity_is_fixed_at_publication
+ok - ordinary recording and prior-merged helper entry preserve the stored orphan identity
+RUN test_registration_serializes_orphan_discovery
+ok - orphan and ordinary registration serialize ownership in both orders
+RUN test_registration_waits_for_stack_dispatch
+ok - held unbound tasks cannot publish a PR binding during stack dispatch
+RUN test_busy_stack_participant_refuses_without_deadlock
+ok - busy stack participants refuse and release ownership without a control/publication deadlock
+RUN test_stack_extra_aliases_refuse
+ok - stack fallback rejects unrequired public method and confirmation aliases
+RUN test_orphan_lifecycle
+ok - forge-only records have current state, valid inventory and cleanup without worker or backlog fields
+RUN test_stack_merge_refuses_unsafe_state
+ok - stack fallback refuses red, absent, changed, ambiguous, away, held and unsupported states and surfaces CLI failure
+RUN test_orphan_recording_preserves_guards
+ok - explicit orphan merge records the live head and outcome while retaining red, missing-check and hold guards
+RUN test_orphan_never_overwrites_an_owner
+ok - orphan mode requires opt-in and never replaces or bypasses an owning worker
+
+CASE orphan-before-registration
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/Example/Repo/pull/9 --json headRefOid -q .headRefOid
+
+CASE orphan-concurrent-registration
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+
+CASE orphan-control-after-registration
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+error: orphan task task-x1 no longer owns the requested PR; refusing replacement incarnation
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+
+CASE orphan-control-changed-binding
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+error: orphan task task-x1 no longer owns the requested PR; refusing replacement incarnation
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+
+CASE orphan-control-second-recording
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+error: --orphan refuses to replace an existing task or change its PR identity
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+
+CASE orphan-control-stack-reacquisition
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+notice: https://github.com/example/repo/pull/9 requires GitHub atomic stack merging; retrying with gh stack merge
+GraphQL: Pull request is part of a stack and must be merged using the asynchronous merge REST API (mergePullRequest)
+error: gh stack merge failed for https://github.com/example/repo/pull/9 (exit 1)
+error: orphan task task-x1 no longer owns the requested PR; refusing replacement incarnation
+error: target task changed while acquiring stack locks; retry
+actionable: the merge command for https://github.com/example/repo/pull/9 failed, but the pull request reads back as state=MERGED, merged=true, isInMergeQueue=false
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+api graphql -f query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}} -F owner=example -F repo=repo -F number=9 --jq .data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")
+
+CASE orphan-green
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+verified: https://github.com/example/repo/pull/9 is merged (state=MERGED, merged=true, isInMergeQueue=false)
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api graphql -f query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}} -F owner=example -F repo=repo -F number=9 --jq .data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")
+pr view https://github.com/Example/Repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/Example/Repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/Example/Repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/Example/Repo/branches/main
+api --paginate repos/Example/Repo/rules/branches/main
+pr merge 9 --repo Example/Repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api graphql -f query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}} -F owner=Example -F repo=Repo -F number=9 --jq .data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")
+pr view https://github.com/example/repo/pull/10 --json headRefOid -q .headRefOid
+
+PRODUCT ARTIFACT state/task-x1.merge-authority
+fm-merge-authority-v1
+github
+github.com
+Example/Repo
+9
+attended
+
+CASE orphan-held
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+armed: state/task-x1.check.sh
+error: task task-x1 is still held for the captain; release it before merging
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+
+CASE orphan-lifecycle
+
+PRODUCT ARTIFACT out
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+armed: state/task-x1.check.sh
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+verified: https://github.com/example/repo/pull/9 is merged (state=MERGED, merged=true, isInMergeQueue=false)
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api graphql -f query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}} -F owner=example -F repo=repo -F number=9 --jq .data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")
+
+CASE orphan-missing
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+armed: state/task-x1.check.sh
+error: refusing to merge https://github.com/example/repo/pull/9
+  - required check 'never-reported' has not reported at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+error: these required checks have not reported: never-reported
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+
+CASE orphan-needs-opt-in
+
+PRODUCT ARTIFACT out
+error: --orphan refuses to replace an existing task or change its PR identity
+
+PRODUCT ARTIFACT gh.log
+
+CASE orphan-rebind-merge
+
+PRODUCT ARTIFACT out
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: orphan task orphan-x1 cannot change its PR identity
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/8 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/Example/Repo/pull/8 --json headRefOid -q .headRefOid
+
+CASE orphan-rebind-record
+
+PRODUCT ARTIFACT out
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: orphan task orphan-x1 cannot change its PR identity
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/8 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/Example/Repo/pull/8 --json headRefOid -q .headRefOid
+
+CASE orphan-red
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+armed: state/task-x1.check.sh
+error: refusing to merge https://github.com/example/repo/pull/9
+  - check 'ci' is not green
+error: these checks are not green: ci
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+
+CASE orphan-worker-replacement-explicit-create
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+error: orphan task task-x1 was replaced before PR publication
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+
+CASE orphan-worker-replacement-explicit-reuse
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+error: orphan task task-x1 was replaced before PR publication
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+
+CASE orphan-worker-replacement-flagless
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+error: orphan task task-x1 was replaced before PR publication
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+
+CASE orphan-worker-replacement-merge-create
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+error: orphan task task-x1 was replaced before PR publication
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+
+CASE orphan-worker-replacement-merge-flagless
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+error: orphan task task-x1 was replaced before PR publication
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+
+CASE orphan-worker-replacement-merge-reuse
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+error: orphan task task-x1 was replaced before PR publication
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+
+CASE stack-alias--y
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+notice: https://github.com/example/repo/pull/9 requires GitHub atomic stack merging; retrying with gh stack merge
+GraphQL: Pull request is part of a stack and must be merged using the asynchronous merge REST API (mergePullRequest)
+error: gh stack merge failed for https://github.com/example/repo/pull/9 (exit 2)
+error: gh stack merge does not support extra argument -y; retry with only a merge method
+actionable: the merge command for https://github.com/example/repo/pull/9 failed, but the pull request reads back as state=MERGED, merged=true, isInMergeQueue=false
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash -y
+api graphql -f query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}} -F owner=example -F repo=repo -F number=9 --jq .data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")
+
+CASE stack-alias-merge-method
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+notice: https://github.com/example/repo/pull/9 requires GitHub atomic stack merging; retrying with gh stack merge
+GraphQL: Pull request is part of a stack and must be merged using the asynchronous merge REST API (mergePullRequest)
+error: gh stack merge failed for https://github.com/example/repo/pull/9 (exit 2)
+error: gh stack merge does not support extra argument --merge-method; retry with only a merge method
+actionable: the merge command for https://github.com/example/repo/pull/9 failed, but the pull request reads back as state=MERGED, merged=true, isInMergeQueue=false
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash --merge-method
+api graphql -f query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}} -F owner=example -F repo=repo -F number=9 --jq .data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")
+
+CASE stack-alias-merge-method=rebase
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+notice: https://github.com/example/repo/pull/9 requires GitHub atomic stack merging; retrying with gh stack merge
+GraphQL: Pull request is part of a stack and must be merged using the asynchronous merge REST API (mergePullRequest)
+error: gh stack merge failed for https://github.com/example/repo/pull/9 (exit 2)
+error: gh stack merge does not support extra argument --merge-method=rebase; retry with only a merge method
+actionable: the merge command for https://github.com/example/repo/pull/9 failed, but the pull request reads back as state=MERGED, merged=true, isInMergeQueue=false
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash --merge-method=rebase
+api graphql -f query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}} -F owner=example -F repo=repo -F number=9 --jq .data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")
+
+CASE stack-alias-yes
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+notice: https://github.com/example/repo/pull/9 requires GitHub atomic stack merging; retrying with gh stack merge
+GraphQL: Pull request is part of a stack and must be merged using the asynchronous merge REST API (mergePullRequest)
+error: gh stack merge failed for https://github.com/example/repo/pull/9 (exit 2)
+error: gh stack merge does not support extra argument --yes; retry with only a merge method
+actionable: the merge command for https://github.com/example/repo/pull/9 failed, but the pull request reads back as state=MERGED, merged=true, isInMergeQueue=false
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash --yes
+api graphql -f query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}} -F owner=example -F repo=repo -F number=9 --jq .data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")
+
+CASE stack-before-submit-setup-landed
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  2 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+notice: https://github.com/example/repo/pull/9 requires GitHub atomic stack merging; retrying with gh stack merge
+verified: https://github.com/example/repo/pull/8 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+verified: stack heads re-read for https://github.com/example/repo/pull/9; invoking gh stack merge --yes --squash (no atomic expected-head flag)
+✗ failed to fetch repository merge settings: unavailable
+error: gh stack merge failed without submission acceptance evidence; no participant authority recorded
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+pr view https://github.com/example/repo/pull/8 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+stack merge 9 --yes --squash
+
+CASE stack-before-submit-setup-unreadable
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  2 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+notice: https://github.com/example/repo/pull/9 requires GitHub atomic stack merging; retrying with gh stack merge
+verified: https://github.com/example/repo/pull/8 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+verified: stack heads re-read for https://github.com/example/repo/pull/9; invoking gh stack merge --yes --squash (no atomic expected-head flag)
+✗ failed to fetch repository merge settings: unavailable
+error: gh stack merge failed without submission acceptance evidence; no participant authority recorded
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+pr view https://github.com/example/repo/pull/8 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+stack merge 9 --yes --squash
+
+CASE stack-before-submit-start-landed
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  2 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+notice: https://github.com/example/repo/pull/9 requires GitHub atomic stack merging; retrying with gh stack merge
+verified: https://github.com/example/repo/pull/8 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+verified: stack heads re-read for https://github.com/example/repo/pull/9; invoking gh stack merge --yes --squash (no atomic expected-head flag)
+Merging #8, #9 into main via squash...
+✗ failed to start merge: failed to check merge status: upstream unavailable
+error: gh stack merge failed without submission acceptance evidence; no participant authority recorded
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+pr view https://github.com/example/repo/pull/8 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+stack merge 9 --yes --squash
+
+CASE stack-before-submit-start-unreadable
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  2 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+notice: https://github.com/example/repo/pull/9 requires GitHub atomic stack merging; retrying with gh stack merge
+verified: https://github.com/example/repo/pull/8 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+verified: stack heads re-read for https://github.com/example/repo/pull/9; invoking gh stack merge --yes --squash (no atomic expected-head flag)
+Merging #8, #9 into main via squash...
+✗ failed to start merge: failed to check merge status: upstream unavailable
+error: gh stack merge failed without submission acceptance evidence; no participant authority recorded
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+pr view https://github.com/example/repo/pull/8 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+stack merge 9 --yes --squash
+
+CASE stack-before-submit-unknown-landed
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  2 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+notice: https://github.com/example/repo/pull/9 requires GitHub atomic stack merging; retrying with gh stack merge
+verified: https://github.com/example/repo/pull/8 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+verified: stack heads re-read for https://github.com/example/repo/pull/9; invoking gh stack merge --yes --squash (no atomic expected-head flag)
+unexpected extension failure
+error: gh stack merge failed without submission acceptance evidence; no participant authority recorded
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+pr view https://github.com/example/repo/pull/8 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+stack merge 9 --yes --squash
+
+CASE stack-before-submit-unknown-unreadable
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  2 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+notice: https://github.com/example/repo/pull/9 requires GitHub atomic stack merging; retrying with gh stack merge
+verified: https://github.com/example/repo/pull/8 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+verified: stack heads re-read for https://github.com/example/repo/pull/9; invoking gh stack merge --yes --squash (no atomic expected-head flag)
+unexpected extension failure
+error: gh stack merge failed without submission acceptance evidence; no participant authority recorded
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+pr view https://github.com/example/repo/pull/8 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+stack merge 9 --yes --squash
+
+CASE stack-busy-participant
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  2 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+notice: https://github.com/example/repo/pull/9 requires GitHub atomic stack merging; retrying with gh stack merge
+GraphQL: Pull request is part of a stack and must be merged using the asynchronous merge REST API (mergePullRequest)
+error: gh stack merge failed for https://github.com/example/repo/pull/9 (exit 1)
+error: another lifecycle action is running for stack participant dependency; retry
+actionable: the merge command for https://github.com/example/repo/pull/9 failed, but the pull request reads back as state=MERGED, merged=true, isInMergeQueue=false
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+api graphql -f query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}} -F owner=example -F repo=repo -F number=9 --jq .data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+
+CASE stack-concurrent-registration
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  2 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+notice: https://github.com/example/repo/pull/9 requires GitHub atomic stack merging; retrying with gh stack merge
+verified: https://github.com/example/repo/pull/9 is merged (state=MERGED, merged=true, isInMergeQueue=false)
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+pr view https://github.com/example/repo/pull/8 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+stack merge 9 --yes --squash
+pr view https://github.com/example/repo/pull/8 --json isDraft
+pr view https://github.com/example/repo/pull/8 --json headRefOid -q .headRefOid
+api graphql -f query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}} -F owner=example -F repo=repo -F number=9 --jq .data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")
+
+PRODUCT ARTIFACT state/task-x1.merge-authority
+fm-merge-authority-v1
+github
+github.com
+example/repo
+9
+attended
+
+CASE stack-default
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+notice: https://github.com/example/repo/pull/9 requires GitHub atomic stack merging; retrying with gh stack merge
+verified: https://github.com/example/repo/pull/9 is merged (state=MERGED, merged=true, isInMergeQueue=false)
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+pr view https://github.com/example/repo/pull/8 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+stack merge 9 --yes --squash
+api graphql -f query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}} -F owner=example -F repo=repo -F number=9 --jq .data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")
+
+PRODUCT ARTIFACT state/task-x1.merge-authority
+fm-merge-authority-v1
+github
+github.com
+example/repo
+9
+attended
+
+CASE stack-late-collision
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+notice: https://github.com/example/repo/pull/9 requires GitHub atomic stack merging; retrying with gh stack merge
+GraphQL: Pull request is part of a stack and must be merged using the asynchronous merge REST API (mergePullRequest)
+error: gh stack merge failed for https://github.com/example/repo/pull/9 (exit 1)
+verified: https://github.com/example/repo/pull/8 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+error: the number in https://github.com/example/repo/pull/9 also selects a stack; refusing ambiguous gh stack merge target
+actionable: the merge command for https://github.com/example/repo/pull/9 failed, but the pull request reads back as state=MERGED, merged=true, isInMergeQueue=false
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+pr view https://github.com/example/repo/pull/8 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+api graphql -f query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}} -F owner=example -F repo=repo -F number=9 --jq .data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")
+
+CASE stack-late-unreadable
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+notice: https://github.com/example/repo/pull/9 requires GitHub atomic stack merging; retrying with gh stack merge
+GraphQL: Pull request is part of a stack and must be merged using the asynchronous merge REST API (mergePullRequest)
+error: gh stack merge failed for https://github.com/example/repo/pull/9 (exit 1)
+verified: https://github.com/example/repo/pull/8 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+gh: unavailable (HTTP 503)
+error: could not rule out a conflicting stack number; stack merge refused
+actionable: the merge command for https://github.com/example/repo/pull/9 failed, but the pull request reads back as state=MERGED, merged=true, isInMergeQueue=false
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+pr view https://github.com/example/repo/pull/8 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+api graphql -f query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}} -F owner=example -F repo=repo -F number=9 --jq .data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")
+
+CASE stack-participant-authority
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  2 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+notice: https://github.com/example/repo/pull/9 requires GitHub atomic stack merging; retrying with gh stack merge
+verified: https://github.com/example/repo/pull/9 is merged (state=MERGED, merged=true, isInMergeQueue=false)
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+pr view https://github.com/example/repo/pull/8 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+stack merge 9 --yes --squash
+api graphql -f query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}} -F owner=example -F repo=repo -F number=9 --jq .data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")
+
+PRODUCT ARTIFACT state/task-x1.merge-authority
+fm-merge-authority-v1
+github
+github.com
+example/repo
+9
+attended
+
+PRODUCT ARTIFACT state/dependency.merge-authority
+fm-merge-authority-v1
+github
+github.com
+Example/Repo
+8
+attended
+
+CASE stack-reconcile-landed
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  2 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+notice: https://github.com/example/repo/pull/9 requires GitHub atomic stack merging; retrying with gh stack merge
+verified: https://github.com/example/repo/pull/9 is merged (state=MERGED, merged=true, isInMergeQueue=false)
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+pr view https://github.com/example/repo/pull/8 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+stack merge 9 --yes --squash
+api repos/example/repo/pulls/9 --jq .merged
+
+PRODUCT ARTIFACT state/task-x1.merge-authority
+fm-merge-authority-v1
+github
+github.com
+example/repo
+9
+attended
+
+PRODUCT ARTIFACT state/dependency.merge-authority
+fm-merge-authority-v1
+github
+github.com
+Example/Repo
+8
+attended
+
+CASE stack-reconcile-landed-timeout
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  2 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+notice: https://github.com/example/repo/pull/9 requires GitHub atomic stack merging; retrying with gh stack merge
+verified: https://github.com/example/repo/pull/9 is merged (state=MERGED, merged=true, isInMergeQueue=false)
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+pr view https://github.com/example/repo/pull/8 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+stack merge 9 --yes --squash
+api repos/example/repo/pulls/9 --jq .merged
+
+PRODUCT ARTIFACT state/task-x1.merge-authority
+fm-merge-authority-v1
+github
+github.com
+example/repo
+9
+attended
+
+PRODUCT ARTIFACT state/dependency.merge-authority
+fm-merge-authority-v1
+github
+github.com
+Example/Repo
+8
+attended
+
+CASE stack-reconcile-malformed
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  2 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+notice: https://github.com/example/repo/pull/9 requires GitHub atomic stack merging; retrying with gh stack merge
+verified: https://github.com/example/repo/pull/8 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+verified: stack heads re-read for https://github.com/example/repo/pull/9; invoking gh stack merge --yes --squash (no atomic expected-head flag)
+✗ failed to check merge status: could not reach the GitHub API
+actionable: https://github.com/Example/Repo/pull/8 accepted-uncertain; unresolved merge recorded for firstmate reconciliation, no merge authority published
+actionable: https://github.com/example/repo/pull/9 accepted-uncertain; unresolved merge recorded for firstmate reconciliation, no merge authority published
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+pr view https://github.com/example/repo/pull/8 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+stack merge 9 --yes --squash
+api repos/example/repo/pulls/9 --jq .merged
+
+PRODUCT ARTIFACT state/task-x1.merge-unresolved
+accepted-uncertain
+github
+github.com
+example/repo
+9
+
+PRODUCT ARTIFACT state/dependency.merge-unresolved
+accepted-uncertain
+github
+github.com
+Example/Repo
+8
+
+CASE stack-reconcile-not-landed
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  2 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+notice: https://github.com/example/repo/pull/9 requires GitHub atomic stack merging; retrying with gh stack merge
+verified: https://github.com/example/repo/pull/8 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+verified: stack heads re-read for https://github.com/example/repo/pull/9; invoking gh stack merge --yes --squash (no atomic expected-head flag)
+✗ failed to check merge status: could not reach the GitHub API
+error: gh stack merge failed and https://github.com/example/repo/pull/9 has not merged; no participant authority recorded
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+pr view https://github.com/example/repo/pull/8 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+stack merge 9 --yes --squash
+api repos/example/repo/pulls/9 --jq .merged
+
+CASE stack-reconcile-not-landed-timeout
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  2 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+notice: https://github.com/example/repo/pull/9 requires GitHub atomic stack merging; retrying with gh stack merge
+verified: https://github.com/example/repo/pull/8 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+verified: stack heads re-read for https://github.com/example/repo/pull/9; invoking gh stack merge --yes --squash (no atomic expected-head flag)
+⚠ Merge is still in progress. Check the pull requests on GitHub.
+error: gh stack merge failed and https://github.com/example/repo/pull/9 has not merged; no participant authority recorded
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+pr view https://github.com/example/repo/pull/8 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+stack merge 9 --yes --squash
+api repos/example/repo/pulls/9 --jq .merged
+
+CASE stack-reconcile-unreadable
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  2 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+notice: https://github.com/example/repo/pull/9 requires GitHub atomic stack merging; retrying with gh stack merge
+verified: https://github.com/example/repo/pull/8 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+verified: stack heads re-read for https://github.com/example/repo/pull/9; invoking gh stack merge --yes --squash (no atomic expected-head flag)
+✗ failed to check merge status: could not reach the GitHub API
+error: could not read merge result
+actionable: https://github.com/Example/Repo/pull/8 accepted-uncertain; unresolved merge recorded for firstmate reconciliation, no merge authority published
+actionable: https://github.com/example/repo/pull/9 accepted-uncertain; unresolved merge recorded for firstmate reconciliation, no merge authority published
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+pr view https://github.com/example/repo/pull/8 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+stack merge 9 --yes --squash
+api repos/example/repo/pulls/9 --jq .merged
+
+PRODUCT ARTIFACT state/task-x1.merge-unresolved
+accepted-uncertain
+github
+github.com
+example/repo
+9
+
+PRODUCT ARTIFACT state/dependency.merge-unresolved
+accepted-uncertain
+github
+github.com
+Example/Repo
+8
+
+CASE stack-reconcile-unreadable-timeout
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  2 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+notice: https://github.com/example/repo/pull/9 requires GitHub atomic stack merging; retrying with gh stack merge
+verified: https://github.com/example/repo/pull/8 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+verified: stack heads re-read for https://github.com/example/repo/pull/9; invoking gh stack merge --yes --squash (no atomic expected-head flag)
+⚠ Merge is still in progress. Check the pull requests on GitHub.
+error: could not read merge result
+actionable: https://github.com/Example/Repo/pull/8 accepted-uncertain; unresolved merge recorded for firstmate reconciliation, no merge authority published
+actionable: https://github.com/example/repo/pull/9 accepted-uncertain; unresolved merge recorded for firstmate reconciliation, no merge authority published
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+pr view https://github.com/example/repo/pull/8 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+stack merge 9 --yes --squash
+api repos/example/repo/pulls/9 --jq .merged
+
+PRODUCT ARTIFACT state/task-x1.merge-unresolved
+accepted-uncertain
+github
+github.com
+example/repo
+9
+
+PRODUCT ARTIFACT state/dependency.merge-unresolved
+accepted-uncertain
+github
+github.com
+Example/Repo
+8
+
+CASE stack-refuse-away
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+notice: https://github.com/example/repo/pull/9 requires GitHub atomic stack merging; retrying with gh stack merge
+GraphQL: Pull request is part of a stack and must be merged using the asynchronous merge REST API (mergePullRequest)
+error: gh stack merge failed for https://github.com/example/repo/pull/9 (exit 2)
+error: gh stack merge is asynchronous and attended-only; nothing was handed to the stack merger
+actionable: the merge command for https://github.com/example/repo/pull/9 failed, but the pull request reads back as state=MERGED, merged=true, isInMergeQueue=false
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+api --paginate repos/example/repo/rules/branches/main --jq .[] | select(.type == "merge_queue") | "merge_method=" + (.parameters.merge_method // "")
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api graphql -f query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}} -F owner=example -F repo=repo -F number=9 --jq .data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")
+
+CASE stack-refuse-changed-head
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+notice: https://github.com/example/repo/pull/9 requires GitHub atomic stack merging; retrying with gh stack merge
+GraphQL: Pull request is part of a stack and must be merged using the asynchronous merge REST API (mergePullRequest)
+error: gh stack merge failed for https://github.com/example/repo/pull/9 (exit 1)
+verified: https://github.com/example/repo/pull/8 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+error: stack changed immediately before merge; retry
+actionable: the merge command for https://github.com/example/repo/pull/9 failed, but the pull request reads back as state=MERGED, merged=true, isInMergeQueue=false
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+pr view https://github.com/example/repo/pull/8 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+api repos/example/repo/stacks?pull_request=9
+api graphql -f query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}} -F owner=example -F repo=repo -F number=9 --jq .data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")
+
+CASE stack-refuse-collision
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+notice: https://github.com/example/repo/pull/9 requires GitHub atomic stack merging; retrying with gh stack merge
+GraphQL: Pull request is part of a stack and must be merged using the asynchronous merge REST API (mergePullRequest)
+error: gh stack merge failed for https://github.com/example/repo/pull/9 (exit 1)
+error: the number in https://github.com/example/repo/pull/9 also selects a stack; refusing ambiguous gh stack merge target
+actionable: the merge command for https://github.com/example/repo/pull/9 failed, but the pull request reads back as state=MERGED, merged=true, isInMergeQueue=false
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+api graphql -f query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}} -F owner=example -F repo=repo -F number=9 --jq .data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")
+
+CASE stack-refuse-equivalent-collision
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+notice: https://github.com/example/repo/pull/9 requires GitHub atomic stack merging; retrying with gh stack merge
+GraphQL: Pull request is part of a stack and must be merged using the asynchronous merge REST API (mergePullRequest)
+error: gh stack merge failed for https://github.com/example/repo/pull/9 (exit 1)
+error: the number in https://github.com/example/repo/pull/9 also selects a stack; refusing ambiguous gh stack merge target
+actionable: the merge command for https://github.com/example/repo/pull/9 failed, but the pull request reads back as state=MERGED, merged=true, isInMergeQueue=false
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+api graphql -f query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}} -F owner=example -F repo=repo -F number=9 --jq .data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")
+
+CASE stack-refuse-failed
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+notice: https://github.com/example/repo/pull/9 requires GitHub atomic stack merging; retrying with gh stack merge
+verified: https://github.com/example/repo/pull/8 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+verified: stack heads re-read for https://github.com/example/repo/pull/9; invoking gh stack merge --yes --squash (no atomic expected-head flag)
+✗ failed to check merge status: could not reach the GitHub API
+error: gh stack merge failed and https://github.com/example/repo/pull/9 has not merged; no participant authority recorded
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+pr view https://github.com/example/repo/pull/8 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+stack merge 9 --yes --squash
+api repos/example/repo/pulls/9 --jq .merged
+
+CASE stack-refuse-held
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  2 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+notice: https://github.com/example/repo/pull/9 requires GitHub atomic stack merging; retrying with gh stack merge
+GraphQL: Pull request is part of a stack and must be merged using the asynchronous merge REST API (mergePullRequest)
+error: gh stack merge failed for https://github.com/example/repo/pull/9 (exit 1)
+error: task dependency is still held for the captain; release it before merging
+actionable: the merge command for https://github.com/example/repo/pull/9 failed, but the pull request reads back as state=MERGED, merged=true, isInMergeQueue=false
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+api graphql -f query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}} -F owner=example -F repo=repo -F number=9 --jq .data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")
+
+CASE stack-refuse-missing
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+notice: https://github.com/example/repo/pull/9 requires GitHub atomic stack merging; retrying with gh stack merge
+GraphQL: Pull request is part of a stack and must be merged using the asynchronous merge REST API (mergePullRequest)
+error: gh stack merge failed for https://github.com/example/repo/pull/9 (exit 1)
+error: refusing to merge https://github.com/example/repo/pull/8
+  - required check 'ci' has not reported at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+error: these required checks have not reported: ci
+actionable: the merge command for https://github.com/example/repo/pull/9 failed, but the pull request reads back as state=MERGED, merged=true, isInMergeQueue=false
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+pr view https://github.com/example/repo/pull/8 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+api graphql -f query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}} -F owner=example -F repo=repo -F number=9 --jq .data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")
+
+CASE stack-refuse-mixed-case-held
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  2 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+notice: https://github.com/example/repo/pull/9 requires GitHub atomic stack merging; retrying with gh stack merge
+GraphQL: Pull request is part of a stack and must be merged using the asynchronous merge REST API (mergePullRequest)
+error: gh stack merge failed for https://github.com/example/repo/pull/9 (exit 1)
+error: task dependency is still held for the captain; release it before merging
+actionable: the merge command for https://github.com/example/repo/pull/9 failed, but the pull request reads back as state=MERGED, merged=true, isInMergeQueue=false
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+api graphql -f query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}} -F owner=example -F repo=repo -F number=9 --jq .data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")
+
+CASE stack-refuse-red
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+notice: https://github.com/example/repo/pull/9 requires GitHub atomic stack merging; retrying with gh stack merge
+GraphQL: Pull request is part of a stack and must be merged using the asynchronous merge REST API (mergePullRequest)
+error: gh stack merge failed for https://github.com/example/repo/pull/9 (exit 1)
+error: refusing to merge https://github.com/example/repo/pull/8
+  - check 'ci' is not green
+error: these checks are not green: ci
+actionable: the merge command for https://github.com/example/repo/pull/9 failed, but the pull request reads back as state=MERGED, merged=true, isInMergeQueue=false
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+pr view https://github.com/example/repo/pull/8 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+api graphql -f query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}} -F owner=example -F repo=repo -F number=9 --jq .data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")
+
+CASE stack-refuse-unsupported
+
+PRODUCT ARTIFACT out
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+notice: https://github.com/example/repo/pull/9 requires GitHub atomic stack merging; retrying with gh stack merge
+GraphQL: Pull request is part of a stack and must be merged using the asynchronous merge REST API (mergePullRequest)
+error: gh stack merge failed for https://github.com/example/repo/pull/9 (exit 2)
+error: gh stack merge does not support extra argument --admin; retry with only a merge method
+actionable: the merge command for https://github.com/example/repo/pull/9 failed, but the pull request reads back as state=MERGED, merged=true, isInMergeQueue=false
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash --admin
+api graphql -f query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}} -F owner=example -F repo=repo -F number=9 --jq .data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")
+
+CASE stack-success-merge
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --merge
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+pr view https://github.com/example/repo/pull/8 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+stack merge 9 --yes --merge
+api graphql -f query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}} -F owner=example -F repo=repo -F number=9 --jq .data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")
+
+PRODUCT ARTIFACT state/task-x1.merge-authority
+fm-merge-authority-v1
+github
+github.com
+example/repo
+9
+attended
+
+CASE stack-success-rebase
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --rebase
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+pr view https://github.com/example/repo/pull/8 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+stack merge 9 --yes --rebase
+api graphql -f query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}} -F owner=example -F repo=repo -F number=9 --jq .data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")
+
+PRODUCT ARTIFACT state/task-x1.merge-authority
+fm-merge-authority-v1
+github
+github.com
+example/repo
+9
+attended
+
+CASE stack-success-squash
+
+PRODUCT ARTIFACT gh.log
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+pr view https://github.com/example/repo/pull/8 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+stack merge 9 --yes --squash
+api graphql -f query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}} -F owner=example -F repo=repo -F number=9 --jq .data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")
+
+PRODUCT ARTIFACT state/task-x1.merge-authority
+fm-merge-authority-v1
+github
+github.com
+example/repo
+9
+attended

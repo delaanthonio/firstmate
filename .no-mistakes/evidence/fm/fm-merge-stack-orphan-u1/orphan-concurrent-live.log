@@ -1,0 +1,42 @@
+/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69TE5C0HF0TJ00KV4A1XZXJ/.phase-test/fm-lab.u8nH6k
+
+SCENARIO two concurrent registrations compete for the same unowned PR: round 1
+Recorder A: exit=1
+error: https://github.com/fm-live-validation/disposable/pull/21 already belongs to task owner-b-1; use that task's merge record
+Recorder B: exit=0
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/owner-b-1.check.sh
+Surviving owner:
+kind=orphan
+pr=https://github.com/fm-live-validation/disposable/pull/21
+Exactly one durable owner and one armed poll.
+
+SCENARIO two concurrent registrations compete for the same unowned PR: round 2
+Recorder A: exit=1
+error: https://github.com/fm-live-validation/disposable/pull/22 already belongs to task owner-b-2; use that task's merge record
+Recorder B: exit=0
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+armed: state/owner-b-2.check.sh
+Surviving owner:
+kind=orphan
+pr=https://github.com/fm-live-validation/disposable/pull/22
+Exactly one durable owner and one armed poll.
+
+SCENARIO two concurrent registrations compete for the same unowned PR: round 3
+Recorder A: exit=0
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+armed: state/owner-a-3.check.sh
+Recorder B: exit=1
+error: https://github.com/fm-live-validation/disposable/pull/23 already belongs to task owner-a-3; use that task's merge record
+Surviving owner:
+kind=orphan
+pr=https://github.com/fm-live-validation/disposable/pull/23
+Exactly one durable owner and one armed poll.
+
+Concurrent ownership remained exclusive; lab removed by EXIT trap.

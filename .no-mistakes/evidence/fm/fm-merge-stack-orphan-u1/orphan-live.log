@@ -1,0 +1,75 @@
+/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69TE5C0HF0TJ00KV4A1XZXJ/.phase-test/fm-lab.T9gxFH
+
+SCENARIO missing task requires explicit orphan opt-in
+
+COMMAND bin/fm-pr-merge.sh missing https://github.com/fm-live-validation/disposable/pull/9
+error: task metadata is unavailable
+exit=1
+
+SCENARIO record and reuse an orphan using the real recorder and real gh without credentials
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/orphan-live.check.sh
+kind=orphan
+pr=https://github.com/fm-live-validation/disposable/pull/9
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+armed: state/orphan-live.check.sh
+Persisted poll identity:
+github
+https://github.com/fm-live-validation/disposable/pull/9
+github.com
+fm-live-validation/disposable
+9
+
+SCENARIO explicit and flagless recording cannot rebind an orphan
+
+COMMAND bin/fm-pr-check.sh orphan-live https://github.com/fm-live-validation/disposable/pull/10 --orphan
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: orphan task orphan-live cannot change its PR identity
+exit=1
+
+COMMAND bin/fm-pr-check.sh orphan-live https://github.com/fm-live-validation/disposable/pull/10
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: orphan task orphan-live cannot change its PR identity
+exit=1
+
+SCENARIO a new ID cannot bypass existing ownership, including mixed GitHub case
+
+COMMAND bin/fm-pr-check.sh alternate https://github.com/FM-LIVE-VALIDATION/Disposable/pull/9 --orphan
+error: https://github.com/FM-LIVE-VALIDATION/Disposable/pull/9 already belongs to task orphan-live; use that task's merge record
+exit=1
+
+SCENARIO orphan mode preserves an existing worker record
+
+COMMAND bin/fm-pr-check.sh worker https://github.com/fm-live-validation/disposable/pull/11 --orphan
+error: --orphan refuses to replace an existing task or change its PR identity
+exit=1
+
+SCENARIO forge-only records remain valid without a worker directory or backlog entry
+state: paused · source: none · forge-only PR recorded: https://github.com/fm-live-validation/disposable/pull/9
+0
+{
+  "valid": true,
+  "invalidity": {
+    "kind": null,
+    "ids": []
+  }
+}
+
+SCENARIO captain hold blocks orphan merge before any forge merge
+orphan-live
+
+COMMAND bin/fm-pr-merge.sh orphan-live https://github.com/fm-live-validation/disposable/pull/9 --orphan
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+armed: state/orphan-live.check.sh
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+armed: state/orphan-live.check.sh
+error: task orphan-live is still held for the captain; release it before merging
+exit=1
+
+All live local scenarios completed; lab removed by EXIT trap.

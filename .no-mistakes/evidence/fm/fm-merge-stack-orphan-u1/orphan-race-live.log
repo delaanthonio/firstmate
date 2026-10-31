@@ -1,0 +1,27 @@
+/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M69TE5C0HF0TJ00KV4A1XZXJ/.phase-test/fm-lab.OpNcT7
+
+SCENARIO explicit orphan recording refuses a worker replacement at publication
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+error: orphan task race-explicit was replaced before PR publication
+exit=1
+Replacement metadata:
+kind=ship
+spawn_gen=replacement-worker
+Replacement unchanged; no stale binding or poll published.
+
+SCENARIO flagless orphan recording refuses a worker replacement at publication
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: orphan task race-flagless was replaced before PR publication
+exit=1
+Replacement metadata:
+kind=ship
+spawn_gen=replacement-worker
+Replacement unchanged; no stale binding or poll published.
+
+Both real recorder races refused stale publication; lab removed by EXIT trap.
