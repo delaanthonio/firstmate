@@ -137,6 +137,10 @@ fm_merge_authority_persist() {  # <state> <task-id> <meta> <provider> <host> <pa
         "$provider" "$host" "$path" "$number" \
       || status=1
   fi
+  if [ "$status" -eq 0 ] \
+    && fm_merge_unresolved_matches "$state" "$id" "$provider" "$host" "$path" "$number"; then
+    rm -f -- "$state/$id.merge-unresolved" || status=1
+  fi
   [ "$status" -eq 0 ] || rm -f -- "$tmp"
   fm_lock_release "$lock" || status=1
   return "$status"
@@ -189,4 +193,37 @@ fm_merge_authority_remove_if_matches() {  # <state> <task-id> <provider> <host> 
   fi
   fm_lock_release "$lock" || status=1
   return "$status"
+}
+
+fm_merge_unresolved_matches() {
+  local state=$1 id=$2 provider=$3 host=$4 path=$5 number=$6 device expected
+  fm_pr_task_id_valid "$id" || return 1
+  device=$(fm_pr_file_device "$state") || return 1
+  fm_pr_private_file_valid "$state/$id.merge-unresolved" 600 "$device" || return 1
+  expected=$(printf '%s\n' accepted-uncertain "$provider" "$host" "$path" "$number")
+  [ "$(cat "$state/$id.merge-unresolved")" = "$expected" ]
+}
+
+fm_merge_unresolved_persist() {
+  local state=$1 id=$2 meta=$3 provider=$4 host=$5 path=$6 number=$7 device record tmp
+  fm_pr_task_id_valid "$id" || return 1
+  [ -d "$state" ] && [ ! -L "$state" ] || return 1
+  device=$(fm_pr_file_device "$state") || return 1
+  fm_pr_metadata_identity_parse "$meta" || return 1
+  [ "$FM_PR_META_PROVIDER" = "$provider" ] \
+    && [ "$FM_PR_META_HOST" = "$host" ] \
+    && [ "$FM_PR_META_PATH" = "$path" ] \
+    && [ "$FM_PR_META_NUMBER" = "$number" ] || return 1
+  record="$state/$id.merge-unresolved"
+  fm_pr_regular_destination_on_device_or_absent "$record" "$device" || return 1
+  umask 077
+  tmp=$(mktemp "$state/.fm-merge-unresolved.XXXXXX") || return 1
+  if ! printf '%s\n' accepted-uncertain "$provider" "$host" "$path" "$number" > "$tmp" \
+    || ! chmod 0600 "$tmp" \
+    || ! fm_pr_regular_destination_on_device_or_absent "$record" "$device" \
+    || ! mv -f -- "$tmp" "$record" \
+    || ! fm_merge_unresolved_matches "$state" "$id" "$provider" "$host" "$path" "$number"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
 }

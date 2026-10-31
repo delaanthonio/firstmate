@@ -3063,6 +3063,14 @@ EOF
             triage_log "retired a merge poll armed on secondmate $id without reporting an outcome"
             continue
           fi
+          if fm_merge_unresolved_matches "$STATE" "$id" "$provider" "$host" "$path" "$number"; then
+            reason="check: unresolved merge: $id $url accepted-uncertain; firstmate reconciliation required"
+            fm_wake_append check "unresolved-merge-$id-$url" "$reason" || exit 1
+            pr_poll_control_release || exit 1
+            touch "$STATE/.last-check"
+            wake "$reason"
+            continue
+          fi
           if ! fm_merge_authority_read "$STATE" "$id" \
               "$provider" "$host" "$path" "$number"; then
             triage_log "no matching persisted merge authority for $id; recording an external merge outcome"

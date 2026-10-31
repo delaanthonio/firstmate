@@ -218,6 +218,8 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 . "$SCRIPT_DIR/fm-merge-outcome-lib.sh"
 # shellcheck source=bin/fm-merge-authority-lib.sh
 . "$SCRIPT_DIR/fm-merge-authority-lib.sh"
+# shellcheck source=bin/fm-timeout-lib.sh
+. "$SCRIPT_DIR/fm-timeout-lib.sh"
 # shellcheck source=bin/fm-afk-contract.sh
 . "$SCRIPT_DIR/fm-afk-contract.sh"
 
@@ -1462,6 +1464,18 @@ github_stack_snapshot() {
       then . else error("invalid stack member") end' 2>/dev/null
 }
 
+github_require_unambiguous_stack_target() {
+  local err=$1
+  if gh api "repos/$PR_OWNER/$PR_REPO/stacks/$PR_NUMBER" > /dev/null 2>"$err"; then
+    echo "error: the number in $URL also selects a stack; refusing ambiguous gh stack merge target" >&2
+    return 1
+  elif ! grep -q 'HTTP 404' "$err"; then
+    cat "$err" >&2
+    echo "error: could not rule out a conflicting stack number; stack merge refused" >&2
+    return 1
+  fi
+}
+
 # Run in a subshell: temporary repository state and per-member PR identities
 # must not escape into the target task's outcome recording.
 github_merge_stack() (
@@ -1491,7 +1505,8 @@ github_merge_stack_checked() {
   local URL=$URL PR_NUMBER=$PR_NUMBER ID=$ID META=$META PR_PATH=$PR_PATH
   local FM_PR_MERGE_HEAD=$FM_PR_MERGE_HEAD FM_PR_GITHUB_BASE=$FM_PR_GITHUB_BASE
   local FM_PR_GITHUB_REQUIRED FM_PR_GITHUB_REQUIRED_ERROR
-  local snapshot current members member number head err method arg participant_url
+  local snapshot current members member number head err method arg participant_url merged
+  local completion_status=0 publication_status=0 persist=persist_accepted_merge_authority
   local participants=() participant_ids=() participant_urls=() i
   local LC_ALL=C
   local original_url=$URL original_id=$ID target_head=$FM_PR_MERGE_HEAD other target_locked=false
@@ -1520,14 +1535,7 @@ github_merge_stack_checked() {
     return 1
   }
   err="$scratch/collision.err"
-  if gh api "repos/$PR_OWNER/$PR_REPO/stacks/$PR_NUMBER" > /dev/null 2>"$err"; then
-    echo "error: the number in $original_url also selects a stack; refusing ambiguous gh stack merge target" >&2
-    return 1
-  elif ! grep -q 'HTTP 404' "$err"; then
-    cat "$err" >&2
-    echo "error: could not rule out a conflicting stack number; stack merge refused" >&2
-    return 1
-  fi
+  github_require_unambiguous_stack_target "$err" || return 1
   # An empty repository with exactly one remote gives repository.Current() an
   # unambiguous URL. No checkout, worktree allocation, or project mutation occurs.
   git init -q "$scratch/repo" || return 1
@@ -1603,18 +1611,40 @@ MEMBERS
   [ "$current" = "$snapshot" ] || {
     echo "error: stack changed immediately before merge; retry" >&2; return 1;
   }
+  github_require_unambiguous_stack_target "$err" || return 1
   printf 'verified: stack heads re-read for %s; invoking gh stack merge --yes --%s (no atomic expected-head flag)\n' "$URL" "$method" >&2
-  (cd "$scratch/repo" && gh stack merge "$PR_NUMBER" --yes "--$method") || return 1
+  if ! (cd "$scratch/repo" && gh stack merge "$PR_NUMBER" --yes "--$method"); then
+    if merged=$(fm_exec_timed 30 2 gh api "repos/$PR_OWNER/$PR_REPO/pulls/$PR_NUMBER" --jq '.merged') \
+      && { [ "$merged" = true ] || [ "$merged" = false ]; }; then
+      if [ "$merged" = false ]; then
+        echo "error: gh stack merge failed and $URL has not merged; no participant authority recorded" >&2
+        return 4
+      fi
+      completion_status=3
+    else
+      persist=persist_unresolved_merge
+      completion_status=5
+    fi
+  fi
   for ((i=0; i<${#participants[@]}; i++)); do
     META=${participants[$i]}
     ID=${participant_ids[$i]}
-    fm_pr_metadata_identity_parse "$META" || return 1
-    [ "$FM_PR_META_URL" = "${participant_urls[$i]}" ] || return 1
+    if ! fm_pr_metadata_identity_parse "$META" \
+      || [ "$FM_PR_META_URL" != "${participant_urls[$i]}" ]; then
+      echo "actionable: stack merge dispatched but participant $ID binding changed; firstmate reconciliation required" >&2
+      publication_status=1
+      continue
+    fi
     URL=$FM_PR_META_URL
     PR_PATH=$FM_PR_META_PATH
     PR_NUMBER=$FM_PR_META_NUMBER
-    persist_accepted_merge_authority || return 1
+    if ! "$persist"; then
+      echo "actionable: stack merge dispatched but participant $ID result could not be recorded; firstmate reconciliation required" >&2
+      publication_status=1
+    fi
   done
+  [ "$publication_status" -eq 0 ] || return 6
+  return "$completion_status"
 }
 
 record_pr_metadata() {
@@ -1719,6 +1749,20 @@ persist_accepted_merge_authority() {
   printf 'actionable: the forge accepted the merge request for %s but its merge authority could not be persisted; the merge poll remains armed\n' \
     "$URL" >&2
   return 1
+}
+
+persist_unresolved_merge() {
+  local status=0
+  MERGE_META_LOCK=$(fm_meta_lock_path "$META") || return 1
+  fm_lock_acquire_wait "$MERGE_META_LOCK" || return 1
+  fm_merge_unresolved_persist "$STATE" "$ID" "$META" \
+    "$PROVIDER" "$PR_HOST" "$PR_PATH" "$PR_NUMBER" || status=1
+  fm_lock_release "$MERGE_META_LOCK" || status=1
+  MERGE_META_LOCK=
+  [ "$status" -eq 0 ] || return 1
+  fm_wake_append check "unresolved-merge-$ID-$URL" \
+    "check: unresolved merge: $ID $URL accepted-uncertain; firstmate reconciliation required" || return 1
+  printf 'actionable: %s accepted-uncertain; unresolved merge recorded for firstmate reconciliation, no merge authority published\n' "$URL" >&2
 }
 
 # While away, a merge proceeds only when the base branch's rules prove no
@@ -1925,6 +1969,7 @@ case "$PROVIDER" in
   github)
     merge_output=
     stack_accepted=false
+    stack_reconciled=false
     github_prepare_pr_args "$@" || exit 2
     merge_args=()
     if ! caller_has_merge_method "$@"; then
@@ -1981,16 +2026,24 @@ case "$PROVIDER" in
           stack_output=''
           stack_status=0
           stack_output=$(github_merge_stack "$@" 2>&1) || stack_status=$?
-          if [ "$stack_status" -eq 0 ]; then
-            merge_status=0
-            stack_accepted=true
-            merge_output=$stack_output
-          else
-            merge_output="$merge_output
+          case "$stack_status" in
+            0|3)
+              merge_status=0
+              stack_accepted=true
+              [ "$stack_status" -ne 3 ] || stack_reconciled=true
+              merge_output=$stack_output
+              ;;
+            4|5|6)
+              printf '%s\n' "$stack_output" >&2
+              exit 1
+              ;;
+            *)
+              merge_output="$merge_output
 error: gh stack merge failed for $URL (exit $stack_status)
 $stack_output"
-            merge_status=$stack_status
-          fi
+              merge_status=$stack_status
+              ;;
+          esac
           ;;
       esac
     fi
@@ -2017,7 +2070,11 @@ $stack_output"
       fi
       exit "$merge_status"
     fi
-    if ! github_read_outcome; then
+    if [ "$stack_reconciled" = true ]; then
+      FM_PR_GITHUB_STATE=MERGED
+      FM_PR_GITHUB_MERGED=true
+      FM_PR_GITHUB_QUEUED=false
+    elif ! github_read_outcome; then
       github_report_forge_output "$merge_output"
       exit 1
     fi

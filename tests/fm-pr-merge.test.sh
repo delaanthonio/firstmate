@@ -257,7 +257,7 @@ case "${1:-} ${2:-}" in
     git remote get-url origin > "$case_dir/stack-repo"
     pwd -P > "$case_dir/stack-cwd"
     if [ -f "$case_dir/stack-merge-fail" ]; then
-      echo 'error: stack merge rejected by GitHub' >&2
+      echo 'error: failed to check merge status' >&2
       exit 1
     fi
     if [ -x "$case_dir/stack-hook" ]; then
@@ -280,6 +280,12 @@ case "${1:-} ${2:-}" in
     case " $* " in
       *"/stacks?pull_request="*)
         case_dir=$(dirname "$FM_TEST_GH_VIEW_JSON")
+        if [ -f "$case_dir/stack-read-called" ] && [ -f "$case_dir/stack-late-collision" ]; then
+          cp "$case_dir/stack-late-collision" "$case_dir/stack-collision.json"
+        fi
+        if [ -f "$case_dir/stack-read-called" ] && [ -f "$case_dir/stack-late-collision-error" ]; then
+          cp "$case_dir/stack-late-collision-error" "$case_dir/stack-collision-error"
+        fi
         if [ -f "$case_dir/stack-read-called" ] && [ -f "$case_dir/stack-next.json" ]; then
           cat "$case_dir/stack-next.json"
         else
@@ -290,12 +296,29 @@ case "${1:-} ${2:-}" in
         ;;
       *"/stacks/"*)
         case_dir=$(dirname "$FM_TEST_GH_VIEW_JSON")
+        if [ -f "$case_dir/stack-collision-error" ]; then
+          cat "$case_dir/stack-collision-error" >&2
+          exit 1
+        fi
         if [ -f "$case_dir/stack-collision.json" ]; then
           cat "$case_dir/stack-collision.json"
           exit 0
         fi
         echo 'gh: Not Found (HTTP 404)' >&2
         exit 1
+        ;;
+      *"/pulls/"*" --jq .merged "*)
+        case_dir=$(dirname "$FM_TEST_GH_VIEW_JSON")
+        if [ -f "$case_dir/stack-reconcile-fail" ]; then
+          echo 'error: could not read merge result' >&2
+          exit 1
+        fi
+        if [ -f "$case_dir/stack-reconcile" ]; then
+          cat "$case_dir/stack-reconcile"
+        else
+          echo false
+        fi
+        exit 0
         ;;
       *" repos/"*"/commits/"*"/check-runs"*)
         case "$*" in
@@ -808,6 +831,84 @@ test_stack_merge_preserves_method_and_records_outcome() {
   run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 > "$case_dir/out" 2>&1 || fail "default stack merge failed"
   grep -qxF 'stack merge 9 --yes --squash' "$case_dir/gh.log" || fail "stack default is not squash"
   pass "stack fallback delegates atomic merging to gh stack merge with methods, preflight and recorded outcome"
+}
+
+test_stack_collision_is_rechecked_before_dispatch() {
+  local case_dir scenario rc
+  for scenario in collision unreadable; do
+    case_dir=$(make_stack_case "stack-late-$scenario")
+    if [ "$scenario" = collision ]; then
+      printf '{"number":9}\n' > "$case_dir/stack-late-collision"
+    else
+      printf 'gh: unavailable (HTTP 503)\n' > "$case_dir/stack-late-collision-error"
+    fi
+    rc=0
+    run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 > "$case_dir/out" 2>&1 || rc=$?
+    [ "$rc" -ne 0 ] || fail "late $scenario allowed stack dispatch"
+    [ "$(grep -c '^api repos/example/repo/stacks/9$' "$case_dir/gh.log")" -eq 2 ] || fail "numeric target was not rechecked"
+    ! grep -q '^stack merge ' "$case_dir/gh.log" || fail "ambiguous or unreadable target reached extension"
+    [ ! -e "$case_dir/state/task-x1.merge-authority" ] || fail "refused dispatch published authority"
+    [ ! -e "$case_dir/state/task-x1.pr-poll-merge-notified" ] || fail "refused dispatch published merge outcome"
+  done
+  pass "stack dispatch refuses newly colliding and unreadable numeric targets"
+}
+
+test_stack_failure_reconciles_once_for_all_participants() {
+  local case_dir scenario rc id number
+  for scenario in landed not-landed unreadable malformed; do
+    case_dir=$(make_stack_case "stack-reconcile-$scenario")
+    printf 'kind=orphan\npr=https://github.com/Example/Repo/pull/8\n' > "$case_dir/state/dependency.meta"
+    touch "$case_dir/stack-merge-fail"
+    case "$scenario" in
+      landed)
+        echo true > "$case_dir/stack-reconcile"
+        printf '%s\n' accepted-uncertain github github.com example/repo 9 > "$case_dir/state/task-x1.merge-unresolved"
+        printf '%s\n' accepted-uncertain github github.com Example/Repo 8 > "$case_dir/state/dependency.merge-unresolved"
+        chmod 0600 "$case_dir/state/"*.merge-unresolved
+        ;;
+      not-landed) echo false > "$case_dir/stack-reconcile" ;;
+      unreadable) touch "$case_dir/stack-reconcile-fail" ;;
+      malformed) echo null > "$case_dir/stack-reconcile" ;;
+    esac
+    rc=0
+    run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 > "$case_dir/out" 2>&1 || rc=$?
+    [ "$(grep -c '^api repos/example/repo/pulls/9 --jq .merged$' "$case_dir/gh.log")" -eq 1 ] || fail "$scenario: expected exactly one reconciliation read"
+    ! grep -q '^api graphql ' "$case_dir/gh.log" || fail "$scenario: reconciliation performed a second outcome read"
+    [ ! -s "$case_dir/gh-axi.log" ] || fail "$scenario: reconciliation invoked another reader"
+    if [ "$scenario" = landed ]; then
+      [ "$rc" -eq 0 ] || fail "confirmed landing failed: $(cat "$case_dir/out")"
+      [ -f "$case_dir/state/task-x1.pr-poll-merge-notified" ] || fail "confirmed merge outcome missing"
+    else
+      [ "$rc" -ne 0 ] || fail "$scenario: reported a successful merge"
+      [ ! -e "$case_dir/state/task-x1.pr-poll-merge-notified" ] || fail "$scenario: published a false merge outcome"
+    fi
+    for id in task-x1 dependency; do
+      number=9
+      [ "$id" != dependency ] || number=8
+      if [ "$scenario" = landed ]; then
+        bash -c '
+          . "$1/bin/fm-wake-lib.sh"
+          . "$1/bin/fm-merge-authority-lib.sh"
+          fm_merge_authority_read "$2" "$3" github github.com "$4" "$5" || exit 1
+          [ "$FM_MERGE_AUTHORITY" = attended ]
+        ' bash "$ROOT" "$case_dir/state" "$id" "$([ "$id" = dependency ] && echo Example/Repo || echo example/repo)" "$number" || fail "$id: landed authority missing"
+      else
+        [ ! -e "$case_dir/state/$id.merge-authority" ] || fail "$id: $scenario published authority"
+      fi
+      case "$scenario" in
+        unreadable|malformed)
+          [ "$(sed -n 1p "$case_dir/state/$id.merge-unresolved")" = accepted-uncertain ] || fail "$id: unresolved marker missing"
+          [ "$(sed -n 5p "$case_dir/state/$id.merge-unresolved")" = "$number" ] || fail "$id: unresolved marker has wrong PR"
+          grep -F "check: unresolved merge: $id " "$case_dir/state/.wake-queue" | grep -F 'accepted-uncertain; firstmate reconciliation required' >/dev/null || fail "$id: no reconciliation notification"
+          ;;
+        *) [ ! -e "$case_dir/state/$id.merge-unresolved" ] || fail "$id: resolved result marked uncertain" ;;
+      esac
+    done
+    if [ "$scenario" != landed ]; then
+      ! grep -F 'check: merge landed:' "$case_dir/state/.wake-queue" >/dev/null 2>&1 || fail "$scenario: false landed notification"
+    fi
+  done
+  pass "stack errors reconcile landed, unmerged and unreadable outcomes once for every owned participant"
 }
 
 test_stack_participant_locks_and_authority() {
@@ -5226,6 +5327,8 @@ test_allow_no_pipeline_is_attended_only_and_gitlab_only() {
 
 test_stack_merge_preserves_method_and_records_outcome
 test_stack_participant_locks_and_authority
+test_stack_collision_is_rechecked_before_dispatch
+test_stack_failure_reconciles_once_for_all_participants
 test_orphan_registration_refuses_worker_replacement
 test_orphan_merge_retains_context_under_control
 test_orphan_identity_is_fixed_at_publication
