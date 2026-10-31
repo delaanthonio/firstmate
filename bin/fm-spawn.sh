@@ -308,6 +308,11 @@
 #   fetching or resetting its base. An unreachable detected origin, unresolved
 #   default branch, or non-clean worktree refuses a fresh spawn rather than
 #   risking a PR based on stale history or discarding local work.
+#   Every ship/scout then runs bin/fm-project-bootstrap.sh in the isolated copy
+#   before trust setup or agent launch; a dependency failure refuses the spawn
+#   before task publication or the backlog's In-flight transition. Receipt reuse
+#   also requires the detected local dependency output directories to exist.
+#   docs/configuration.md "Project dependency bootstrap" owns the override schema.
 #   A slot whose only deviation is a stale submodule gitlink is refused by that
 #   same clean check, but is reported as a stale checkout naming each submodule
 #   and both pins; nothing is converged or removed, and no remedy is suggested.
@@ -5245,6 +5250,13 @@ fi
 # tab's original project directory.
 spawn_enter_recorded_worktree
 spawn_assert_agent_worktree
+
+if [ "$KIND" != secondmate ]; then
+  if ! "$SCRIPT_DIR/fm-project-bootstrap.sh" "$PROJ_ABS" "$WT"; then
+    echo "error: dependency bootstrap refused spawn of $ID; $(spawn_endpoint_hint)" >&2
+    exit 1
+  fi
+fi
 
 # Pre-register Claude's workspace trust for the directory this launch starts in,
 # at the first point that directory is known and before any per-task state is
