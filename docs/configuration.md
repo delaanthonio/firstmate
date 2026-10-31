@@ -1222,9 +1222,11 @@ A failed command prints its diagnostics and refuses the spawn before task public
 Persistent secondmate homes do not use this worker-worktree step.
 
 By default, root-level `mise.toml` or `.mise.toml` runs `mise install`, `uv.lock` runs `uv sync`, `package-lock.json` runs `npm ci`, `Cargo.lock` runs `cargo fetch`, and `Gemfile.lock` runs `bundle install`.
-All matching managers run in that order, with mise first so it can install the toolchains the other managers need.
+All matching managers run in that order; mise installs the toolchains first, then every detected dependency manager runs through `mise exec` with those tools active.
 `uv sync` includes uv's default development group, including tools used during validation.
-Projects with no recognized marker and no override have no automatic bootstrap.
+Only projects without a recognized dependency manifest or lockfile can skip bootstrap without an override.
+A manifest without its supported lockfile refuses spawn and names the required lockfile and override configuration.
+Alternative Node and Python dependency files (pnpm, Yarn, Bun, npm shrinkwrap, requirements, Pipenv, Poetry, and setuptools), Go modules, and Composer manifests require an explicit command, even when another manager is detected.
 The required managers must be available to the spawning process; a missing executable refuses the spawn like any other command failure.
 
 The optional home-local, gitignored `config/project-bootstrap.json` overrides detection for named projects and is inherited into secondmate homes.
@@ -1233,24 +1235,23 @@ Its top-level object maps each registered project name (the clone directory base
 | Field | Required | Meaning |
 | --- | --- | --- |
 | `command` | yes | Nonblank Bash command executed from the worker worktree with `errexit` and `pipefail`. Replaces all detected commands. |
-| `markers` | no | Array of extra dependency input file paths relative to the worktree, for example workspace manifests or a bootstrap script. Empty paths, control characters, absolute paths, and `.` or `..` path components are refused. |
 
 Unknown fields, invalid entries, and unreadable configuration refuse bootstrap rather than silently falling back to detection.
 Commands are trusted operator configuration and may install project tools or execute the project's setup scripts.
-For example, a project needing additional uv groups and a workspace manifest can declare:
+For example, a project needing additional uv groups can declare:
 
 ```json
 {
   "my-project": {
-    "command": "uv sync --all-groups",
-    "markers": ["packages/api/pyproject.toml"]
+    "command": "uv sync --all-groups"
   }
 }
 ```
 
-Fresh spawns always bootstrap, using each package manager's ordinary caches and locks.
-Relaunches reuse a successful receipt only while the command, worktree path, root dependency manifests and lockfiles, and any additional markers are unchanged.
-Marker additions and removals invalidate that receipt too; list nested workspace inputs and setup scripts in `markers` when a project uses them.
+Spawns and relaunches reuse a successful receipt for detected uv/npm dependencies only while the command, worktree path, and root dependency manifests and lockfiles are unchanged and every expected output directory exists (`.venv` for uv and `node_modules` for npm).
+Missing outputs or changed, added, or removed inputs force bootstrap again, using each package manager's ordinary caches and locks.
+Custom commands, Cargo, Bundler, and toolchain-only projects always run because their output locations cannot be established by this check.
+Use a custom command for nested workspace inputs or setup scripts; it replaces detection and runs on every launch.
 Only success writes a receipt, and failure invalidates any previous success so a retry must bootstrap again.
 The helper's header and `--help` own receipt and serialization mechanics: [`bin/fm-project-bootstrap.sh`](../bin/fm-project-bootstrap.sh).
 

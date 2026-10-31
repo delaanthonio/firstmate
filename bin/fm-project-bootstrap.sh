@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Bootstrap dependencies in an isolated worker worktree before agent launch.
-# Usage: fm-project-bootstrap.sh <project-dir> <worktree> [--fresh]
+# Usage: fm-project-bootstrap.sh <project-dir> <worktree>
 # Configuration schema: docs/configuration.md "Project dependency bootstrap".
 # Runs detected root-level dependency managers, or the configured Bash command,
 # from the worktree, streaming diagnostics and refusing on any failure.
-# --fresh always bootstraps; otherwise an unchanged successful receipt skips it.
+# An unchanged successful receipt skips detected uv/npm commands only while
+# every expected local dependency output directory exists.
 # Receipts and the serialization lock live in the worktree's own git directory,
 # never its tracked files or the repository's shared common directory. A receipt
 # binds the command, worktree path, and dependency marker contents (including
@@ -17,11 +18,10 @@ if [ "${1:-}" = --help ]; then
   sed -n '2,${/^#/!q;p;}' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
-PROJECT=${1:?usage: fm-project-bootstrap.sh <project-dir> <worktree> [--fresh]}
-WORKTREE=${2:?usage: fm-project-bootstrap.sh <project-dir> <worktree> [--fresh]}
-FRESH=${3:-}
-if [ "$#" -gt 3 ] || { [ -n "$FRESH" ] && [ "$FRESH" != --fresh ]; }; then
-  echo 'error: expected only project, worktree, and optional --fresh' >&2
+PROJECT=${1:?usage: fm-project-bootstrap.sh <project-dir> <worktree>}
+WORKTREE=${2:?usage: fm-project-bootstrap.sh <project-dir> <worktree>}
+if [ "$#" -ne 2 ]; then
+  echo 'error: expected only project and worktree' >&2
   exit 1
 fi
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
@@ -35,6 +35,8 @@ WORKTREE=$(cd "$WORKTREE" && pwd -P)
 NAME=${PROJECT##*/}
 DECLARATION="$CONFIG/project-bootstrap.json"
 COMMAND=
+CACHEABLE=1
+OUTPUTS=()
 MARKERS=(uv.lock pyproject.toml uv.toml .python-version mise.toml .mise.toml mise.lock .mise.lock
   .tool-versions package-lock.json package.json .npmrc Cargo.lock Cargo.toml rust-toolchain.toml
   rust-toolchain .cargo/config.toml Gemfile.lock Gemfile .ruby-version .bundle/config)
@@ -42,31 +44,57 @@ if [ -e "$DECLARATION" ] || [ -L "$DECLARATION" ]; then
   if ! jq -e '
     type == "object" and all(.[];
       type == "object" and
-      (keys - ["command", "markers"] | length == 0) and
-      (.command | type == "string" and test("[^\\s]") and (contains("\u0000") | not)) and
-      ((has("markers") | not) or (.markers | type == "array" and all(.[];
-        type == "string" and length > 0 and
-        (test("[\\x00-\\x1f]") | not) and
-        (startswith("/") | not) and
-        (split("/") | all(. != ".." and . != "." and . != "")))))
+      (keys - ["command"] | length == 0) and
+      (.command | type == "string" and test("[^\\s]") and (contains("\u0000") | not))
     )' "$DECLARATION" >/dev/null; then
     echo "error: invalid dependency bootstrap configuration: $DECLARATION" >&2
     exit 1
   fi
   COMMAND=$(jq -r --arg name "$NAME" '.[$name].command // empty' "$DECLARATION")
-  while IFS= read -r marker; do
-    [ -z "$marker" ] || MARKERS+=("$marker")
-  done < <(jq -r --arg name "$NAME" '.[$name].markers[]?' "$DECLARATION")
 fi
-if [ -z "$COMMAND" ]; then
-  # Install toolchains before invoking dependency managers they may provide.
-  if [ -f "$WORKTREE/mise.toml" ] || [ -f "$WORKTREE/.mise.toml" ]; then
-    COMMAND+=$'mise install\n'
+if [ -n "$COMMAND" ]; then
+  CACHEABLE=0
+else
+  for manifest in pyproject.toml package.json Cargo.toml Gemfile pnpm-lock.yaml yarn.lock \
+    bun.lock bun.lockb npm-shrinkwrap.json requirements.txt requirements-dev.txt \
+    Pipfile Pipfile.lock poetry.lock setup.py setup.cfg go.mod go.sum composer.json composer.lock; do
+    [ -f "$WORKTREE/$manifest" ] || continue
+    case "$manifest" in
+      pyproject.toml) required=uv.lock ;;
+      package.json) required=package-lock.json ;;
+      Cargo.toml) required=Cargo.lock ;;
+      Gemfile) required=Gemfile.lock ;;
+      *) required= ;;
+    esac
+    if [ -z "$required" ] || [ ! -f "$WORKTREE/$required" ]; then
+      echo "error: no dependency bootstrap command for $manifest${required:+ (requires $required)} in $WORKTREE; configure command for '$NAME' in $DECLARATION" >&2
+      exit 1
+    fi
+  done
+  if [ -f "$WORKTREE/uv.lock" ]; then
+    COMMAND+=$'uv sync\n'
+    OUTPUTS+=(.venv)
   fi
-  [ ! -f "$WORKTREE/uv.lock" ] || COMMAND+=$'uv sync\n'
-  [ ! -f "$WORKTREE/package-lock.json" ] || COMMAND+=$'npm ci\n'
-  [ ! -f "$WORKTREE/Cargo.lock" ] || COMMAND+=$'cargo fetch\n'
-  [ ! -f "$WORKTREE/Gemfile.lock" ] || COMMAND+=$'bundle install\n'
+  if [ -f "$WORKTREE/package-lock.json" ]; then
+    COMMAND+=$'npm ci\n'
+    OUTPUTS+=(node_modules)
+  fi
+  if [ -f "$WORKTREE/Cargo.lock" ]; then
+    COMMAND+=$'cargo fetch\n'
+    CACHEABLE=0
+  fi
+  if [ -f "$WORKTREE/Gemfile.lock" ]; then
+    COMMAND+=$'bundle install\n'
+    CACHEABLE=0
+  fi
+  if [ -f "$WORKTREE/mise.toml" ] || [ -f "$WORKTREE/.mise.toml" ]; then
+    if [ -n "$COMMAND" ]; then
+      printf -v COMMAND 'mise install\nmise exec -- bash -e -o pipefail -c %q' "$COMMAND"
+    else
+      COMMAND='mise install'
+      CACHEABLE=0
+    fi
+  fi
 fi
 [ -n "$COMMAND" ] || exit 0
 
@@ -89,7 +117,7 @@ LOCK_HELD=1
 
 fingerprint() {
   local marker hash
-  printf 'v1\n%s\n%s\n' "$WORKTREE" "$COMMAND"
+  printf 'v2\n%s\n%s\n' "$WORKTREE" "$COMMAND"
   for marker in "${MARKERS[@]}"; do
     if [ -e "$WORKTREE/$marker" ] || [ -L "$WORKTREE/$marker" ]; then
       hash=$(git -C "$WORKTREE" hash-object --no-filters -- "$marker") || return 1
@@ -100,7 +128,10 @@ fingerprint() {
   done
 }
 FINGERPRINT=$(fingerprint | git -C "$WORKTREE" hash-object --stdin)
-if [ "$FRESH" != --fresh ] && [ -f "$RECEIPT" ] && [ "$(cat "$RECEIPT")" = "$FINGERPRINT" ]; then
+for output in ${OUTPUTS[@]+"${OUTPUTS[@]}"}; do
+  [ -d "$WORKTREE/$output" ] || CACHEABLE=0
+done
+if [ "$CACHEABLE" = 1 ] && [ -f "$RECEIPT" ] && [ "$(cat "$RECEIPT")" = "$FINGERPRINT" ]; then
   echo "bootstrap: dependencies unchanged in $WORKTREE" >&2
   exit 0
 fi

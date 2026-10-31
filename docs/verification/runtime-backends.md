@@ -8,15 +8,14 @@ Exact task chronology, branch names, temporary homes, local paths, process ids, 
 
 ## Worker dependency bootstrap
 
-Verified on 2026-10-31 on macOS with Bash 5.3.20 and stock Bash 3.2.57:
+Verified on 2026-10-31 on macOS with Bash 5.3.20:
 
 ```sh
 bash bin/fm-test-run.sh tests/fm-project-bootstrap.test.sh
-PATH="<dir with bash -> /bin/bash>:$PATH" /bin/bash bin/fm-test-run.sh tests/fm-project-bootstrap.test.sh
 ```
 
-Both runs reported `# all fm-project-bootstrap tests passed` and `FM_TEST_END` with `exit=0`.
-The regression exercises all default managers, pinned commands, marker changes, concurrent receipt reuse, inherited configuration, a successful scout launch, and ship refusal with the queued automatic backlog unchanged.
+The run reported `# all fm-project-bootstrap tests passed` and `FM_TEST_END` with `exit=0`.
+The regression exercises default managers under both mise filenames, strict manifest refusal, output-directory loss, root input changes, concurrent receipt reuse, inherited configuration, a successful scout launch, and ship refusal with the queued automatic backlog unchanged.
 Dependency managers and terminal delivery are fixtures; the bootstrap executable, Git worktrees, and the installed tasks-axi backlog are real.
 No real dependency downloads or vendor agent calls are claimed by this check.
 
