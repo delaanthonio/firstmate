@@ -15,7 +15,7 @@ bash bin/fm-test-run.sh tests/fm-project-bootstrap.test.sh
 ```
 
 The run reported `# all fm-project-bootstrap tests passed` and `FM_TEST_END` with `exit=0`.
-The regression exercises default managers under both mise filenames, strict manifest refusal, output-directory loss, root input changes, concurrent receipt reuse, inherited configuration, a successful scout launch, and ship refusal with the queued automatic backlog unchanged.
+The regression exercises default managers under both mise filenames, strict root and bounded nested-layout refusal, setuptools companion files, output-directory loss, root input changes, concurrent receipt reuse, inherited configuration, a successful scout launch, and ship refusal with the queued automatic backlog unchanged.
 Dependency managers and terminal delivery are fixtures; the bootstrap executable, Git worktrees, and the installed tasks-axi backlog are real.
 No real dependency downloads or vendor agent calls are claimed by this check.
 

@@ -1224,9 +1224,14 @@ Persistent secondmate homes do not use this worker-worktree step.
 By default, root-level `mise.toml` or `.mise.toml` runs `mise install`, `uv.lock` runs `uv sync`, `package-lock.json` runs `npm ci`, `Cargo.lock` runs `cargo fetch`, and `Gemfile.lock` runs `bundle install`.
 All matching managers run in that order; mise installs the toolchains first, then every detected dependency manager runs through `mise exec` with those tools active.
 `uv sync` includes uv's default development group, including tools used during validation.
-Only projects without a recognized dependency manifest or lockfile can skip bootstrap without an override.
+Dependency layout validation scans the root and directories one or two levels below it (for example `frontend/` and `packages/api/`), without following directory symlinks.
+Hidden directories (including `.venv`), `node_modules`, and `vendor` are excluded at every level.
+Recognized filenames are `uv.lock`, `pyproject.toml`, `setup.py`, `setup.cfg`, `package-lock.json`, `package.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`, `bun.lockb`, `npm-shrinkwrap.json`, `requirements.txt`, `requirements-dev.txt`, `Pipfile`, `Pipfile.lock`, `poetry.lock`, `Cargo.lock`, `Cargo.toml`, `Gemfile.lock`, `Gemfile`, `go.mod`, `go.sum`, `composer.json`, and `composer.lock`.
+Only projects without a recognized dependency manifest or lockfile in this scope can skip bootstrap without an override.
+Any nested layout in this scope requires a project override, including alongside a resolved root bootstrap or a cached receipt; deeper layouts require an operator-supplied override too but are outside automatic validation.
 A manifest without its supported lockfile refuses spawn and names the required lockfile and override configuration.
-Alternative Node and Python dependency files (pnpm, Yarn, Bun, npm shrinkwrap, requirements, Pipenv, Poetry, and setuptools), Go modules, and Composer manifests require an explicit command, even when another manager is detected.
+Alternative Node and Python dependency files (pnpm, Yarn, Bun, npm shrinkwrap, requirements, Pipenv, and Poetry), Go modules, and Composer manifests require an explicit command, even when another manager is detected.
+Root `setup.py` and `setup.cfg` companion files are supported by the resolved uv bootstrap and do not require an override.
 The required managers must be available to the spawning process; a missing executable refuses the spawn like any other command failure.
 
 The optional home-local, gitignored `config/project-bootstrap.json` overrides detection for named projects and is inherited into secondmate homes.

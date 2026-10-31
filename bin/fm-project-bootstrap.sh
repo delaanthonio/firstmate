@@ -37,7 +37,7 @@ DECLARATION="$CONFIG/project-bootstrap.json"
 COMMAND=
 CACHEABLE=1
 OUTPUTS=()
-MARKERS=(uv.lock pyproject.toml uv.toml .python-version mise.toml .mise.toml mise.lock .mise.lock
+MARKERS=(uv.lock pyproject.toml setup.py setup.cfg uv.toml .python-version mise.toml .mise.toml mise.lock .mise.lock
   .tool-versions package-lock.json package.json .npmrc Cargo.lock Cargo.toml rust-toolchain.toml
   rust-toolchain .cargo/config.toml Gemfile.lock Gemfile .ruby-version .bundle/config)
 if [ -e "$DECLARATION" ] || [ -L "$DECLARATION" ]; then
@@ -52,15 +52,20 @@ if [ -e "$DECLARATION" ] || [ -L "$DECLARATION" ]; then
   fi
   COMMAND=$(jq -r --arg name "$NAME" '.[$name].command // empty' "$DECLARATION")
 fi
-if [ -n "$COMMAND" ]; then
-  CACHEABLE=0
-else
-  for manifest in pyproject.toml package.json Cargo.toml Gemfile pnpm-lock.yaml yarn.lock \
+check_dependency_layouts() {
+  local directory=$1 depth=$2 manifest required path
+  for manifest in uv.lock package-lock.json Cargo.lock Gemfile.lock \
+    pyproject.toml package.json Cargo.toml Gemfile pnpm-lock.yaml yarn.lock \
     bun.lock bun.lockb npm-shrinkwrap.json requirements.txt requirements-dev.txt \
     Pipfile Pipfile.lock poetry.lock setup.py setup.cfg go.mod go.sum composer.json composer.lock; do
-    [ -f "$WORKTREE/$manifest" ] || continue
+    [ -f "$directory/$manifest" ] || continue
+    if [ "$directory" != "$WORKTREE" ]; then
+      echo "error: nested dependency layout ${directory#"$WORKTREE"/}/$manifest requires a bootstrap command; configure command for '$NAME' in $DECLARATION" >&2
+      return 1
+    fi
     case "$manifest" in
-      pyproject.toml) required=uv.lock ;;
+      uv.lock | package-lock.json | Cargo.lock | Gemfile.lock) continue ;;
+      pyproject.toml | setup.py | setup.cfg) required=uv.lock ;;
       package.json) required=package-lock.json ;;
       Cargo.toml) required=Cargo.lock ;;
       Gemfile) required=Gemfile.lock ;;
@@ -68,9 +73,22 @@ else
     esac
     if [ -z "$required" ] || [ ! -f "$WORKTREE/$required" ]; then
       echo "error: no dependency bootstrap command for $manifest${required:+ (requires $required)} in $WORKTREE; configure command for '$NAME' in $DECLARATION" >&2
-      exit 1
+      return 1
     fi
   done
+  [ "$depth" -lt 2 ] || return 0
+  for path in "$directory"/*; do
+    [ -d "$path" ] && [ ! -L "$path" ] || continue
+    case "${path##*/}" in
+      .* | vendor | node_modules) continue ;;
+    esac
+    check_dependency_layouts "$path" "$((depth + 1))" || return 1
+  done
+}
+if [ -n "$COMMAND" ]; then
+  CACHEABLE=0
+else
+  check_dependency_layouts "$WORKTREE" 0
   if [ -f "$WORKTREE/uv.lock" ]; then
     COMMAND+=$'uv sync\n'
     OUTPUTS+=(.venv)

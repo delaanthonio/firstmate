@@ -183,17 +183,96 @@ test_invalid_config_and_no_detection() {
   pass 'only dependency-free projects no-op; unresolved families refuse even with other detected commands'
 }
 
+test_nested_layouts_require_override() {
+  local mode layout manifest out code
+  for mode in empty cached; do
+    make_case "nested-$mode"
+    if [ "$mode" = cached ]; then
+      touch "$WT_DIR/uv.lock"
+      run_bootstrap >/dev/null 2>&1
+    fi
+    for layout in frontend 'packages/api service'; do
+      mkdir -p "$WT_DIR/$layout"
+      for manifest in uv.lock package-lock.json Cargo.lock Gemfile.lock \
+        pyproject.toml package.json Cargo.toml Gemfile pnpm-lock.yaml yarn.lock \
+        bun.lock bun.lockb npm-shrinkwrap.json requirements.txt requirements-dev.txt \
+        Pipfile Pipfile.lock poetry.lock setup.py setup.cfg go.mod go.sum composer.json composer.lock; do
+        touch "$WT_DIR/$layout/$manifest"
+        code=0
+        out=$(run_bootstrap 2>&1) || code=$?
+        [ "$code" -ne 0 ] || fail "nested $layout/$manifest bypassed bootstrap (mode=$mode)"
+        assert_contains "$out" "$layout/$manifest" 'refusal did not identify the nested layout'
+        assert_contains "$out" 'project-bootstrap.json' 'nested refusal omitted the override remedy'
+        rm "$WT_DIR/$layout/$manifest"
+      done
+    done
+    if [ "$mode" = empty ]; then
+      assert_absent "$LOG" 'nested refusal ran a dependency command'
+    else
+      out=$(run_bootstrap 2>&1) || fail "$out"
+      assert_contains "$out" 'dependencies unchanged' 'removing the unresolved layout broke valid receipt reuse'
+      [ "$(wc -l <"$LOG" | tr -d ' ')" = 1 ] || fail 'nested validation ran a partial bootstrap'
+    fi
+    mkdir -p "$WT_DIR/frontend"
+    touch "$WT_DIR/frontend/package.json" "$WT_DIR/frontend/package-lock.json"
+    printf '{"project":{"command":"cd frontend; npm ci"}}\n' >"$HOME_DIR/config/project-bootstrap.json"
+    out=$(run_bootstrap 2>&1) || fail "$out"
+    assert_present "$WT_DIR/frontend/node_modules" 'explicit nested bootstrap did not run in the declared directory'
+  done
+  pass 'nested layouts require an override before no-op, root bootstrap, or cached receipt reuse'
+}
+
+test_scan_scope_exclusions() {
+  local layout out
+  make_case scan-scope
+  for layout in .hidden .venv node_modules vendor lib/.hidden lib/.venv lib/node_modules lib/vendor deep/a/b; do
+    mkdir -p "$WT_DIR/$layout"
+    touch "$WT_DIR/$layout/package.json"
+  done
+  ln -s deep/a/b "$WT_DIR/linked-layout"
+  out=$(run_bootstrap 2>&1) || fail "$out"
+  assert_absent "$LOG" 'excluded directories or deeper layouts triggered bootstrap'
+  pass 'layout scanning stops after two directory levels and skips hidden, dependency, and symlink directories'
+}
+
+test_setuptools_companions_use_uv() {
+  local out
+  make_case setuptools
+  touch "$WT_DIR/pyproject.toml" "$WT_DIR/uv.lock" "$WT_DIR/setup.py" "$WT_DIR/setup.cfg"
+  out=$(run_bootstrap 2>&1) || fail "$out"
+  assert_present "$WT_DIR/.venv" 'setuptools companions prevented the resolved uv bootstrap'
+  out=$(run_bootstrap 2>&1) || fail "$out"
+  assert_contains "$out" 'dependencies unchanged' 'unchanged setuptools layout did not reuse its receipt'
+  printf 'changed\n' >>"$WT_DIR/setup.py"
+  run_bootstrap >/dev/null 2>&1
+  printf 'changed\n' >>"$WT_DIR/setup.cfg"
+  run_bootstrap >/dev/null 2>&1
+  rm "$WT_DIR/setup.py"
+  run_bootstrap >/dev/null 2>&1
+  rm "$WT_DIR/setup.cfg"
+  run_bootstrap >/dev/null 2>&1
+  touch "$WT_DIR/setup.py"
+  run_bootstrap >/dev/null 2>&1
+  touch "$WT_DIR/setup.cfg"
+  run_bootstrap >/dev/null 2>&1
+  [ "$(wc -l <"$LOG" | tr -d ' ')" = 7 ] || fail 'setuptools changes, removals, or additions did not invalidate the receipt'
+  pass 'uv bootstraps setuptools companion files and fingerprints both representations'
+}
+
 test_spawn_refuses_before_launch_and_backlog_transition() {
   local id out code automatic before scenario
-  for scenario in command unresolved; do
+  for scenario in command unresolved nested; do
     id="bootstrap-refusal-$scenario"
     code=0
     automatic=0
     make_case "spawn-refusal-$scenario"
     if [ "$scenario" = command ]; then
       touch "$PROJECT_DIR/uv.lock"
-    else
+    elif [ "$scenario" = unresolved ]; then
       touch "$PROJECT_DIR/package.json" "$PROJECT_DIR/pnpm-lock.yaml"
+    else
+      mkdir -p "$PROJECT_DIR/frontend"
+      touch "$PROJECT_DIR/frontend/package.json" "$PROJECT_DIR/frontend/package-lock.json"
     fi
     git -C "$PROJECT_DIR" add .
     git -C "$PROJECT_DIR" commit -qm 'declare dependencies'
@@ -284,6 +363,9 @@ test_commands_without_known_local_outputs_rerun
 test_registered_symlink_name_selects_override
 test_failure_invalidates_success
 test_invalid_config_and_no_detection
+test_nested_layouts_require_override
+test_scan_scope_exclusions
+test_setuptools_companions_use_uv
 test_spawn_refuses_before_launch_and_backlog_transition
 test_spawn_bootstraps_before_successful_launch
 test_concurrent_relaunches_share_success
