@@ -198,8 +198,9 @@ The model no longer re-arms after ordinary wakes.
 No PreToolUse hook denies fleet commands based on watcher status.
 A genuine auto-arm failure describes the automatic mechanism as broken and never directs a routine manual background arm.
 Terminal arm-output classification (`started`, `attached`, or `FAILED`) remains defense in depth for the manual recovery path.
-Codex and Droid retain their bounded foreground checkpoint protocols.
-Droid documents blocking Stop continuation but no Claude `asyncRewake` equivalent, so its one-block Stop handoff must never become an indefinitely parked watcher that prevents captain input.
+Codex retains its bounded foreground checkpoint protocol.
+[Droid's protocol](supervision-protocols/droid.md) uses native tracked background completion, with bounded foreground checkpoints as its fallback.
+Droid's one-block Stop handoff remains a recovery backstop rather than an indefinitely parked watcher that prevents captain input.
 Grok retains its tracked background-task notification protocol.
 No adapter starts a replacement with shell `&`.
 
@@ -533,10 +534,10 @@ It also covers generation-claim single-flight, stuck-claim supersession, superse
 The goal is continuity without a Pi, omp, or OpenCode model-memory re-arm step.
 No zero-latency guarantee is claimed, because lock verification, watcher startup, and bounded retry delays remain deliberate safety work.
 OpenCode support targets persistent TUI sessions rather than headless `opencode run`.
-Claude depends on the Stop `asyncRewake` rewake, Cursor depends on its awaited stop-hook park, Grok retains native background-completion notifications, and Codex and Droid retain bounded foreground checkpoints.
-Droid's SessionStart recovery complements that checkpoint but does not create tokenless background continuation; the `afk` skill owns the evaluated delivery hierarchy.
+Claude depends on the Stop `asyncRewake` rewake, Cursor depends on its awaited stop-hook park, Grok and Droid use native background-completion notifications, and Codex retains bounded foreground checkpoints.
+Droid's SessionStart recovery restores a missing cycle after restart; the `afk` skill owns the evaluated away-mode delivery hierarchy.
 
-[`verification/supervision.md`](verification/supervision.md#watcher-continuity) records the five earlier harness results and exact opt-in commands, while [`verification/droid-primary.md`](verification/droid-primary.md#foreground-tool-behavior) records Droid's foreground-checkpoint evidence.
+[`verification/supervision.md`](verification/supervision.md#watcher-continuity) records the five earlier harness results and exact opt-in commands, while [`verification/droid-primary.md`](verification/droid-primary.md#foreground-tool-behavior) records Droid's foreground fallback evidence.
 
 The other harnesses rely on these mechanisms:
 

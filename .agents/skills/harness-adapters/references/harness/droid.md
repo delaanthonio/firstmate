@@ -20,6 +20,7 @@ Cross-harness provider and credential identity is owned by `references/common/mo
 | Model | Per-task settings key `sessionDefaultSettings.model`; custom models use their registry id. |
 | Effort | Per-task settings key `sessionDefaultSettings.reasoningEffort`; `dynamic` is retained. |
 | Composer | Two-line bordered box; hints may appear on the right side of the first row. |
+| Background execution | Native tracked Execute jobs (`fireAndForget: true`) exist; completion re-invokes the primary agent with the job output (verified 2026-10-31). |
 
 ## Detection and control
 
@@ -39,4 +40,4 @@ Tracked `.factory/settings.json` registers SessionStart, Execute PreToolUse, Ask
 SessionStart runs `../../../../../bin/fm-session-start.sh`.
 Execute uses the shared primary seatbelt, AskUser defers captain-bound approval questions during away mode, and Stop invokes the Droid turn-end guard.
 The `/afk` skill owns the required question binding, and `../../../../../bin/fm-captain-hold.sh` preserves and projects the exact question through its existing owner.
-`../../../../../docs/supervision-protocols/droid.md` owns the primary foreground-checkpoint procedure.
+`../../../../../docs/supervision-protocols/droid.md` owns the primary tracked background-cycle procedure and foreground checkpoint fallback.
