@@ -36,8 +36,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "exec \"$DROID_PROJECT_DIR\"/bin/fm-turnend-guard.sh",
-            "timeout": 180
+            "command": "exec \"$DROID_PROJECT_DIR\"/bin/fm-turnend-guard.sh"
           }
         ]
       }

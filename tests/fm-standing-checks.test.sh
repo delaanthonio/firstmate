@@ -144,11 +144,11 @@ test_contributions_timeout_is_separate_and_bounded() {
   use_state_home "$state"
   slow_check "$state/contributions.check.sh" 2
   slow_check "$state/ordinary.check.sh" 2
-  out=$(fm_supervision_run_due_checks "$state" 300 1 true 2>&1); rc=$?
+  out=$(FM_CONTRIBUTIONS_CHECK_TIMEOUT=4 fm_supervision_run_due_checks "$state" 300 1 true 2>&1); rc=$?
   expect_code 0 "$rc" "contributions should finish beyond the ordinary timeout"
   assert_contains "$out" 'timed out after 1s:' "the ordinary check lost its shorter bound"
   assert_grep 'contributions.check.sh: completed' "$state/.wake-queue" "contributions completion was lost"
-  assert_equals "$(fm_custom_check_timeout contributions 30)" 120 "default must accommodate the full local snapshot and forge poll"
+  assert_equals "$(FM_CONTRIBUTIONS_CHECK_TIMEOUT='' fm_custom_check_timeout contributions 30)" 30 "unset tuning must preserve the upstream ordinary timeout"
 
   rm "$state/.last-check" "$state/.wake-queue" "$state/ordinary.check.sh"
   out=$(FM_CONTRIBUTIONS_CHECK_TIMEOUT=1 fm_supervision_run_due_checks "$state" 300 1 true 2>&1); rc=$?
@@ -161,9 +161,14 @@ test_contributions_timeout_is_separate_and_bounded() {
   expect_code 0 "$rc" "contributions must preserve a larger ordinary timeout"
   assert_grep 'contributions.check.sh: completed' "$state/.wake-queue" "larger ordinary budget was shortened"
   for out in 0 01 -1 invalid; do
-    assert_equals "$(FM_CONTRIBUTIONS_CHECK_TIMEOUT="$out" fm_custom_check_timeout contributions 30)" 120 \
-      "invalid contributions budget must use the bounded default"
+    assert_equals "$(FM_CONTRIBUTIONS_CHECK_TIMEOUT="$out" fm_custom_check_timeout contributions 30)" 30 \
+      "invalid contributions budget must preserve the ordinary timeout"
   done
+  rm "$state/.last-check" "$state/.wake-queue"
+  out=$(FM_CONTRIBUTIONS_CHECK_TIMEOUT='' fm_supervision_run_due_checks "$state" 300 1 true 2>&1); rc=$?
+  expect_code 1 "$rc" "untuned contributions must retain the ordinary deadline"
+  assert_contains "$out" 'timed out after 1s:' "untuned contributions silently gained a larger default"
+  assert_absent "$state/.wake-queue" "untuned contributions queued a late completion"
   pass "contributions has its own bounded allowance without widening ordinary checks or shortening larger budgets"
 }
 
