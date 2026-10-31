@@ -13,6 +13,7 @@ Start with the directory layout, then use the setting reference for the behavior
 | Backlog, preferences, and memory | [Backlog backend](#backlog-backend-taskstoml--configbacklog-backend), [captain preferences](#captain-preferences-datacaptainmd--datacaptain-sharedmd), [external memory tiers](#external-memory-tiers-memory-layering-section), and [startup memory budget](#startup-memory-budget-configstartup-memory-budget) |
 | Supervision and presentation | [Pi supervision branch](#pi-supervision-branch), [supervision host](#supervision-host-configsupervision-host), and [Calm preference](#calm-preference-configcalm) |
 | Persistent secondmates | [Secondmate routes](#secondmate-routes-datasecondmatesmd) |
+| Project dependencies before worker launch | [Project dependency bootstrap](#project-dependency-bootstrap-configproject-bootstrapjson) |
 | Per-run overrides and tuning | [Environment variables](#environment-variables) |
 
 ## FM_HOME
@@ -1213,6 +1214,45 @@ A repository whose config sets `core.hooksPath` to the empty string runs no proj
 When stripping is enabled, the hooks directory is read-only, so a hook manager run inside a fleet pane (lefthook's npm postinstall, `pre-commit install`) fails instead of displacing the strip; install a project's hooks from outside the pane, where the wrappers chain them.
 The flag is a home-wide attribution choice, so it is inherited into secondmate homes under the [`secondmate-provisioning`](../.agents/skills/secondmate-provisioning/SKILL.md) inherited-local-material contract and a secondmate's own workers keep AI trailers too.
 Per-machine Cursor `cli-config.json` attribution-off is not this contract: it does not travel with Firstmate, defaults back to on when unset, and only feeds the CLI's request to the server, so it suppresses the trailer rather than preventing it.
+
+## Project dependency bootstrap (config/project-bootstrap.json)
+
+Every fresh ship or scout bootstraps dependencies in its isolated worktree after the base refresh and before the agent starts, regardless of runtime backend or harness.
+A failed command prints its diagnostics and refuses the spawn before task publication or the backlog transition, leaving a queued item queued.
+Persistent secondmate homes do not use this worker-worktree step.
+
+By default, root-level `mise.toml` or `.mise.toml` runs `mise install`, `uv.lock` runs `uv sync`, `package-lock.json` runs `npm ci`, `Cargo.lock` runs `cargo fetch`, and `Gemfile.lock` runs `bundle install`.
+All matching managers run in that order, with mise first so it can install the toolchains the other managers need.
+`uv sync` includes uv's default development group, including tools used during validation.
+Projects with no recognized marker and no override have no automatic bootstrap.
+The required managers must be available to the spawning process; a missing executable refuses the spawn like any other command failure.
+
+The optional home-local, gitignored `config/project-bootstrap.json` overrides detection for named projects and is inherited into secondmate homes.
+Its top-level object maps each registered project name (the clone directory basename, including spaces) to an object with these fields:
+
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `command` | yes | Nonblank Bash command executed from the worker worktree with `errexit` and `pipefail`. Replaces all detected commands. |
+| `markers` | no | Array of extra dependency input file paths relative to the worktree, for example workspace manifests or a bootstrap script. Empty paths, control characters, absolute paths, and `.` or `..` path components are refused. |
+
+Unknown fields, invalid entries, and unreadable configuration refuse bootstrap rather than silently falling back to detection.
+Commands are trusted operator configuration and may install project tools or execute the project's setup scripts.
+For example, a project needing additional uv groups and a workspace manifest can declare:
+
+```json
+{
+  "my-project": {
+    "command": "uv sync --all-groups",
+    "markers": ["packages/api/pyproject.toml"]
+  }
+}
+```
+
+Fresh spawns always bootstrap, using each package manager's ordinary caches and locks.
+Relaunches reuse a successful receipt only while the command, worktree path, root dependency manifests and lockfiles, and any additional markers are unchanged.
+Marker additions and removals invalidate that receipt too; list nested workspace inputs and setup scripts in `markers` when a project uses them.
+Only success writes a receipt, and failure invalidates any previous success so a retry must bootstrap again.
+The helper's header and `--help` own receipt and serialization mechanics: [`bin/fm-project-bootstrap.sh`](../bin/fm-project-bootstrap.sh).
 
 ## Project capacity (config/project-capacity)
 
