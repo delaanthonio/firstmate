@@ -20,7 +20,7 @@ In this document, an arm is one run of `bin/fm-watch-arm.sh`, which starts a wat
 ## Ownership
 
 On Pi, omp, OpenCode, Cursor, and Claude primaries, one component owns re-arming the watcher.
-Codex and Grok keep their own protocols; see [Manual recovery and other harnesses](#manual-recovery-and-other-harnesses).
+Codex, Grok, and Droid keep their own protocols; see [Manual recovery and other harnesses](#manual-recovery-and-other-harnesses).
 
 | Harness | Re-arm owner |
 | --- | --- |
@@ -198,8 +198,9 @@ The model no longer re-arms after ordinary wakes.
 No PreToolUse hook denies fleet commands based on watcher status.
 A genuine auto-arm failure describes the automatic mechanism as broken and never directs a routine manual background arm.
 Terminal arm-output classification (`started`, `attached`, or `FAILED`) remains defense in depth for the manual recovery path.
-Codex and Droid retain their bounded foreground checkpoint protocols.
-Droid documents blocking Stop continuation but no Claude `asyncRewake` equivalent, so its one-block Stop handoff must never become an indefinitely parked watcher that prevents captain input.
+Codex retains its bounded foreground checkpoint protocol.
+[Droid's protocol](supervision-protocols/droid.md) uses native tracked background completion, with bounded foreground checkpoints as its fallback.
+Droid's one-block Stop handoff remains a recovery backstop rather than an indefinitely parked watcher that prevents captain input.
 Grok retains its tracked background-task notification protocol.
 No adapter starts a replacement with shell `&`.
 
@@ -231,12 +232,14 @@ The first recovery marks that generation announced, and later empty-queue arms l
 A non-successor watcher start checks the durable queue and recovery marker under their locks.
 If an announced-but-unacknowledged episode has an empty queue, the arm leaves that generation announced, making repeated empty-queue arms idempotent while a long-poll source is merely alive.
 If a durable row arrived after the announcement, the arm opens a fresh pending downtime generation so buried work still resurfaces once.
-A Codex foreground checkpoint skips the announced-episode reopen transition, so an already-announced generation stays announced while the checkpoint continues its bounded supervision.
+A foreground checkpoint skips the announced-episode reopen transition, so an already-announced generation stays announced while the checkpoint continues its bounded supervision.
 Its ordinary arm check still announces a never-announced generation, including one made pending by a durable queue append during the checkpoint.
 
 ### Generation reuse
 
 An ordinary watcher close attempts to publish downtime, and every durable queue append publishes it.
+A planned quiet timeout inside a Droid background cycle only releases the watcher lock when cleanup succeeds, no wake was delivered, and away or quiet mode is inactive.
+That rotation leaves the recovery marker and durable queue untouched, so consecutive quiet passes create no downtime while concurrently appended events still resurface; `tests/fm-watch-checkpoint.test.sh` covers both with real watcher rotations.
 A handling successor closing to resurface recovery preserves the existing marker instead.
 If EXIT cleanup cannot acquire the downtime-marker lock within its bound, it retains the stale singleton for the next arm to publish the missing downtime before clearing that lock (see [Grace, beacon, and stop signals](#grace-beacon-and-stop-signals)).
 A downtime republication of a pending episode reuses its generation.
@@ -533,10 +536,10 @@ It also covers generation-claim single-flight, stuck-claim supersession, superse
 The goal is continuity without a Pi, omp, or OpenCode model-memory re-arm step.
 No zero-latency guarantee is claimed, because lock verification, watcher startup, and bounded retry delays remain deliberate safety work.
 OpenCode support targets persistent TUI sessions rather than headless `opencode run`.
-Claude depends on the Stop `asyncRewake` rewake, Cursor depends on its awaited stop-hook park, Grok retains native background-completion notifications, and Codex and Droid retain bounded foreground checkpoints.
-Droid's SessionStart recovery complements that checkpoint but does not create tokenless background continuation; the `afk` skill owns the evaluated delivery hierarchy.
+Claude depends on the Stop `asyncRewake` rewake, Cursor depends on its awaited stop-hook park, Grok and Droid use native background-completion notifications, and Codex retains bounded foreground checkpoints.
+Droid's SessionStart recovery restores a missing cycle after restart; the `afk` skill owns the evaluated away-mode delivery hierarchy.
 
-[`verification/supervision.md`](verification/supervision.md#watcher-continuity) records the five earlier harness results and exact opt-in commands, while [`verification/droid-primary.md`](verification/droid-primary.md#foreground-tool-behavior) records Droid's foreground-checkpoint evidence.
+[`verification/supervision.md`](verification/supervision.md#watcher-continuity) records the five earlier harness results and exact opt-in commands, while [`verification/droid-primary.md`](verification/droid-primary.md#foreground-tool-behavior) records Droid's foreground fallback evidence.
 
 The other harnesses rely on these mechanisms:
 

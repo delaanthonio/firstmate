@@ -77,7 +77,7 @@ Oh My Pi (`omp`), a Pi fork, is verified as a primary with the same extension-ow
 Codex and OpenCode are also verified and supported as primary harnesses; Codex uses bounded foreground checkpoints, and OpenCode uses a TUI plugin, so both carry more harness-specific supervision tradeoffs than the three co-primaries.
 Cursor Agent CLI is verified as a primary too, using a tracked project-scope `.cursor/hooks.json` whose `stop` hook parks on the watcher between turns, closest in shape to Claude Code's.
 Launch it with `--trust`, or none of its project hooks load; it also has no turn-end hook in headless `cursor-agent -p`, so run the primary session interactively.
-Droid is verified as a primary too, using tracked project-scope `.factory/settings.json` hooks and bounded foreground checkpoints.
+Droid is verified as a primary too, using tracked project-scope `.factory/settings.json` hooks and the [tracked background-cycle protocol](docs/supervision-protocols/droid.md), which also owns its foreground checkpoint fallback.
 A normal interactive `droid` invocation loads that file without a launch flag.
 
 ### Install and launch
