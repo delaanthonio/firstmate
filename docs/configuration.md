@@ -1222,7 +1222,7 @@ A failed command prints its diagnostics and refuses the spawn before task public
 Persistent secondmate homes do not use this worker-worktree step.
 
 By default, root-level `mise.toml` or `.mise.toml` runs `mise install`, `uv.lock` runs `uv sync`, `package-lock.json` runs `npm ci`, `Cargo.lock` runs `cargo fetch`, and `Gemfile.lock` runs `bundle install`.
-All matching managers run in that order; mise installs the toolchains first, then every detected dependency manager runs through `mise exec` with those tools active.
+All matching managers run in that order; when either mise configuration is present, mise installs the toolchains first, then every detected dependency manager runs through `mise exec` with those tools active.
 `uv sync` includes uv's default development group, including tools used during validation.
 Dependency layout validation scans the root and directories one or two levels below it (for example `frontend/` and `packages/api/`), without following directory symlinks.
 Hidden directories (including `.venv`), `node_modules`, and `vendor` are excluded at every level.
@@ -1253,7 +1253,7 @@ For example, a project needing additional uv groups can declare:
 }
 ```
 
-Spawns and relaunches reuse a successful receipt for detected uv/npm dependencies only while the command, worktree path, and root dependency manifests and lockfiles are unchanged and every expected output directory exists (`.venv` for uv and `node_modules` for npm).
+Spawns and relaunches reuse a successful receipt for detected uv/npm dependencies only while the command, worktree path, and root dependency and toolchain inputs (including package-manager configuration) are unchanged and every expected output directory exists (`.venv` for uv and `node_modules` for npm).
 Missing outputs or changed, added, or removed inputs force bootstrap again, using each package manager's ordinary caches and locks.
 Custom commands, Cargo, Bundler, and toolchain-only projects always run because their output locations cannot be established by this check.
 Use a custom command for nested workspace inputs or setup scripts; it replaces detection and runs on every launch.
