@@ -30,7 +30,12 @@
 #   <task>.inbox/.ring-state   watcher re-ring ladder: "<msg>\t<count>\t<epoch>"
 #   <task>.inbox/.busy-state   consecutive busy deferrals: "<msg>\t<count>"
 #   <task>.inbox/.escalated    oldest-message name already surfaced as stale,
-#                              so later polls suppress another escalation
+#                              with the epoch it escalated at ("<name>\t<epoch>"):
+#                              one live escalation at a time, suppressed again
+#                              until the stuck-escalation cadence elapses (a
+#                              legacy file naming the record alone stays
+#                              suppressed for good, as the old one-shot format
+#                              always did)
 #   <task>.inbox/.retry-ring   name of a fire-and-forget record still owed its
 #                              one retry ring (fm_task_inbox_mark_retry)
 #
@@ -61,6 +66,14 @@
 # resets this budget. fm-busy-lib.sh owns the backend-specific delivery guard.
 # Fire-and-forget retries remain outside escalation. A positively
 # dead or missing endpoint skips delivery and the ladder and escalates directly.
+# An escalation is a cadence, not a one-shot: a blocked record escalates once
+# at its budget bound and, while it stays unhandled past budget, again after
+# each stuck-escalation cadence window (fm_task_inbox_escalate_cadence_secs),
+# so a blocked doorbell cannot stall silently after its first wake. One
+# escalation is live at a time; within the cadence window the escalated record
+# stays quiet. The caller composes each escalation's detail (worker id,
+# blocked message, pane tail); a legacy one-shot marker (record name alone)
+# stays suppressed for good.
 # This library owns the schedule, durable budgets, and escalation marker.
 # If delivery-attempt or busy-deferral bookkeeping fails while the record remains unhandled,
 # the caller surfaces that failure instead of retrying silently; a concurrently
@@ -93,6 +106,9 @@
 #   FM_TASK_INBOX_GRACE_SECS   default 90; delivery-attempt grace and spacing
 #   FM_TASK_INBOX_RING_MAX     default 3; delivery attempts before escalation
 #   FM_TASK_INBOX_BUSY_MAX     default 2; consecutive busy-deferred due polls before escalation
+#   FM_TASK_INBOX_ESCALATE_CADENCE_SECS  default: the watcher's STALE_ESCALATE_SECS
+#                              when set, else 240; seconds between repeat
+#                              escalations of a record still blocked past budget
 
 _FM_TASK_INBOX_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Both dependencies are canonical lint roots in their own right. Keep them as
@@ -107,6 +123,7 @@ FM_TASK_INBOX_SCHEMA='fm-task-inbox.v1'
 FM_TASK_INBOX_GRACE_DEFAULT=90
 FM_TASK_INBOX_RING_MAX_DEFAULT=3
 FM_TASK_INBOX_BUSY_MAX_DEFAULT=2
+FM_TASK_INBOX_ESCALATE_CADENCE_DEFAULT=240
 FM_TASK_INBOX_LOCK_WAIT_DEFAULT=5
 
 fm_task_inbox_grace_secs() {
@@ -129,6 +146,16 @@ fm_task_inbox_busy_max() {
     m=$FM_TASK_INBOX_BUSY_MAX_DEFAULT
   fi
   printf '%s' "$m"
+}
+
+# The repeat cadence for a record still blocked past budget: the watcher's
+# existing stuck-escalation cadence (STALE_ESCALATE_SECS) when this library is
+# sourced by the watcher, else its own default with the same value.
+fm_task_inbox_escalate_cadence_secs() {
+  local c=${FM_TASK_INBOX_ESCALATE_CADENCE_SECS:-${STALE_ESCALATE_SECS:-$FM_TASK_INBOX_ESCALATE_CADENCE_DEFAULT}}
+  case "$c" in ''|*[!0-9]*) c=$FM_TASK_INBOX_ESCALATE_CADENCE_DEFAULT ;; esac
+  [ "$c" -gt 0 ] 2>/dev/null || c=$FM_TASK_INBOX_ESCALATE_CADENCE_DEFAULT
+  printf '%s' "$c"
 }
 
 # Persist before returning the new count, so a fresh watcher continues the same
@@ -495,7 +522,8 @@ fm_task_inbox_clear_retry() {  # <state-dir> <task-id> <record-path>
 # An empty inbox also resets the ladder bookkeeping so the next message starts
 # a fresh ladder.
 fm_task_inbox_due_action() {  # <state-dir> <task-id>
-  local dir oldest base now grace max ladder rec_base count last lock retry
+  local dir oldest base now grace max ladder rec_base count last lock retry esc esc_at tab
+  tab=$(printf '\t')
   dir=$(fm_task_inbox_dir "$1" "$2")
   if ! oldest=$(fm_task_inbox_oldest_unhandled "$1" "$2"); then
     rm -f "$dir/.ring-state" "$dir/.escalated" "$dir/.busy-state" 2>/dev/null || true
@@ -538,9 +566,22 @@ EOF
   fi
   case "$count" in ''|*[!0-9]*) count=0 ;; esac
   case "$last" in ''|*[!0-9]*) last=0 ;; esac
-  if [ "$(cat "$dir/.escalated" 2>/dev/null || true)" = "$base" ]; then
-    printf 'quiet'
-    return 0
+  # One live escalation at a time: a marker for the current oldest suppresses
+  # re-escalation until the stuck-escalation cadence elapses, then the budget
+  # bound below escalates again - refreshed, never per retry. A legacy marker
+  # naming the record alone (the old one-shot format) stays suppressed for
+  # good.
+  esc=$(cat "$dir/.escalated" 2>/dev/null || true)
+  if [ "${esc%%"$tab"*}" = "$base" ]; then
+    esc_at=${esc#*"$tab"}
+    case "$esc_at" in
+      ''|*[!0-9]*) printf 'quiet'; return 0 ;;
+    esac
+    now=$(date +%s)
+    if [ "$((now - esc_at))" -lt "$(fm_task_inbox_escalate_cadence_secs)" ]; then
+      printf 'quiet'
+      return 0
+    fi
   fi
   max=$(fm_task_inbox_ring_max)
   if [ "$count" -ge "$max" ]; then
@@ -580,15 +621,18 @@ EOF
   fi
 }
 
-# Mark the current oldest as escalated after its stale wake is durably queued,
-# suppressing another wake on later polls. Wake-before-marker ordering favors
+# Mark the current oldest as escalated after its stale wake is durably queued.
+# The marker records the escalation epoch so the cadence check in
+# fm_task_inbox_due_action can time the next refresh; see the header's
+# re-ring ladder paragraph. Wake-before-marker ordering favors
 # at-least-once recovery: a crash or marker failure can cause a rare duplicate;
 # stuck-crewmate-recovery owns the message from here.
 fm_task_inbox_record_escalated() {  # <state-dir> <task-id> <record-path>
-  local dir
+  local dir tab
   dir=$(fm_task_inbox_dir "$1" "$2")
   [ -d "$dir" ] || return 0
-  if ! { printf '%s\n' "${3##*/}" > "$dir/.escalated"; } 2>/dev/null; then
+  tab=$(printf '\t')
+  if ! { printf '%s%s%s\n' "${3##*/}" "$tab" "$(date +%s)" > "$dir/.escalated"; } 2>/dev/null; then
     [ -d "$dir" ] || return 0
     return 1
   fi

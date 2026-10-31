@@ -259,6 +259,21 @@ fm_composer_kiro_scope() {
   [ "${FM_COMPOSER_HARNESS:-}" = kiro ]
 }
 
+# fm_composer_strip_mouse_reports_var: remove SGR mouse-report sequences from
+# <varname> in place, in their full form ("ESC[<65;111;29M") and the remnants
+# left after escape-byte stripping ("[<65;111;29M", "<65;77;27M", release
+# reports end in m). A mouse report is a terminal transport artifact of a
+# click in the pane, never human text, so a composer holding ONLY such
+# sequences must classify empty and let steering doorbells deliver; junk mixed
+# with genuine text is stripped out and the genuine text alone decides the
+# verdict.
+fm_composer_strip_mouse_reports_var() {  # <varname>
+  local __fmsr_name=$1 __fmsr_text=${!1} __fmsr_esc
+  __fmsr_esc=$(printf '\033')
+  __fmsr_text=$(printf '%s' "$__fmsr_text" | sed -E "s/(($__fmsr_esc)?\[)?<[0-9;]+[Mm]//g")
+  printf -v "$__fmsr_name" '%s' "$__fmsr_text"
+}
+
 # fm_composer_strip_ghost: the ONE fleet-wide ANSI-aware extractor of "real typed
 # content" from a captured, styled composer row. Reads the styled line on stdin
 # (from `tmux capture-pane -e`, `herdr pane read --format ansi`, or
@@ -848,6 +863,10 @@ fm_composer_classify_content() {  # <bordered> <content> [idle_re] [idle_case] [
   fm_composer_normalize_trim_var content
   plain_content=${5:-$2}
   fm_composer_normalize_trim_var plain_content
+  # Mouse reports are transport artifacts, never human text: strip them before
+  # every verdict so a composer holding only a click's reports reads empty.
+  fm_composer_strip_mouse_reports_var content
+  fm_composer_strip_mouse_reports_var plain_content
   if [ "$bordered" != 1 ] && [ -z "$content" ] && [ -n "$plain_content" ]; then
     if _fm_composer_is_prompt_glyph "$plain_content" "$FM_COMPOSER_AGENT_PROMPT_GLYPHS"; then
       printf 'empty'; return 0

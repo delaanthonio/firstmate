@@ -16,13 +16,17 @@
 #      dedups an exact-body re-run onto the existing record, handled or not.
 #   3. Concurrent writers serialize on the sequence lock: no clobbered records.
 #   4. The re-ring ladder: within grace is quiet, past grace rings, ring
-#      spacing holds, a spent budget escalates exactly once, and an
-#      acknowledgement resets the ladder for the next message.
+#      spacing holds, a spent budget escalates, the escalation repeats only on
+#      the stuck-escalation cadence while the record stays blocked past budget,
+#      and an acknowledgement resets the ladder for the next message.
 #   5. A real fm-watch.sh subprocess re-rings the doorbell for an unhandled
 #      aged message on an idle pane WITHOUT waking firstmate, waits on a busy
 #      pane, stays silent on a healthy/empty inbox, surfaces unwritable ladder
 #      bookkeeping only while its record remains unhandled, and emits exactly
-#      one stale wake once the ring budget is spent.
+#      one stale wake once the ring budget is spent. A doorbell the composer
+#      guard defers carries the worker id, the blocked message, and a short
+#      pane tail in that wake, never types from the escalation path, and
+#      refreshes the escalation on the cadence while still blocked.
 #   6. Dead panes: the doorbell line is a shell no-op when executed by a bare
 #      shell, the ring skips an agent the backend classifies dead, and the
 #      watcher surfaces such a record exactly once instead of re-ringing.
@@ -888,10 +892,15 @@ test_ring_ladder_policy() {
   printf '001.msg\t3\t100\n' > "$state/t1.inbox/.ring-state"
   action=$(FM_TASK_INBOX_GRACE_SECS=60 FM_TASK_INBOX_RING_MAX=3 inbox_lib "$state" fm_task_inbox_due_action "$state" t1)
   [ "$action" = "escalate $rec 3" ] || fail "a spent ring budget should escalate, got: $action"
-  # Escalation fires at most once per message.
+  # Escalation is cadence-bounded, not one-shot: the fresh marker suppresses
+  # re-escalation within the cadence window, and a spent budget past it
+  # escalates again.
   inbox_lib "$state" fm_task_inbox_record_escalated "$state" t1 "$rec"
-  action=$(FM_TASK_INBOX_GRACE_SECS=60 FM_TASK_INBOX_RING_MAX=3 inbox_lib "$state" fm_task_inbox_due_action "$state" t1)
-  [ "$action" = quiet ] || fail "an escalated message should stay quiet for recovery, got: $action"
+  action=$(FM_TASK_INBOX_GRACE_SECS=60 FM_TASK_INBOX_RING_MAX=3 FM_TASK_INBOX_ESCALATE_CADENCE_SECS=240 inbox_lib "$state" fm_task_inbox_due_action "$state" t1)
+  [ "$action" = quiet ] || fail "an escalated message should stay quiet within the cadence, got: $action"
+  printf '001.msg\t100\n' > "$state/t1.inbox/.escalated"
+  action=$(FM_TASK_INBOX_GRACE_SECS=60 FM_TASK_INBOX_RING_MAX=3 FM_TASK_INBOX_ESCALATE_CADENCE_SECS=240 inbox_lib "$state" fm_task_inbox_due_action "$state" t1)
+  [ "$action" = "escalate $rec 3" ] || fail "a cadence-expired blocked record should escalate again, got: $action"
   # The acknowledgement resets the ladder: the next message starts fresh.
   mv "$rec" "$state/t1.inbox/handled/"
   action=$(FM_TASK_INBOX_GRACE_SECS=60 inbox_lib "$state" fm_task_inbox_due_action "$state" t1)
@@ -976,12 +985,95 @@ test_watcher_waits_on_busy_pane() {
   busy_steer_check "$dir"
   grep -q 'stuck-busy' "$dir/state/.wake-queue" \
     || fail "consecutive busy deferrals did not escalate across watcher restart"
+  grep -qF 'worker=t1' "$dir/state/.wake-queue" \
+    || fail "the busy escalation omitted the worker id"
+  grep -qF 'pane tail: some output | BUSYTOKEN active' "$dir/state/.wake-queue" \
+    || fail "the busy escalation omitted the pane tail"
   [ ! -s "$dir/send.log" ] || fail "busy escalation typed into the pane"
   wakes=$(wc -l < "$dir/state/.wake-queue")
   busy_steer_check "$dir"
   [ "$(wc -l < "$dir/state/.wake-queue")" = "$wakes" ] || fail "busy escalation repeated"
   [ -f "$dir/state/t1.inbox/001.msg" ] || fail "busy escalation lost the steer"
   pass "watcher: busy deferrals survive restart, escalate once at the bound, and never type"
+}
+
+# One watcher inbox check with a composer-guard deferral: the pane reads idle
+# to the busy classifier but its composer PROVENLY holds pending text (a
+# captain draft), so the guarded ring defers instead of typing.
+defer_steer_check() {  # <case-dir> <capture>
+  PATH="$1/fakebin:$PATH" FM_STATE_OVERRIDE="$1/state" FM_SEND_LOG="$1/send.log" \
+    FM_FAKE_TMUX_CAPTURE="$2" FM_BUSY_REGEX=BUSYTOKEN \
+    FM_TASK_INBOX_GRACE_SECS=0 FM_TASK_INBOX_RING_MAX=2 FM_TASK_INBOX_BUSY_MAX=2 \
+    bash -c '. "$1" && inbox_steer_check sess:fm-t1 t1' _ "$WATCH" > "$1/check.out" 2>&1
+}
+
+defer_case() {  # <name> -> echoes case dir, record in state/t1.inbox/001.msg
+  local dir rec
+  dir=$(busy_case "$1")
+  printf '╭──────────────────╮\n│ captain draft    │\n╰──────────────────╯\n' > "$dir/protected.capture"
+  printf '%s' "$dir"
+}
+
+test_watcher_delivers_idle_pane_once() {
+  local dir
+  dir=$(defer_case deliver)
+  defer_steer_check "$dir" "$(idle_capture "$dir")"
+  [ "$(grep -cF 'Firstmate instruction waiting' "$dir/send.log")" = 1 ] \
+    || fail "an idle-pane doorbell did not deliver exactly once:"$'\n'"$(cat "$dir/send.log")"
+  [ ! -s "$dir/state/.wake-queue" ] || fail "a delivered ring queued a wake"
+  [ ! -e "$dir/state/t1.inbox/.escalated" ] || fail "a delivered ring marked an escalation"
+  pass "watcher: an idle-pane doorbell delivers without waking firstmate"
+}
+
+test_watcher_deferred_then_delivered_never_escalates() {
+  local dir rec
+  dir=$(defer_case defer-deliver)
+  rec="$dir/state/t1.inbox/001.msg"
+  defer_steer_check "$dir" "$dir/protected.capture"
+  [ ! -s "$dir/send.log" ] || fail "a protected composer was typed into"
+  [ ! -s "$dir/state/.wake-queue" ] || fail "a deferred ring queued a wake"
+  defer_steer_check "$dir" "$(idle_capture "$dir")"
+  grep -qF 'Firstmate instruction waiting' "$dir/send.log" \
+    || fail "the next idle poll did not deliver the deferred doorbell"
+  [ ! -s "$dir/state/.wake-queue" ] || fail "the delivered poll queued a wake"
+  [ ! -e "$dir/state/t1.inbox/.escalated" ] || fail "a delivered-after-deferral record escalated"
+  [ -f "$rec" ] || fail "delivery lost the durable record"
+  pass "watcher: a composer-deferred doorbell delivers on the next idle poll and never escalates"
+}
+
+test_watcher_deferred_past_budget_escalates_once() {
+  local dir rec wakes
+  dir=$(defer_case defer-escalate)
+  rec="$dir/state/t1.inbox/001.msg"
+  defer_steer_check "$dir" "$dir/protected.capture"
+  defer_steer_check "$dir" "$dir/protected.capture"
+  [ ! -s "$dir/send.log" ] || fail "a protected composer was typed into"
+  [ ! -s "$dir/state/.wake-queue" ] || fail "a deferral within budget escalated early"
+  defer_steer_check "$dir" "$dir/protected.capture"
+  grep -qF 'unread firstmate instruction' "$dir/state/.wake-queue" \
+    || fail "deferrals past budget did not escalate:"$'\n'"$(cat "$dir/state/.wake-queue" 2>/dev/null)"
+  grep -qF 'worker=t1' "$dir/state/.wake-queue" \
+    || fail "the escalation omitted the worker id"
+  grep -qF 'blocked message: please continue' "$dir/state/.wake-queue" \
+    || fail "the escalation omitted the blocked message"
+  grep -qF 'pane tail:' "$dir/state/.wake-queue" || fail "the escalation omitted the pane tail"
+  grep -qF 'captain draft' "$dir/state/.wake-queue" \
+    || fail "the pane tail did not carry the pending draft"
+  [ ! -s "$dir/send.log" ] || fail "the escalation typed into the pane"
+  [ -f "$rec" ] || fail "the escalation lost the durable record"
+  # One live escalation: quiet again until the cadence window has elapsed.
+  wakes=$(wc -l < "$dir/state/.wake-queue" | tr -d ' ')
+  defer_steer_check "$dir" "$dir/protected.capture"
+  [ "$(wc -l < "$dir/state/.wake-queue" | tr -d ' ')" = "$wakes" ] \
+    || fail "the escalation repeated within the cadence window"
+  # Past the cadence, still blocked past budget: one refreshed escalation.
+  printf '001.msg\t100\n' > "$dir/state/t1.inbox/.escalated"
+  defer_steer_check "$dir" "$dir/protected.capture"
+  [ "$(wc -l < "$dir/state/.wake-queue" | tr -d ' ')" = "$((wakes + 1))" ] \
+    || fail "a still-blocked record past the cadence did not refresh its escalation"
+  [ "$(cut -f1 "$dir/state/t1.inbox/.escalated")" = 001.msg ] \
+    || fail "the refresh did not re-mark the escalation"
+  pass "watcher: a composer-deferred doorbell escalates once past budget with worker, message, and pane tail, and refreshes on the cadence"
 }
 
 test_watcher_busy_budget_resets_on_ring_and_ack() {
@@ -1046,7 +1138,7 @@ test_watcher_successor_busy_reset_failure_surfaces() {
     [ "$(wc -l < "$dir/state/.wake-queue" 2>/dev/null | tr -d ' ')" = 1 ] \
       || fail "$mode successor must surface once, including check $check"
   done
-  [ "$(cat "$dir/state/t1.inbox/.escalated")" = "${rec##*/}" ] \
+  [ "$(cut -f1 "$dir/state/t1.inbox/.escalated")" = "${rec##*/}" ] \
     || fail "reset failure did not mark the successor as escalated"
   case "$mode" in
     idle)
@@ -1077,7 +1169,7 @@ test_watcher_nonbusy_reset_failure_escalates_once() {
     [ "$(grep -c 'steering-inbox busy bookkeeping unwritable' "$dir/state/.wake-queue" 2>/dev/null)" = 1 ] \
       || fail "$mode reset failure repeated or lost its wake on check $check"
   done
-  [ "$(cat "$dir/state/t1.inbox/.escalated")" = 001.msg ] || fail "$mode reset failure was not marked escalated"
+  [ "$(cut -f1 "$dir/state/t1.inbox/.escalated")" = 001.msg ] || fail "$mode reset failure was not marked escalated"
   [ ! -s "$dir/send.log" ] || fail "$mode reset failure typed into the pane"
   [ -f "$rec" ] || fail "$mode reset failure lost the unhandled instruction"
   # The marker belongs to this record, not the next one after repair and ack.
@@ -1403,7 +1495,7 @@ test_watcher_dead_pane_escalates_once_without_ringing() {
     || fail "the stale wake should say the agent has exited:"$'\n'"$(cat "$state/.wake-queue")"
   grep -qF "$rec" "$state/.wake-queue" || fail "the stale wake should name the record path"
   [ -f "$rec" ] || fail "the durable record must survive for recovery"
-  [ "$(cat "$state/t1.inbox/.escalated")" = "${rec##*/}" ] \
+  [ "$(cut -f1 "$state/t1.inbox/.escalated")" = "${rec##*/}" ] \
     || fail "the escalation marker should suppress further surfacing of this record"
   [ ! -e "$state/t1.inbox/.ring-state" ] || fail "a dead pane must not enter the re-ring ladder"
   # The ladder is capped: nothing further is due for this record, so no later
@@ -1430,7 +1522,7 @@ test_watcher_dead_pane_ignores_stale_busy_state() {
   [ "$(grep -cF 'unread firstmate instruction' "$state/.wake-queue" 2>/dev/null || true)" = 1 ] \
     || fail "a busy-marked dead pane should surface exactly once:"$'\n'"$(cat "$state/.wake-queue" 2>/dev/null)"
   [ -f "$rec" ] || fail "the durable record must survive stale busy-state recovery"
-  [ "$(cat "$state/t1.inbox/.escalated")" = "${rec##*/}" ] \
+  [ "$(cut -f1 "$state/t1.inbox/.escalated")" = "${rec##*/}" ] \
     || fail "stale busy-state recovery should suppress repeated surfacing"
   pass "watcher: dead-pane recovery overrides stale busy state"
 }
@@ -1457,6 +1549,9 @@ test_fire_and_forget_retry_is_quiet_without_the_flag
 test_ring_ladder_policy
 test_watcher_rerings_idle_pane_quietly
 test_watcher_waits_on_busy_pane
+test_watcher_delivers_idle_pane_once
+test_watcher_deferred_then_delivered_never_escalates
+test_watcher_deferred_past_budget_escalates_once
 test_watcher_busy_budget_resets_on_ring_and_ack
 test_watcher_busy_bookkeeping_failure_surfaces
 test_watcher_successor_busy_reset_failure_surfaces idle

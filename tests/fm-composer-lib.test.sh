@@ -134,6 +134,29 @@ test_real_text_is_pending() {
   pass "fm_composer_classify_content: real unsubmitted text reads pending (including a popup argument-hint fill)"
 }
 
+# --- Mouse reports are transport artifacts, never human text -----------------
+
+test_mouse_reports_are_never_human_text() {
+  local esc out content
+  esc=$(printf '\033')
+  # A composer holding ONLY SGR mouse reports must read empty so steering
+  # doorbells deliver: the full escape form, and every remnant left after
+  # escape-byte stripping, all classify as artifacts.
+  for content in '<65;77;27M' '[<65;111;29M' '❯ <65;77;27M' "❯ ${esc}[<65;111;29M" '<65;111;29m'; do
+    out=$(classify 1 "$content")
+    [ "$out" = empty ] || fail "bordered mouse-report-only composer '$content' must read empty, got '$out'"
+    out=$(classify 0 "$content")
+    [ "$out" = empty ] || fail "bare mouse-report-only composer '$content' must read empty, got '$out'"
+  done
+  # Junk mixed with genuine text stays pending: the artifact is stripped and
+  # the genuine text alone decides.
+  out=$(classify 1 '❯ <65;77;27Mfix the login bug')
+  [ "$out" = pending ] || fail "a mouse report mixed with real text must stay pending, got '$out'"
+  out=$(classify 0 '❯ <65;77;27Mfix the login bug')
+  [ "$out" = pending ] || fail "bare junk-mixed-with-text must stay pending, got '$out'"
+  pass "fm_composer_classify_content: SGR mouse reports are transport artifacts - alone they read empty, mixed with text stays pending"
+}
+
 # =============================================================================
 # fm_composer_classify_screen: the adapter-facing screen classifier and the
 # correctness matrix (audit data/fm-composer-consolidation-audit-s1, task
@@ -283,10 +306,13 @@ test_matrix_claude_arrow_statusline_footer() {
   # composer, under that same statusline, still refuses.
   typed=$'transcript line\n────────────────────────\n❯ fix the login bug\n────────────────────────'"$footer"
   assert_screen "claude typed under an arrow statusline" pending "$CAPS_STYLED" "$typed" '' "$claude_idle"
-  # The live second defect: a stray SGR mouse report left in the composer by
-  # a click in the pane is real pending content, not furniture.
+  # A stray SGR mouse report left in the composer by a click in the pane is a
+  # transport artifact, never human text: alone it must read empty so steering
+  # doorbells deliver, while junk mixed with genuine text stays pending.
   residue=$'transcript line\n────────────────────────\n❯ <65;77;27M\n────────────────────────'"$footer"
-  assert_screen "stray mouse report in the composer" pending "$CAPS_STYLED" "$residue" '' "$claude_idle"
+  assert_screen "stray mouse report in the composer" empty "$CAPS_STYLED" "$residue" '' "$claude_idle"
+  mixed=$'transcript line\n────────────────────────\n❯ <65;77;27Mfix the login bug\n────────────────────────'"$footer"
+  assert_screen "mouse report mixed with real text" pending "$CAPS_STYLED" "$mixed" '' "$claude_idle"
   pass "matrix: claude's arrow statusline is footer furniture, not a composer holding text"
 }
 
@@ -1646,6 +1672,7 @@ test_empty_content_is_empty
 test_idle_placeholder_is_empty
 test_idle_placeholder_case_mode_is_explicit
 test_real_text_is_pending
+test_mouse_reports_are_never_human_text
 test_matrix_claude_bare_nbsp_row
 test_matrix_claude_all_dim_suggestion_needs_idle_identity
 test_matrix_claude_named_session_titled_rule

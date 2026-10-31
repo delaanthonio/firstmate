@@ -124,7 +124,11 @@
 #   stale: <window> (steering-inbox ladder bookkeeping unwritable: ...)
 #   stale: <window> (steering-inbox busy bookkeeping unwritable: ...)
 #                          steering-inbox recovery; bin/fm-task-inbox-lib.sh owns
-#                          delivery-attempt, busy-deferral, and unavailable-endpoint policy
+#                          delivery-attempt, busy-deferral, and unavailable-endpoint policy.
+#                          A blocked doorbell escalates with the worker id, the
+#                          blocked message, and a short read-only pane tail, and
+#                          repeats on the stuck-escalation cadence while the
+#                          record stays blocked past its retry budget
 #   check: <script>: <out> authenticated check output, always actionable
 #   check: open decision overdue: <task> key=<key> age=<seconds>s
 #                          opt-in config/open-decision-reminders record-age
@@ -280,6 +284,10 @@ WATCH_HOME_EXISTED=0
 # (inbox_steer_check below).
 # shellcheck source=bin/fm-task-inbox-lib.sh
 . "$SCRIPT_DIR/fm-task-inbox-lib.sh"
+# Bounded-line shape for the blocked-doorbell escalation's pane tail and
+# message excerpt (fm_cap_line_var).
+# shellcheck source=bin/fm-line-cap-lib.sh
+. "$SCRIPT_DIR/fm-line-cap-lib.sh"
 # The away-posture record (state/.afk-contract) is the posture in both the
 # attended and the afk session; bin/fm-afk-contract.sh owns its schema and its
 # away-or-quiet reading, which is all this watcher reads (away_record_present
@@ -613,11 +621,41 @@ inbox_steer_busy() {  # <window> <backend> <task> <tail40>
   fi
 }
 
+# The detail a blocked-doorbell escalation carries beyond its base reason: the
+# worker id, a short excerpt of the blocked message, and the last few rendered
+# pane lines from the poll's read-only capture, flattened onto the single-line
+# wake reason. This is what lets the supervisor decide submit/interrupt/
+# relaunch without a separate capture round-trip. The tail comes from the
+# capture already read for the busy check; a failed or empty capture drops the
+# tail clause rather than blocking the escalation. This path itself never
+# types into the pane: delivery stays with the guarded ring
+# (bin/fm-task-inbox-lib.sh).
+inbox_blocked_escalation_detail() {  # <task> <record> <tail40>
+  local task=$1 rec=$2 tail40=$3 detail excerpt tail
+  detail="worker=$task"
+  excerpt=$(fm_task_inbox_body "$rec" 2>/dev/null | head -n 1 | tr -d '[:cntrl:]')
+  if [ -n "$excerpt" ]; then
+    fm_cap_line_var "$excerpt" 120
+    detail="$detail; blocked message: $FM_LINE_CAP_LINE"
+  fi
+  tail=$(printf '%s\n' "$tail40" | tail -n 3 | awk '
+    { gsub(/[[:cntrl:]]/, "")
+      sub(/^[[:space:]]+/, ""); sub(/[[:space:]]+$/, "")
+      if ($0 != "") { printf "%s%s", sep, $0; sep=" | " } }')
+  if [ -n "$tail" ]; then
+    fm_cap_line_var "$tail" 200
+    detail="$detail; pane tail: $FM_LINE_CAP_LINE"
+  fi
+  printf '%s' "$detail"
+}
+
 # Steering-inbox loss detection, one cheap check per recorded window per poll.
 # bin/fm-task-inbox-lib.sh owns delivery, busy-deferral, retry, and escalation policy.
 # Endpoint and busy checks precede delivery so recovery never types into a busy,
 # dead, or missing worker; the ring helper protects pending composer text.
-# Normal retries keep the watcher blocking rather than waking firstmate.
+# Normal retries keep the watcher blocking rather than waking firstmate; a
+# deferral past its retry budget escalates once with the blocked-doorbell
+# detail, and the library's cadence re-escalates while the block persists.
 # Runs for secondmates too: their pane-staleness exemption is about quiet panes
 # being healthy, while an unacknowledged instruction can still be a stuck steer.
 inbox_steer_check() {  # <window> <task>
@@ -656,7 +694,7 @@ inbox_steer_check() {  # <window> <task>
       [ -f "$rec" ] || return 0
       reason="stale: $w (steering-inbox busy bookkeeping unwritable: ${rec%/*}/.busy-state cannot be written while $rec stays unhandled; inspect the inbox directory)"
     elif [ "$count" -ge "$(fm_task_inbox_busy_max)" ]; then
-      reason="stale: $w (unread firstmate instruction: stuck-busy after $count consecutive busy-deferred due doorbells; $rec stays unhandled and no doorbell was typed; inspect the worker)"
+      reason="stale: $w (unread firstmate instruction: stuck-busy after $count consecutive busy-deferred due doorbells; $rec stays unhandled and no doorbell was typed; $(inbox_blocked_escalation_detail "$task" "$rec" "$tail40"); inspect the worker)"
     else
       return 0
     fi
@@ -699,7 +737,7 @@ inbox_steer_check() {  # <window> <task>
       triage_log "steer-inbox retry ring: $task ${rec##*/} result=$ring_rc"
       ;;
     escalate)
-      reason=${reason:-"stale: $w (unread firstmate instruction: $rec still unhandled after $count doorbell delivery attempts with an idle pane; inspect the worker)"}
+      reason=${reason:-"stale: $w (unread firstmate instruction: $rec still unhandled after $count doorbell delivery attempts with an idle pane; $(inbox_blocked_escalation_detail "$task" "$rec" "$tail40"); inspect the worker)"}
       if [ ! -d "${rec%/*}" ] || [ ! -f "$rec" ]; then
         fm_task_inbox_due_action "$STATE" "$task" >/dev/null || true
         return 0
