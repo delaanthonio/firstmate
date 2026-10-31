@@ -396,7 +396,8 @@ test_droid_stop_hook_and_rendered_state() {
   local rec id=busy-droid-1 out state settings cmd
   rec=$(make_spawn_case droid-wiring droid "$id")
   read_case_record "$rec"
-  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR")
+  out=$(FM_FAKE_PANE_CAPTURE='Executing...  (Press ESC to stop)' \
+    run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR")
   expect_code 0 $? "Droid spawn should succeed: $out"
   state="$HOME_DIR/state"
   settings="$state/$id.droid-settings.json"
