@@ -3,6 +3,22 @@
 FM_CUSTOM_CHECK_HASH=
 FM_CUSTOM_CHECK_SNAPSHOT=
 
+# fm_custom_check_timeout <authenticated-check-id> <ordinary-timeout-seconds>
+# Contributions includes a local fleet snapshot before its bounded forge reads.
+# Allow FM_CONTRIBUTIONS_CHECK_TIMEOUT (default 120 seconds) for that whole
+# check, never shortening a larger ordinary bound. Invalid overrides use 120.
+fm_custom_check_timeout() {
+  local id=$1 ordinary=$2 budget=${FM_CONTRIBUTIONS_CHECK_TIMEOUT:-120}
+  if [ "$id" != contributions ]; then
+    printf '%s\n' "$ordinary"
+    return
+  fi
+  case "$budget" in ''|0*|*[!0-9]*) budget=120 ;; esac
+  case "$ordinary" in ''|*[!0-9]*) ordinary=30 ;; esac
+  [ "$budget" -ge "$ordinary" ] || budget=$ordinary
+  printf '%s\n' "$budget"
+}
+
 fm_custom_check_sha256() {
   local file=$1
   if command -v shasum >/dev/null 2>&1; then

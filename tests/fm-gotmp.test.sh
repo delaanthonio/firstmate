@@ -89,6 +89,7 @@ SH
   ln -s "$ROOT/bin/fm-lock-lib.sh" "$fake/bin/fm-lock-lib.sh"
   # fm-lease-lib.sh: teardown sources it for the supervision lease guard.
   ln -s "$ROOT/bin/fm-lease-lib.sh" "$fake/bin/fm-lease-lib.sh"
+  ln -s "$ROOT/bin/fm-supervision-engine-lib.sh" "$fake/bin/fm-supervision-engine-lib.sh"
   # Lifecycle serialization, status presentation retirement, and shared adapter
   # ownership are sourced by teardown.
   ln -s "$ROOT/bin/fm-control-lib.sh" "$fake/bin/fm-control-lib.sh"
@@ -237,6 +238,7 @@ SH
   ln -s "$ROOT/bin/fm-lock-lib.sh" "$fake/bin/fm-lock-lib.sh"
   # fm-lease-lib.sh: teardown sources it for the supervision lease guard.
   ln -s "$ROOT/bin/fm-lease-lib.sh" "$fake/bin/fm-lease-lib.sh"
+  ln -s "$ROOT/bin/fm-supervision-engine-lib.sh" "$fake/bin/fm-supervision-engine-lib.sh"
   ln -s "$ROOT/bin/fm-control-lib.sh" "$fake/bin/fm-control-lib.sh"
   ln -s "$ROOT/bin/fm-classify-lib.sh" "$fake/bin/fm-classify-lib.sh"
   # fm-timeout-lib.sh: the shared hard bound fm-classify-lib.sh sources for the
@@ -349,6 +351,97 @@ SH
   pass "fm-teardown preserves legacy task temp roots while retiring their tasks"
 }
 
+test_teardown_accepts_recorded_legacy_tag_when_missing() {
+  local id=td-old-tag-missing-z7 fake task_tmp
+  task_tmp=$(task_tmp_for_home "$TMP_ROOT/$id-old-home" "$id")
+  fake=$(make_fake_root "$id" "$task_tmp")
+  [ ! -e "$task_tmp" ] || fail "precondition: old-tag temp root should be absent"
+  PATH="$fake/fakebin:$PATH" FM_HOME="$fake" bash "$fake/bin/fm-teardown.sh" "$id" \
+    > "$fake/stdout" 2> "$fake/stderr" \
+    || fail "teardown rejected a missing temp root recorded under an older home tag: $(cat "$fake/stderr")"
+  [ ! -e "$fake/state/$id.meta" ] || fail "teardown retained metadata for a missing old-tag temp root"
+  pass "fm-teardown accepts the task's recorded old home tag when its temp root is already absent"
+}
+
+test_teardown_removes_recorded_temp_root_after_home_move() {
+  local id=td-moved-home-z8 fake task_tmp
+  fake=$(make_fake_root "$id" __AUTO__)
+  task_tmp=$(task_tmp_for_home "$fake" "$id")
+  remember_task_tmp_parent "$task_tmp"
+  (umask 077; mkdir -p "$task_tmp/gotmp")
+  printf 'leftover\n' > "$task_tmp/gotmp/build-artifact"
+  mv "$fake" "$fake-moved"
+  fake="$fake-moved"
+  [ "$task_tmp" != "$(task_tmp_for_home "$fake" "$id")" ] \
+    || fail "precondition: moving the home did not change its tag"
+  PATH="$fake/fakebin:$PATH" FM_HOME="$fake" bash "$fake/bin/fm-teardown.sh" "$id" \
+    > "$fake/stdout" 2> "$fake/stderr" \
+    || fail "teardown rejected the recorded temp root after a home move: $(cat "$fake/stderr")"
+  [ ! -e "$task_tmp" ] || fail "teardown left the old-tag temp root after a home move"
+  [ ! -e "$fake/state/$id.meta" ] || fail "teardown retained metadata after a home move"
+  pass "fm-teardown removes the exact recorded task temp root after the home path changes"
+}
+
+assert_recorded_tasktmp_refused() {  # <id> <tasktmp>
+  local id=$1 task_tmp=$2 fake case_root
+  case_root=$(mktemp -d "$TMP_ROOT/refused.XXXXXX")
+  fake=$(TMP_ROOT="$case_root" make_fake_root "$id" "$task_tmp")
+  cp "$fake/state/$id.meta" "$fake/meta-before"
+  if PATH="$fake/fakebin:$PATH" FM_HOME="$fake" bash "$fake/bin/fm-teardown.sh" "$id" --force \
+    > "$fake/stdout" 2> "$fake/stderr"; then
+    fail "teardown accepted unsafe recorded task temp root $task_tmp"
+  fi
+  grep -q 'REFUSED: unsafe .*task temp root' "$fake/stderr" \
+    || fail "teardown refused for the wrong reason: $(cat "$fake/stderr")"
+  cmp -s "$fake/state/$id.meta" "$fake/meta-before" \
+    || fail "teardown changed task metadata before refusing $task_tmp"
+}
+
+test_teardown_refuses_unsafe_recorded_temp_paths() {
+  local id=td-unsafe-tag-z9 tag base task_tmp
+  tag=$(task_tmp_for_home "$TMP_ROOT/old-home" "$id")
+  base=${tag%/*}
+  for task_tmp in "$base/other-task" "$base" /tmp / \
+    "$base/../$id" "$base/nested/$id" \
+    "/tmp/fm-2ndmate-another-home-12345678/$id" \
+    "/tmp/fm-firstmate-invalid/$id" "$TMP_ROOT/fm-firstmate-12345678/$id"; do
+    assert_recorded_tasktmp_refused "$id" "$task_tmp"
+  done
+  pass "fm-teardown refuses other task ids, foreign secondmate tags, malformed namespaces, parents, traversal, and paths outside /tmp even when recorded"
+}
+
+test_teardown_refuses_recorded_temp_symlinks_and_writable_roots() {
+  local id=td-unsafe-link-z10 task_tmp base outside
+  outside="$TMP_ROOT/temp-escape"
+  mkdir -p "$outside"
+  printf 'keep\n' > "$outside/sentinel"
+  task_tmp=$(task_tmp_for_home "$TMP_ROOT/old-link-home" "$id")
+  base=${task_tmp%/*}
+  remember_task_tmp_parent "$task_tmp"
+  (umask 077; mkdir "$base")
+  ln -s "$outside" "$task_tmp"
+  assert_recorded_tasktmp_refused "$id" "$task_tmp"
+  [ -L "$task_tmp" ] && [ -f "$outside/sentinel" ] || fail "teardown changed the symlink escape"
+  rm "$task_tmp"
+  ln -s "$outside/missing" "$base/$id-dangling"
+  assert_recorded_tasktmp_refused "$id-dangling" "$base/$id-dangling"
+  rm "$base/$id-dangling"
+  rmdir "$base"
+  ln -s "$outside" "$base"
+  assert_recorded_tasktmp_refused "$id" "$task_tmp"
+  [ -L "$base" ] && [ -f "$outside/sentinel" ] || fail "teardown changed the namespace escape"
+  rm "$base"
+  (umask 077; mkdir -p "$task_tmp")
+  chmod 777 "$base"
+  assert_recorded_tasktmp_refused "$id" "$task_tmp"
+  chmod 700 "$base"
+  chmod 777 "$task_tmp"
+  assert_recorded_tasktmp_refused "$id" "$task_tmp"
+  chmod 700 "$task_tmp"
+  rm -r "$task_tmp"
+  pass "fm-teardown refuses recorded symlink escapes, dangling symlinks, and non-private old-tag temp roots"
+}
+
 test_tasktmp_path_is_home_scoped
 test_teardown_removes_tasktmp_dir
 test_teardown_uses_state_override_home_for_tasktmp
@@ -356,3 +449,7 @@ test_teardown_skips_gracefully_without_tasktmp
 test_teardown_skips_gracefully_when_dir_missing
 test_teardown_refuses_unexpected_tasktmp_dir
 test_teardown_preserves_legacy_tasktmp_and_retires_task
+test_teardown_accepts_recorded_legacy_tag_when_missing
+test_teardown_removes_recorded_temp_root_after_home_move
+test_teardown_refuses_unsafe_recorded_temp_paths
+test_teardown_refuses_recorded_temp_symlinks_and_writable_roots

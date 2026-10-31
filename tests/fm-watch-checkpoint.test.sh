@@ -468,6 +468,26 @@ test_droid_invalid_failure_bound() {
   pass "Droid rejects invalid failure bounds before starting checkpoints"
 }
 
+test_watcher_contributions_uses_whole_poll_budget() {
+  local home status
+  home=$(make_home contributions-budget)
+  cat > "$home/state/contributions.check.sh" <<'SH'
+#!/usr/bin/env bash
+sleep 2
+echo 'contributions: completed local snapshot and forge poll'
+SH
+  chmod 700 "$home/state/contributions.check.sh"
+  FM_HOME="$home" "$ROOT/bin/fm-check-register.sh" contributions >/dev/null \
+    || fail "could not register the slow contributions fixture"
+  status=0
+  FM_HOME="$home" FM_POLL=1 FM_CHECK_INTERVAL=1 FM_CHECK_TIMEOUT=1 \
+    "$CHECKPOINT" --seconds 20 >"$home/out.txt" 2>"$home/err.txt" || status=$?
+  expect_code 0 "$status" "watcher contributions check should survive the ordinary check bound"
+  assert_contains "$(cat "$home/out.txt")" 'completed local snapshot and forge poll' \
+    "watcher did not use the contributions allowance"
+  pass "watcher and turn-end standing checks share the whole-poll contributions allowance"
+}
+
 test_droid_running_cycle_allows_turn_end() {
   local home cycle_pid status out i
   home=$(make_home droid-turnend)
@@ -584,6 +604,7 @@ test_droid_quiet_checkpoints_loop_without_output
 test_droid_actionable_outputs_and_away_delegation
 test_droid_failure_bound_and_reset
 test_droid_invalid_failure_bound
+test_watcher_contributions_uses_whole_poll_budget
 test_droid_running_cycle_allows_turn_end
 test_quiet_checkpoint_exits_124_cleanly
 test_droid_rotation_keeps_away_and_quiet_cleanup

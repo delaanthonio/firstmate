@@ -270,6 +270,28 @@ The blocking and bounded-follow-up mechanisms were validated across seven harnes
 | Grok | 0.2.112 native and 0.2.73 pre-native | Running-payload adaptive `Stop` | Native false-to-true continuation stayed in one process with two model turns and zero resume launches; the field-absent pre-native process launched exactly one guarded resume. |
 | Cursor | 2026.08.11-e8db854 | Awaited `stop` hook park returning one `followup_message` | Exit 2 ended the turn normally, proving it cannot block; a returned follow-up ran a genuine second turn; a sleeping hook held the boundary open and the wake landed after it; `loop_limit` stopped the hook being invoked at its ceiling. |
 
+### Contributions standing-check allowance, 2026-10-31
+
+The portable regression refresh ran on macOS arm64 with GNU Bash 5.3.20.
+The current timeout selection remains owned by `fm_custom_check_timeout` in `bin/fm-check-lib.sh`; [the turn-end guard's harness integrations](../turnend-guard.md#harness-integrations) record the outer hook allowances.
+
+```sh
+bash bin/fm-test-run.sh tests/fm-gotmp.test.sh tests/fm-standing-checks.test.sh tests/fm-watch-checkpoint.test.sh tests/fm-droid-primary.test.sh tests/fm-turnend-guard.test.sh
+```
+
+The relevant exact output was:
+
+```text
+ok - contributions has its own bounded allowance without widening ordinary checks or shortening larger budgets
+ok - watcher and turn-end standing checks share the whole-poll contributions allowance
+FM_TEST_SUMMARY total=5 failed=0 skipped_gate=0 duration_ms=123083
+```
+
+The tests execute authenticated immutable check snapshots through the shared standing-check runner and a real watcher checkpoint.
+The bounded override negative control times out before its completion output, while an ordinary sibling retains its shorter deadline.
+This refresh exercises shell execution and tracked hook wiring without launching a vendor model session.
+The shared check runner has no tmux, Herdr, zellij, Orca, or cmux dispatch surface, so its timeout selection is independent of runtime backend.
+
 ### Cursor primary park, 2026-08-13
 
 Cursor was validated as a primary on 2026-08-13 against the installed CLI on macOS 26.5.2 arm64 with tmux 3.6a, in a throwaway firstmate home on a private tmux socket, never against a live home and never with a user-scope hook.

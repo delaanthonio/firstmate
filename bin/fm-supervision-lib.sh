@@ -136,11 +136,11 @@ fm_supervision_run_check_script() {  # <label> <timeout-seconds> <stdout-file> <
   FM_SUP_CHECK_STATUS=$status
 }
 
-fm_supervision_log_check_failure() {  # <script> <status> <stderr-file>
-  local script=$1 status=$2 err_file=$3 first_err
+fm_supervision_log_check_failure() {  # <script> <status> <stderr-file> <timeout-seconds>
+  local script=$1 status=$2 err_file=$3 timeout_s=$4 first_err
   first_err=$(sed -n '1p' "$err_file" 2>/dev/null || true)
   if [ "$status" -eq 124 ]; then
-    printf 'fm-turnend-guard: check timed out after FM_CHECK_TIMEOUT: %s\n' "$script" >&2
+    printf 'fm-turnend-guard: check timed out after %ss: %s\n' "$timeout_s" "$script" >&2
   elif [ -n "$first_err" ]; then
     printf 'fm-turnend-guard: check failed open: %s exited %s: %s\n' "$script" "$status" "$first_err" >&2
   else
@@ -166,7 +166,7 @@ fm_supervision_log_check_failure() {  # <script> <status> <stderr-file>
 # fails. Requires fm-wake-lib.sh, fm-x-lib.sh, fm-pr-lib.sh, and fm-check-lib.sh
 # to be sourced by the caller.
 fm_supervision_run_due_checks() {
-  local state=$1 interval=$2 timeout_s=$3 log_errors=${4:-false}
+  local state=$1 interval=$2 timeout_s=$3 log_errors=${4:-false} check_timeout
   local last_check="$state/.last-check" lock="$state/.last-check.lock" c out err_file out_file
   local root=${FM_ROOT:-} home=${FM_HOME:-} id='' is_pr_poll provider url host path number custom_snapshot
   local rejected_checks='' matched_check=0 actionable_script='' actionable_output='' actionable_id='' actionable_is_pr=0
@@ -212,6 +212,7 @@ fm_supervision_run_due_checks() {
     : > "$out_file"
     is_pr_poll=0
     custom_snapshot=
+    check_timeout=$timeout_s
     if [ "$(basename "$c")" = x-watch.check.sh ]; then
       if [ -n "$root" ] && [ -n "$home" ] \
         && fmx_poll_shim_valid "$c" "$home" "$root" \
@@ -237,7 +238,8 @@ fm_supervision_run_due_checks() {
           bash "$root/bin/fm-pr-poll.sh" --validated "$provider" "$url" "$host" "$path" "$number"
       elif fm_custom_check_snapshot_prepare "$state" "$id"; then
         custom_snapshot=$FM_CUSTOM_CHECK_SNAPSHOT
-        fm_supervision_run_check_script "$c" "$timeout_s" "$out_file" "$err_file" bash "$custom_snapshot"
+        check_timeout=$(fm_custom_check_timeout "$id" "$timeout_s")
+        fm_supervision_run_check_script "$c" "$check_timeout" "$out_file" "$err_file" bash "$custom_snapshot"
       else
         fm_custom_check_snapshot_cleanup
         rejected_checks="$rejected_checks $c"
@@ -253,7 +255,7 @@ fm_supervision_run_due_checks() {
         actionable_is_pr=$is_pr_poll
       fi
     elif [ "$FM_SUP_CHECK_STATUS" -ne 0 ] && [ "$log_errors" = true ]; then
-      fm_supervision_log_check_failure "$c" "$FM_SUP_CHECK_STATUS" "$err_file"
+      fm_supervision_log_check_failure "$c" "$FM_SUP_CHECK_STATUS" "$err_file" "$check_timeout"
     fi
     fm_custom_check_snapshot_cleanup
   done

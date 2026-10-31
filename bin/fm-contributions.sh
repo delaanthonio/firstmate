@@ -55,9 +55,11 @@
 # poll consumes fm-fleet-snapshot.sh --contribution-input, a local-only read,
 # and spends at most FM_CONTRIBUTIONS_BUDGET seconds on forge reads (default 20,
 # 1..25). A configured value rides the generated check shim into watcher runs
-# and is cut down to the watcher's own per-check bound (FM_CHECK_TIMEOUT,
+# and is cut down to the ordinary per-check bound (FM_CHECK_TIMEOUT,
 # default 30, read from the poll's environment because the watcher runs it as
-# a direct child) with a three-second margin. Every read, including one retry,
+# a direct child) with a three-second margin. The separate whole-poll allowance
+# in fm_custom_check_timeout (bin/fm-check-lib.sh) also covers the local snapshot.
+# Every read, including one retry,
 # is capped at five seconds. A first attempt killed at that bound or deadline is
 # budget refusal; a killed retry retains the genuine failure that caused it.
 # HTTP 5xx, 429, secondary-rate-limit 403, connection, DNS and TLS failures are
