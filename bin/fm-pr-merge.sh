@@ -1507,6 +1507,7 @@ github_merge_stack_checked() {
   local FM_PR_GITHUB_REQUIRED FM_PR_GITHUB_REQUIRED_ERROR
   local snapshot current members member number head err method arg participant_url merged
   local completion_status=0 publication_status=0 persist=persist_accepted_merge_authority
+  local extension_output extension_status=0
   local participants=() participant_ids=() participant_urls=() i
   local LC_ALL=C
   local original_url=$URL original_id=$ID target_head=$FM_PR_MERGE_HEAD other target_locked=false
@@ -1613,7 +1614,13 @@ MEMBERS
   }
   github_require_unambiguous_stack_target "$err" || return 1
   printf 'verified: stack heads re-read for %s; invoking gh stack merge --yes --%s (no atomic expected-head flag)\n' "$URL" "$method" >&2
-  if ! (cd "$scratch/repo" && gh stack merge "$PR_NUMBER" --yes "--$method"); then
+  extension_output=$(cd "$scratch/repo" && NO_COLOR=1 CLICOLOR_FORCE=0 gh stack merge "$PR_NUMBER" --yes "--$method" 2>&1) || extension_status=$?
+  [ -z "$extension_output" ] || printf '%s\n' "$extension_output" >&2
+  if [ "$extension_status" -ne 0 ]; then
+    if ! printf '%s\n' "$extension_output" | grep -Eq '^(✗ failed to check merge status: .+|⚠ Merge is still in progress\. Check the pull requests on GitHub\.)$'; then
+      echo "error: gh stack merge failed without submission acceptance evidence; no participant authority recorded" >&2
+      return 4
+    fi
     if merged=$(fm_exec_timed 30 2 gh api "repos/$PR_OWNER/$PR_REPO/pulls/$PR_NUMBER" --jq '.merged') \
       && { [ "$merged" = true ] || [ "$merged" = false ]; }; then
       if [ "$merged" = false ]; then
