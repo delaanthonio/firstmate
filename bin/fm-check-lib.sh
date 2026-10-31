@@ -5,16 +5,18 @@ FM_CUSTOM_CHECK_SNAPSHOT=
 
 # fm_custom_check_timeout <authenticated-check-id> <ordinary-timeout-seconds>
 # Contributions includes a local fleet snapshot before its bounded forge reads.
-# Allow FM_CONTRIBUTIONS_CHECK_TIMEOUT (default 120 seconds) for that whole
-# check, never shortening a larger ordinary bound. Invalid overrides use 120.
+# FM_CONTRIBUTIONS_CHECK_TIMEOUT optionally extends that whole check's bound,
+# never shortening a larger ordinary bound. Unset, empty, or invalid overrides
+# preserve the ordinary timeout, so untuned homes retain their existing limit.
 fm_custom_check_timeout() {
-  local id=$1 ordinary=$2 budget=${FM_CONTRIBUTIONS_CHECK_TIMEOUT:-120}
+  local id=$1 ordinary=$2 budget=${FM_CONTRIBUTIONS_CHECK_TIMEOUT:-}
   if [ "$id" != contributions ]; then
     printf '%s\n' "$ordinary"
     return
   fi
-  case "$budget" in ''|0*|*[!0-9]*) budget=120 ;; esac
-  case "$ordinary" in ''|*[!0-9]*) ordinary=30 ;; esac
+  case "$budget" in
+    ''|0*|*[!0-9]*) printf '%s\n' "$ordinary"; return ;;
+  esac
   [ "$budget" -ge "$ordinary" ] || budget=$ordinary
   printf '%s\n' "$budget"
 }

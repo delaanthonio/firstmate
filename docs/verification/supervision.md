@@ -276,7 +276,8 @@ The portable regression refresh ran on macOS arm64 with GNU Bash 5.3.20.
 The current timeout selection remains owned by `fm_custom_check_timeout` in `bin/fm-check-lib.sh`; [the turn-end guard's harness integrations](../turnend-guard.md#harness-integrations) record the outer hook allowances.
 
 ```sh
-bash bin/fm-test-run.sh tests/fm-gotmp.test.sh tests/fm-standing-checks.test.sh tests/fm-watch-checkpoint.test.sh tests/fm-droid-primary.test.sh tests/fm-turnend-guard.test.sh
+bash bin/fm-test-run.sh tests/fm-standing-checks.test.sh
+bash bin/fm-test-run.sh tests/fm-watch-checkpoint.test.sh
 ```
 
 The relevant exact output was:
@@ -284,12 +285,12 @@ The relevant exact output was:
 ```text
 ok - contributions has its own bounded allowance without widening ordinary checks or shortening larger budgets
 ok - watcher and turn-end standing checks share the whole-poll contributions allowance
-FM_TEST_SUMMARY total=5 failed=0 skipped_gate=0 duration_ms=123083
 ```
 
-The tests execute authenticated immutable check snapshots through the shared standing-check runner and a real watcher checkpoint.
+The tests execute authenticated immutable check snapshots through the shared standing-check runner and a real watcher checkpoint with an explicit per-home contributions allowance.
+An unset allowance preserves the ordinary deadline, and invalid overrides preserve the ordinary timeout selection.
 The bounded override negative control times out before its completion output, while an ordinary sibling retains its shorter deadline.
-This refresh exercises shell execution and tracked hook wiring without launching a vendor model session.
+This refresh exercises shell execution through the watcher and turn-end guard directly, without invoking native hook registrations or launching a vendor model session.
 The shared check runner has no tmux, Herdr, zellij, Orca, or cmux dispatch surface, so its timeout selection is independent of runtime backend.
 
 ### Cursor primary park, 2026-08-13

@@ -268,7 +268,9 @@ Each enabled primary harness adapts its own turn-end mechanism to the shared gua
 | Cursor | `stop` hook in `.cursor/hooks.json` | Cannot block, so it parks and returns at most one follow-up |
 | Grok | `Stop` hook in `.grok/hooks/fm-primary-turnend-guard.json` | Native blocking, or one legacy `grok --resume` fallback |
 
-The tracked Claude, Codex, Droid, and Grok Stop guard registrations allow 180 seconds to accommodate the contributions check; Cursor parks under its longer bound, and the OpenCode, Pi, and omp adapters await the guard without a separate deadline.
+Native Stop-hook registrations retain their existing deadlines; the optional contributions allowance does not extend a harness's outer hook timeout.
+Before increasing that allowance in a home, its operator must also ensure the harness's configured hook deadline accommodates the due-check sweep and cleanup.
+Cursor parks under its longer bound, and the OpenCode, Pi, and omp adapters await the guard without a separate deadline.
 
 The registrations in detail:
 
