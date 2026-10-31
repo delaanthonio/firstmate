@@ -80,14 +80,14 @@ record_orphan() (
       echo "error: cannot establish orphan ownership: unreadable task record $other" >&2
       exit 1
     }
-    if grep -qxF "pr=$URL" "$other"; then
+    if fm_pr_urls_equal "$(grep '^pr=' "$other" | tail -1 | cut -d= -f2- || true)" "$URL"; then
       echo "error: $URL already belongs to task $(basename "$other" .meta); use that task's merge record" >&2
       exit 1
     fi
   done
   if [ -e "$META" ] || [ -L "$META" ]; then
     if ! { [ -f "$META" ] && [ ! -L "$META" ] && [ "$(fm_pr_file_link_count "$META")" = 1 ] \
-      && grep -qxF 'kind=orphan' "$META" && grep -qxF "pr=$URL" "$META"; }; then
+      && grep -qxF 'kind=orphan' "$META" && fm_pr_urls_equal "$(grep '^pr=' "$META" | tail -1 | cut -d= -f2- || true)" "$URL"; }; then
       echo "error: --orphan refuses to replace an existing task or change its PR identity" >&2
       exit 1
     fi

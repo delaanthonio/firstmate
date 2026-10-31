@@ -287,8 +287,8 @@ fm_backlog_tasks_axi_addressing() {  # <data-dir>
 fm_backlog_transition_applies() {  # <config-dir> <data-dir> <kind>
   local config=$1 data authorized_data=$2 kind=$3 file root backend authorized_root
   FM_BACKLOG_TRANSITION_SKIP=
-  if [ "$kind" = secondmate ]; then
-    FM_BACKLOG_TRANSITION_SKIP="secondmates are not backlog items"
+  if [ "$kind" = secondmate ] || [ "$kind" = orphan ]; then
+    FM_BACKLOG_TRANSITION_SKIP="${kind}s are not backlog items"
     return 1
   fi
   if fm_backlog_backend_manual "$config"; then

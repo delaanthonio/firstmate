@@ -97,6 +97,21 @@ FM_PR_RECORD_STATE=
 FM_PR_RECORD_MERGED=
 FM_PR_POLL_RETIREMENT_REJECTED=
 
+fm_pr_urls_equal() (
+  local left right
+  fm_pr_url_parse "${1-}" || return 1
+  left=$FM_PR_URL
+  if [ "$FM_PR_PROVIDER" = github ]; then
+    left=$(printf '%s' "$left" | LC_ALL=C tr '[:upper:]' '[:lower:]')
+  fi
+  fm_pr_url_parse "${2-}" || return 1
+  right=$FM_PR_URL
+  if [ "$FM_PR_PROVIDER" = github ]; then
+    right=$(printf '%s' "$right" | LC_ALL=C tr '[:upper:]' '[:lower:]')
+  fi
+  [ "$left" = "$right" ]
+)
+
 fm_task_id_path_safe() {
   local id=${1-}
   local LC_ALL=C

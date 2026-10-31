@@ -257,6 +257,9 @@ case "${1:-} ${2:-}" in
       echo 'error: stack merge rejected by GitHub' >&2
       exit 1
     fi
+    if [ -x "$case_dir/stack-hook" ]; then
+      "$case_dir/stack-hook" "$case_dir" || exit 1
+    fi
     echo 'stack merge accepted'
     exit 0
     ;;
@@ -777,8 +780,8 @@ test_stack_merge_preserves_method_and_records_outcome() {
   for method in squash merge rebase; do
     case_dir=$(make_stack_case "stack-success-$method")
     flags="--$method"
-    [ "$method" != rebase ] || flags='--merge-method=rebase'
-    run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 -- "$flags" --yes \
+    [ "$method" != rebase ] || flags='--method=rebase'
+    run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 -- "$flags" \
       > "$case_dir/stdout" 2> "$case_dir/stderr" || fail "stack merge failed: $(cat "$case_dir/stderr")"
     grep -qxF "stack merge 9 --yes --$method" "$case_dir/gh.log" || fail "stack method not passed through"
     [ "$(cat "$case_dir/stack-repo")" = https://github.com/example/repo.git ] || fail "stack repository not bound to URL"
@@ -794,9 +797,75 @@ test_stack_merge_preserves_method_and_records_outcome() {
   pass "stack fallback delegates atomic merging to gh stack merge with methods, preflight and recorded outcome"
 }
 
+test_stack_participant_locks_and_authority() {
+  local case_dir rc i authority
+  case_dir=$(make_stack_case stack-participant-authority)
+  printf 'kind=orphan\npr=https://github.com/Example/Repo/pull/8\n' > "$case_dir/state/dependency.meta"
+  cat > "$case_dir/stack-hook" <<'SH'
+#!/usr/bin/env bash
+case_dir=$1
+bash -c '
+  . "$1/bin/fm-wake-lib.sh"
+  if fm_lock_try_acquire "$2/.control-dependency.lock"; then
+    fm_lock_release "$2/.control-dependency.lock"
+    exit 1
+  fi
+' bash "$FM_TEST_ROOT" "$FM_STATE_OVERRIDE" || exit 1
+(
+  touch "$case_dir/hold-attempted"
+  rc=0
+  "$FM_TEST_ROOT/bin/fm-captain-hold.sh" hold dependency --title 'Review task' --reason 'Review required' \
+    > "$case_dir/hold-out" 2>&1 || rc=$?
+  cp "$FM_STATE_OVERRIDE/dependency.merge-authority" "$case_dir/authority-at-hold" 2>/dev/null || true
+  printf '%s\n' "$rc" > "$case_dir/hold-rc"
+) < /dev/null > "$case_dir/holder-out" 2>&1 &
+for ((i=0; i<200; i++)); do
+  [ ! -f "$case_dir/hold-attempted" ] || break
+  sleep 0.01
+done
+[ -f "$case_dir/hold-attempted" ] || exit 1
+for ((i=0; i<20; i++)); do
+  [ ! -f "$case_dir/hold-rc" ] || exit 1
+  sleep 0.05
+done
+touch "$case_dir/hold-blocked-at-dispatch"
+SH
+  chmod +x "$case_dir/stack-hook"
+  rc=0
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 > "$case_dir/out" 2>&1 || rc=$?
+  for ((i=0; i<200; i++)); do
+    [ ! -f "$case_dir/hold-rc" ] || break
+    sleep 0.05
+  done
+  [ "$rc" -eq 0 ] || fail "stack participant transaction failed: $(cat "$case_dir/out")"
+  [ -f "$case_dir/hold-blocked-at-dispatch" ] || fail "dependency hold was published during dispatch"
+  [ "$(cat "$case_dir/hold-rc")" = 0 ] || fail "dependency lock was not released"
+  authority=$(bash -c '
+    . "$1/bin/fm-wake-lib.sh"
+    . "$1/bin/fm-merge-authority-lib.sh"
+    fm_merge_authority_read "$2" dependency github github.com Example/Repo 8 || exit 1
+    printf "%s" "$FM_MERGE_AUTHORITY"
+  ' bash "$ROOT" "$case_dir/state") || fail "dependency authority did not match its recorded identity"
+  [ "$authority" = attended ] || fail "dependency helper merge was classified as external"
+  cmp "$case_dir/authority-at-hold" "$case_dir/state/dependency.merge-authority" || fail "authority was published after releasing dependency control"
+  pass "stack holds serialize through dispatch and every owned participant receives matching authority before unlock"
+}
+
+test_stack_extra_aliases_refuse() {
+  local case_dir flag rc
+  for flag in --merge-method=rebase --merge-method --yes -y; do
+    case_dir=$(make_stack_case "stack-alias-${flag#--}")
+    rc=0
+    run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 -- "$flag" > "$case_dir/out" 2>&1 || rc=$?
+    [ "$rc" -ne 0 ] || fail "unrequired stack alias accepted: $flag"
+    ! grep -q '^stack merge ' "$case_dir/gh.log" || fail "stack merger received unrequired alias: $flag"
+  done
+  pass "stack fallback rejects unrequired public method and confirmation aliases"
+}
+
 test_stack_merge_refuses_unsafe_state() {
   local case_dir scenario rc
-  for scenario in red missing changed-head collision failed away held unsupported; do
+  for scenario in red missing changed-head collision equivalent-collision failed away held mixed-case-held unsupported; do
     case_dir=$(make_stack_case "stack-refuse-$scenario")
     case "$scenario" in
       red) jq '.statusCheckRollup[0].conclusion = "FAILURE"' "$case_dir/github-member-8.json" > "$case_dir/member.tmp"; mv "$case_dir/member.tmp" "$case_dir/github-member-8.json" ;;
@@ -807,10 +876,14 @@ test_stack_merge_refuses_unsafe_state() {
         ;;
       changed-head) jq '.[0].pull_requests[0].head.sha = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"' "$case_dir/stack.json" > "$case_dir/stack-next.json" ;;
       collision) printf '{"number":9,"base":{"ref":"main"},"pull_requests":[]}\n' > "$case_dir/stack-collision.json" ;;
+      equivalent-collision) jq '.[0] | .pull_requests = .pull_requests[:2]' "$case_dir/stack.json" > "$case_dir/stack-collision.json" ;;
       failed) touch "$case_dir/stack-merge-fail" ;;
       away) write_away_record "$case_dir" --words 'Merge the approved green work.' ;;
-      held)
+      held|mixed-case-held)
         printf 'kind=ship\npr=https://github.com/example/repo/pull/8\n' > "$case_dir/state/dependency.meta"
+        if [ "$scenario" = mixed-case-held ]; then
+          printf 'kind=ship\npr=https://github.com/Example/Repo/pull/8\n' > "$case_dir/state/dependency.meta"
+        fi
         FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" \
           "$ROOT/bin/fm-captain-hold.sh" hold dependency --title 'Review task' --reason 'Review required' >/dev/null || fail "could not create dependency hold"
         ;;
@@ -855,17 +928,47 @@ test_orphan_recording_preserves_guards() {
       grep -qxF kind=orphan "$case_dir/state/task-x1.meta" || fail "orphan kind absent"
       grep -qxF pr_head=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa "$case_dir/meta-at-merge" || fail "orphan head not recorded before merge"
       [ -f "$case_dir/state/task-x1.pr-poll-merge-notified" ] || fail "orphan outcome absent"
-      run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 --orphan > "$case_dir/retry-out" 2>&1 || fail "same orphan record was not reusable"
+      run_pr_merge "$case_dir" task-x1 https://github.com/Example/Repo/pull/9 --orphan > "$case_dir/retry-out" 2>&1 || fail "same orphan record was not reusable"
       rc=0
       run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/10 --orphan > "$case_dir/rebind-out" 2>&1 || rc=$?
       [ "$rc" -ne 0 ] || fail "orphan record rebound to another PR"
-      grep -qxF 'pr=https://github.com/example/repo/pull/9' "$case_dir/state/task-x1.meta" || fail "orphan identity changed"
+      grep -qxF 'pr=https://github.com/Example/Repo/pull/9' "$case_dir/state/task-x1.meta" || fail "orphan identity changed"
     else
       [ "$rc" -ne 0 ] || fail "orphan $scenario was accepted"
       ! grep -q '^pr merge ' "$case_dir/gh.log" || fail "orphan $scenario reached forge merge"
     fi
   done
   pass "explicit orphan merge records the live head and outcome while retaining red, missing-check and hold guards"
+}
+
+test_orphan_lifecycle() {
+  local case_dir state_out summary backlog_before
+  case_dir=$(make_case orphan-lifecycle)
+  add_gh_mocks "$case_dir" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  rm "$case_dir/state/task-x1.meta"
+  write_github_red_json "$case_dir" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ci
+  if run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 --orphan > "$case_dir/out" 2>&1; then
+    fail "red orphan unexpectedly merged"
+  fi
+  state_out=$(FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" "$ROOT/bin/fm-crew-state.sh" task-x1)
+  assert_contains "$state_out" 'state: paused' "forge-only record must have an explicit current state"
+  assert_not_contains "$state_out" 'worktree gone' "orphan must not require a worker copy"
+  [ "$(FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" "$ROOT/bin/fm-afk-contract.sh" live-workers)" = 0 ] || fail "forge-only record consumed a worker spend slot"
+  summary=$(FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" PATH="$case_dir/fakebin:$PATH" \
+    "$ROOT/bin/fm-fleet-snapshot.sh" --secondmate-home-summary)
+  printf '%s' "$summary" | jq -e '.valid == true and .invalidity.kind == null' > /dev/null || fail "orphan invalidated inventory: $summary"
+  write_github_live_json "$case_dir" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 --orphan > "$case_dir/out" 2>&1 || fail "orphan merge failed"
+  state_out=$(FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" "$ROOT/bin/fm-crew-state.sh" task-x1)
+  assert_contains "$state_out" 'state: done' "recorded merged orphan must report its terminal state"
+  backlog_before=$(cat "$case_dir/home/data/backlog.md")
+  FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" FM_TEARDOWN_GUARD_DONE=1 \
+    "$ROOT/bin/fm-teardown.sh" task-x1 > "$case_dir/teardown-out" 2>&1 || fail "orphan cleanup failed: $(cat "$case_dir/teardown-out")"
+  [ ! -e "$case_dir/state/task-x1.meta" ] || fail "orphan record survived cleanup"
+  [ ! -e "$case_dir/state/task-x1.backlog-close" ] || fail "orphan created a nonexistent backlog close"
+  [ "$backlog_before" = "$(cat "$case_dir/home/data/backlog.md")" ] || fail "orphan cleanup changed the backlog"
+  assert_not_contains "$(cat "$case_dir/teardown-out")" 'move task-x1 to Done' "orphan must not request a nonexistent backlog transition"
+  pass "forge-only records have current state, valid inventory and cleanup without worker or backlog fields"
 }
 
 test_orphan_never_overwrites_an_owner() {
@@ -877,7 +980,7 @@ test_orphan_never_overwrites_an_owner() {
   run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 > "$case_dir/out" 2>&1 || rc=$?
   [ "$rc" -ne 0 ] || fail "missing task implicitly became orphan"
   [ ! -e "$case_dir/state/task-x1.meta" ] || fail "implicit orphan record created"
-  printf 'kind=ship\npr=https://github.com/example/repo/pull/9\n' > "$case_dir/state/owner.meta"
+  printf 'kind=ship\npr=https://github.com/Example/Repo/pull/9\n' > "$case_dir/state/owner.meta"
   rc=0
   run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 --orphan > "$case_dir/out" 2>&1 || rc=$?
   [ "$rc" -ne 0 ] || fail "orphan bypassed existing owner"
@@ -4820,6 +4923,9 @@ test_allow_no_pipeline_is_attended_only_and_gitlab_only() {
 }
 
 test_stack_merge_preserves_method_and_records_outcome
+test_stack_participant_locks_and_authority
+test_stack_extra_aliases_refuse
+test_orphan_lifecycle
 test_stack_merge_refuses_unsafe_state
 test_orphan_recording_preserves_guards
 test_orphan_never_overwrites_an_owner

@@ -245,6 +245,14 @@ KIND=$(meta_value kind)
 HARNESS=$(meta_value harness)
 REMOTE_HOST=$(meta_value remote_host)
 [ -n "$KIND" ] || KIND=ship
+if [ "$KIND" = orphan ]; then
+  fm_pr_metadata_identity_parse "$META" || emit unknown none "invalid forge-only PR record"
+  if fm_pr_poll_merge_already_notified "$STATE" "$ID" "$FM_PR_META_PROVIDER" \
+    "$FM_PR_META_HOST" "$FM_PR_META_PATH" "$FM_PR_META_NUMBER"; then
+    emit done none "forge-only PR merged: $FM_PR_META_URL"
+  fi
+  emit paused none "forge-only PR recorded: $FM_PR_META_URL"
+fi
 
 # A torn-down (or never-created) worktree has no current state to read. A
 # remote secondmate's recorded worktree is a path on ITS host, so the local
