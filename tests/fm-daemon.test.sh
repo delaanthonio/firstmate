@@ -3516,11 +3516,12 @@ test_classify_check_and_unknown_escalate
 test_unknown_wake_ack_suppresses_handled_identity
 test_t3_digest_identity_survives_interrupted_delivery() {
   local dir state buf variant rc id
-  for variant in success interrupted publication consumption tail unconfirmed; do
+  for variant in success interrupted publication consumption tail unconfirmed construction partial; do
     dir=$(make_supercase "t3-digest-$variant")
     state="$dir/state"
     buf="$state/.subsuper-escalations"
     escalate_add "$state" "event A: release approval required"
+    escalate_add "$state" "event B: release approval required"
     afk_enter "$state"
     cat > "$dir/flush" <<'SH'
 #!/usr/bin/env bash
@@ -3551,8 +3552,17 @@ mv() {
   command mv "$@"
 }
 tail() {
-  [ "$variant:$phase:$*" != "tail:first:-n +2 $buf" ] || return 1
+  [ "$variant:$phase:$*" != "tail:first:-n +3 $buf" ] || return 1
   command tail "$@"
+}
+cat() {
+  if [ "$phase" = first ] && [ "$*" = "$buf" ] && [ -f "$buf.frozen.tmp" ]; then
+    case "$variant" in
+      partial) head -n 1 "$buf"; kill -KILL "$$" ;;
+      construction) kill -KILL "$$" ;;
+    esac
+  fi
+  command cat "$@"
 }
 if [ "$variant:$phase" = interrupted:first ]; then
   escalate_consume_frozen() { exit 73; }
@@ -3567,6 +3577,16 @@ SH
     else
       [ "$rc" -ne 0 ] || fail "$variant unexpectedly completed"
       [ -s "$buf" ] || fail "$variant lost the pending buffer"
+      if [ "$variant" = construction ] || [ "$variant" = partial ]; then
+        [ ! -e "$buf.frozen-msg" ] || fail "incomplete snapshot published its message"
+        [ ! -e "$state/submissions" ] || fail "incomplete snapshot reached submission"
+        bash "$dir/flush" "$DAEMON" "$state" "$variant" retry || fail "incomplete snapshot did not recover"
+        [ ! -s "$buf" ] || fail "incomplete snapshot left buffered events"
+        [ "$(wc -l < "$state/submissions" | tr -d ' ')" = 1 ] || fail "incomplete snapshot split one generation into multiple submissions"
+        grep -F 'event A:' "$state/submissions" >/dev/null || fail "recovery lost event A"
+        grep -F 'event B:' "$state/submissions" >/dev/null || fail "recovery lost event B"
+        continue
+      fi
       if [ "$variant" = publication ]; then
         [ ! -e "$state/submissions" ] || fail "failed publication still submitted"
         id=$(sed -n '2s/^id=//p' "$buf.frozen.tmp")

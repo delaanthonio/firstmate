@@ -1972,20 +1972,34 @@ test_spawn_never_writes_inherited_git_config() {
 }
 
 test_spawn_secondmate_refuses_symlinked_claude_settings() {
-  local id home out rc target
-  id=$(t3_uid t3smlinkz)
-  t3_case spawn-secondmate-settings-link
-  home="$CASE_DIR/sm-home"
-  make_t3_secondmate_home "$home" "$id"
-  target="$CASE_DIR/outside-settings.json"
-  printf '{"env":{"OUTSIDE":"1"}}\n' > "$target"
-  mkdir -p "$home/.claude"
-  ln -s "$target" "$home/.claude/settings.local.json"
-  out=$(spawn_t3_secondmate "$id" "$home" claude claude-sonnet-5); rc=$?
-  [ "$rc" -ne 0 ] || fail "a symlinked Claude settings file must refuse the spawn"$'\n'"$out"
-  assert_contains "$out" "is a symlink" "the refusal names the symlink"
-  [ "$(cat "$target")" = '{"env":{"OUTSIDE":"1"}}' ] || fail "the symlink's target must be left untouched, got '$(cat "$target")'"
-  pass "fm-spawn.sh --backend t3code --secondmate: a symlinked .claude/settings.local.json is refused, never written through"
+  local id home out rc target variant
+  for variant in file directory; do
+    id=$(t3_uid "t3smlinkz$variant")
+    t3_case "spawn-secondmate-settings-link-$variant"
+    home="$CASE_DIR/sm-home"
+    make_t3_secondmate_home "$home" "$id"
+    mkdir -p "$CASE_DIR/outside"
+    target="$CASE_DIR/outside/settings.local.json"
+    printf '{"env":{"OUTSIDE":"1","FM_T3CODE_ENV_KEYS":"OUTSIDE"}}\n' > "$target"
+    if [ "$variant" = file ]; then
+      mkdir -p "$home/.claude"
+      ln -s "$target" "$home/.claude/settings.local.json"
+    else
+      ln -s "$CASE_DIR/outside" "$home/.claude"
+    fi
+    out=$(spawn_t3_secondmate "$id" "$home" claude claude-sonnet-5); rc=$?
+    [ "$rc" -ne 0 ] || fail "linked Claude settings must refuse the spawn"$'\n'"$out"
+    if [ "$variant" = directory ]; then
+      assert_contains "$out" "not an owned directory" "the refusal names the linked parent"
+      t3_run 'fm_backend_t3code_home_env_cleanup "$1"' "$home" >/dev/null 2>&1 \
+        && fail "cleanup accepted a linked Claude parent"
+    else
+      assert_contains "$out" "is a symlink" "the refusal names the symlink"
+    fi
+    [ "$(cat "$target")" = '{"env":{"OUTSIDE":"1","FM_T3CODE_ENV_KEYS":"OUTSIDE"}}' ] \
+      || fail "the external settings fixture must remain untouched"
+  done
+  pass "T3 spawn and cleanup preserve settings behind linked Claude files or directories"
 }
 
 test_launch_gate_failure_returns_lease() {

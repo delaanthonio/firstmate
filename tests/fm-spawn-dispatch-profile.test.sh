@@ -1140,6 +1140,48 @@ test_opencode1_without_effort_keeps_permission_only_config() {
   pass "opencode 1.x without an effort keeps its permission-only launch config"
 }
 
+test_raw_opencode_probe_uses_selected_runner() {
+  local rec id out rc version other raw runner plugin result form
+  for version in 1.18.32 2.0.21; do
+    for form in absolute relative environment; do
+      id="raw-oc-${version%%.*}-$form"
+      rec=$(make_spawn_case "$id" opencode "$id")
+      read_case_record "$rec"
+      mkdir -p "$CASE_DIR/custom"
+      runner="$CASE_DIR/custom/opencode"
+      printf '#!/usr/bin/env bash\n[ "${1:-}" != --version ] || printf "%%s\\n" "%s"\n' "$version" > "$runner"
+      chmod +x "$runner"
+      raw=$runner
+      [ "$form" != relative ] || raw=../custom/opencode
+      [ "$form" != environment ] || raw="PATH=$CASE_DIR/custom:\$PATH opencode"
+      other=1.18.32
+      [ "$version" != 1.18.32 ] || other=2.0.21
+      out=$(FM_TEST_OPENCODE_VERSION="$other" run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+        "$id" "$PROJ_DIR" "$raw --standalone --prompt __BRIEF__"); rc=$?
+      expect_code 0 "$rc" "raw OpenCode spawn failed: $out"
+      assert_grep "opencode_version=$version" "$HOME_DIR/state/$id.meta" "raw runner version must control metadata"
+      assert_grep "$raw --standalone --prompt" "$LAUNCH_LOG" "raw launch must preserve the selected runner"
+      plugin="$WT_DIR/.opencode/plugins/fm-busy-state.js"
+      node --input-type=module - "$plugin" <<'JS' || fail "generated raw-runner plugin failed"
+import {pathToFileURL} from 'node:url';
+const mod = await import(pathToFileURL(process.argv[2]).href);
+const hooks = await mod.FmBusyState({});
+for (const event of [
+  {type:'session.status',properties:{sessionID:'fixture',status:{type:'busy'}}},
+  {type:'session.status',properties:{sessionID:'fixture',status:{type:'idle'}}},
+  {type:'session.execution.started',properties:{sessionID:'fixture'}}
+]) await hooks.event({event});
+JS
+      result=$(. "$ROOT/bin/fm-busy-lib.sh"; fm_busy_classify tmux fake:w opencode "$id" "$HOME_DIR/state")
+      case "$version:$result" in
+        1.*:'idle opencode-plugin'|2.*:'busy opencode-plugin') ;;
+        *) fail "raw runner plugin selected the wrong event contract: $version $result" ;;
+      esac
+    done
+  done
+  pass "raw OpenCode absolute and relative runners control version and plugin behavior despite conflicting PATH"
+}
+
 test_opencode_probe_and_launch_share_resolved_executable() {
   local rec id out status launch probelog probed
   id=profile-opencode-resolve-z7g
@@ -3229,6 +3271,7 @@ test_opencode_emits_variant_for_openai_family_effort
 test_opencode_omits_variant_when_model_family_lacks_effort
 test_opencode1_passes_model_flag_and_variant_only_config
 test_opencode1_without_effort_keeps_permission_only_config
+test_raw_opencode_probe_uses_selected_runner
 test_opencode_probe_and_launch_share_resolved_executable
 test_opencode_unknown_version_takes_1x_launch_path
 test_opencode2_delivery_gate_accepts_auto_submitted_brief

@@ -913,10 +913,11 @@ escalate_full_text_save() {  # <state> <buf>
 # which becomes the buffer's since-stamp once the frozen generation is gone.
 escalate_freeze() {  # <buf> <submitted-message> <request-id>
   local buf=$1
-  rm -f "$buf.next-since"
-  if ! printf '%s' "$2" > "$buf.frozen-msg" \
-    || ! { printf 'since=%s\nid=%s\n' "$(cat "$buf.since" 2>/dev/null)" "$3"; cat "$buf"; } > "$buf.frozen.tmp"; then
-    rm -f "$buf.frozen.tmp" "$buf.frozen-msg"
+  rm -f "$buf.next-since" "$buf.frozen-msg"
+  if ! { printf 'since=%s\nid=%s\n' "$(cat "$buf.since" 2>/dev/null)" "$3"; cat "$buf"; } > "$buf.frozen.tmp" \
+    || ! printf '%s' "$2" > "$buf.frozen-msg.tmp" \
+    || ! mv -f "$buf.frozen-msg.tmp" "$buf.frozen-msg"; then
+    rm -f "$buf.frozen.tmp" "$buf.frozen-msg.tmp"
     log "digest freeze could not be recorded; submission deferred"
     return 1
   fi
@@ -983,7 +984,11 @@ escalate_flush() {  # <state>
     return 1
   fi
   if [ -f "$buf.frozen.tmp" ]; then
-    mv -f "$buf.frozen.tmp" "$buf.frozen" || return 1
+    if [ -f "$buf.frozen-msg" ]; then
+      mv -f "$buf.frozen.tmp" "$buf.frozen" || return 1
+    else
+      rm -f "$buf.frozen.tmp" "$buf.frozen-msg.tmp" "$buf.next-since"
+    fi
   fi
   if [ -f "$buf.frozen" ]; then
     escalate_flush_frozen "$state" "$buf" || return 1
