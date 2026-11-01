@@ -163,7 +163,7 @@
 #          FM_STATE_OVERRIDE        alternate state dir (testing)
 #          Logs each wake to state/.supervise-daemon.log (size-capped). Single
 #          instance via portable lock on state/.supervise-daemon.lock. Trapped
-#          SIGTERM/SIGINT shut down within ~1s, flush escalations, release the
+#          SIGTERM/SIGINT invalidate coverage, preserve unacknowledged work, release the
 #          lock. A crashing fm-watch.sh is logged and restarted, never killing
 #          the daemon; a tight crash-restart spin is detected and backed off.
 set -u
@@ -185,6 +185,28 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 # Canonical construction and parsing for every Firstmate operational input.
 # shellcheck source=bin/fm-operational-input.sh
 . "$FM_DAEMON_DIR/fm-operational-input.sh"
+# shellcheck source=bin/fm-supervision-engine-lib.sh
+. "$FM_DAEMON_DIR/fm-supervision-engine-lib.sh"
+# shellcheck source=bin/fm-supervisor-receipt.sh
+. "$FM_DAEMON_DIR/fm-supervisor-receipt.sh"
+# Production enables this only after acquiring the existing singleton lock.
+FM_RECEIPT_ACTIVE=0
+
+fm_daemon_receipt_start() {  # <state> <backend> <target>; daemon lock held
+  case "$2" in
+    tmux|herdr)
+      FM_RECEIPT_ACTIVE=1
+      fm_receipt_begin "$1" "$2" "$3" || return 1
+      log "coverage pending; finish the initiating turn before the receiver can acknowledge the handoff"
+      ;;
+    rex|t3code)
+      FM_RECEIPT_ACTIVE=0
+      fm_receipt_invalidate "$1" || log "obsolete receipt could not be invalidated"
+      log "coverage unverified: $2 receiver identity is not supported; retaining native delivery semantics"
+      ;;
+    *) return 1 ;;
+  esac
+}
 
 # Shared wake classifier (last_status_line, status_is_captain_relevant,
 # window_to_task, and the status-span reader). The SAME library backs the
@@ -1011,6 +1033,14 @@ escalate_flush() {  # <state>
   # Single-line wrapper: no embedded newlines (inject_msg also collapses as a
   # safety net, but keeping the source single-line makes the intent explicit).
   msg=$(printf 'Supervisor escalate (%s event(s)): %s (pre-read; re-arm not needed — watcher daemon-managed)' "$ESCALATE_EVENTS" "$msg")
+  if [ "$FM_RECEIPT_ACTIVE" = 1 ]; then
+    # The transport remains unchanged; consumption retires this buffer instead.
+    [ -z "$full" ] || ESCALATE_KEPT_FULL=$full
+    fm_daemon_receipt_stage "$state" "$msg" "$buf" || return 1
+    fm_daemon_receipt_tick "$state"
+    [ ! -s "$buf" ]
+    return
+  fi
   [ "${FM_SUPERVISOR_BACKEND:-tmux}" != t3code ] || id="fm-digest-$(_now)-$$-$RANDOM$RANDOM"
   if inject_msg "$msg" "$state" "" "$id"; then
     if [ -f "$buf.frozen" ]; then
@@ -1032,6 +1062,125 @@ escalate_flush() {  # <state>
     rm -f "$full"
   fi
   return 1
+}
+
+# Retire only the byte-identical acknowledged prefix. New events appended while
+# the receiver worked stay buffered. A restart before retirement safely replays.
+fm_daemon_receipt_retire() {  # <state>; receipt lock held
+  local state=$1 snapshot rest count status=1
+  [ "$(fm_receipt_field .pending.kind)" = work ] || return 0
+  [ "$(fm_receipt_field '.pending.retired // false | tostring')" != true ] || return 0
+  snapshot=$(mktemp "$state/.receipt-snapshot.XXXXXX") || return 1
+  rest=$(mktemp "$state/.receipt-rest.XXXXXX") || { rm -f "$snapshot"; return 1; }
+  printf '%s' "$FM_RECEIPT" | jq -jr .pending.snapshot > "$snapshot"
+  count=$(wc -c < "$snapshot" | tr -d ' ')
+  if head -c "$count" "$state/.subsuper-escalations" > "$rest" && cmp -s "$rest" "$snapshot"; then
+    if tail -c "+$((count + 1))" "$state/.subsuper-escalations" > "$rest" \
+      && mv -f "$rest" "$state/.subsuper-escalations"; then
+      unknown_wake_acknowledge_flushed "$state" "$snapshot" || true
+      [ -s "$state/.subsuper-escalations" ] || rm -f "$state/.subsuper-escalations.since"
+      status=0
+    fi
+  else
+    # A crash after retirement may leave only later events. Preserve any
+    # nonmatching buffer for another acknowledged delivery, never truncate it.
+    log "acknowledged buffer prefix changed; preserving remaining work for replay"
+    status=0
+  fi
+  rm -f "$snapshot" "$rest"
+  [ "$status" -eq 0 ] || return 1
+  FM_RECEIPT=$(printf '%s' "$FM_RECEIPT" | jq '.pending.retired=true') && fm_receipt_save "$state"
+}
+
+fm_daemon_receipt_stage() {  # <state> <digest> <buffer>
+  local state=$1 status=1
+  fm_receipt_lock "$state" || return 1
+  if fm_receipt_load "$state" && [ "$(fm_receipt_field .phase)" = verified ] \
+    && [ "$(fm_receipt_field '.pending.acked | tostring')" = true ] \
+    && { [ "$(fm_receipt_field .pending.kind)" = probe ] \
+      || [ "$(fm_receipt_field '.pending.retired // false | tostring')" = true ]; }; then
+    # The digest was built before this lock. If its previous snapshot was only
+    # just acknowledged, let the tick retire it before building another digest.
+    fm_receipt_challenge_locked "$state" work "$2" "$3" && status=0
+  fi
+  fm_receipt_unlock "$state"
+  return "$status"
+}
+
+# Backoff still delays watcher restart, but never delays consumption checks.
+fm_daemon_receipt_sleep() {  # <seconds> <state>
+  local remaining=$1 state=$2
+  case "$remaining" in *[!0-9]*) sleep "$remaining"; return ;; esac
+  while [ "$remaining" -gt 0 ]; do
+    sleep 1
+    fm_daemon_receipt_tick "$state" || true
+    remaining=$((remaining - 1))
+  done
+}
+
+fm_daemon_receipt_tick() {  # <state>; never waits for the receiving turn
+  local state=$1 now deadline token payload submitted=0 failure phase last_ack
+  [ "$FM_RECEIPT_ACTIVE" = 1 ] || return 0
+  if ! afk_active "$state"; then fm_receipt_invalidate "$state"; return; fi
+  if ! fm_receipt_lock "$state"; then
+    INJECT_LAST_FAILURE='consumption receipt lock unavailable; coverage cannot be renewed'
+    inject_wedge_alarm "$state" 0
+    return 1
+  fi
+  if ! fm_receipt_load "$state"; then
+    fm_receipt_unlock "$state"
+    INJECT_LAST_FAILURE='consumption receipt state unreadable; coverage unhealthy'
+    inject_wedge_alarm "$state" 0
+    return 1
+  fi
+  now=$(fm_receipt_now)
+  phase=$(fm_receipt_field .phase)
+  if [ "$phase" = inactive ]; then fm_receipt_unlock "$state"; return 0; fi
+  deadline=$(fm_receipt_field .pending.deadline)
+  if ! fm_receipt_context_current "$state" \
+    || [ "$(fm_receipt_destination "$FM_SUPERVISOR_BACKEND" "$FM_SUPERVISOR_TARGET")" != "$(fm_receipt_field .target)" ] \
+    || { [ "$(fm_receipt_field '.pending.acked | tostring')" != true ] && [ "$now" -ge "$deadline" ]; }; then
+    FM_RECEIPT=$(printf '%s' "$FM_RECEIPT" | jq '.phase="unhealthy"')
+    fm_receipt_save "$state" || true
+    failure=$(fm_receipt_field '.pending.failure // "no delivery attempt recorded"')
+    submitted=$(fm_receipt_field '.pending.submitted | tostring')
+    fm_receipt_unlock "$state"
+    INJECT_LAST_FAILURE="receiver acknowledgment missing, expired, or invalidated (transport submitted=$submitted; $failure)"
+    inject_wedge_alarm "$state" "$((now - $(fm_receipt_field .pending.created)))"
+    return 1
+  fi
+  if [ "$phase" = unhealthy ]; then fm_receipt_unlock "$state"; return 1; fi
+  if [ "$(fm_receipt_field '.pending.acked | tostring')" = true ]; then
+    fm_daemon_receipt_retire "$state" || { fm_receipt_unlock "$state"; return 1; }
+    last_ack=$(fm_receipt_field .last_ack)
+    if [ $((now - last_ack)) -ge "$FM_RECEIPT_IDLE_SECS" ]; then
+      fm_receipt_challenge_locked "$state" probe 'Supervision idle delivery check.' '' || { fm_receipt_unlock "$state"; return 1; }
+    else
+      rm -f "$state/.subsuper-inject-wedged"
+      fm_receipt_unlock "$state"
+      return 0
+    fi
+  fi
+  if [ "$now" -lt "$(fm_receipt_field .pending.next_attempt)" ]; then fm_receipt_unlock "$state"; return 0; fi
+  token=$(fm_receipt_field .pending.token)
+  payload=$(fm_receipt_field .pending.payload)
+  # Persist retry cadence BEFORE transport: a lost submit result never removes
+  # the obligation, and repeats use the same challenge and payload.
+  FM_RECEIPT=$(printf '%s' "$FM_RECEIPT" | jq --argjson next "$((now + FM_RECEIPT_RETRY_SECS))" \
+    '.pending.next_attempt=$next | .pending.attempts+=1')
+  fm_receipt_save "$state" || { fm_receipt_unlock "$state"; return 1; }
+  fm_receipt_unlock "$state"
+  if inject_msg "$payload Internal supervision input; stay in the current posture. Read and durably account for this input, then run bin/fm-operational-input.sh ack-supervisor $token in this receiving conversation. Drain and acknowledge actionable wakes through the ordinary wake owner; this receipt does not acknowledge wake rows." "$state"; then
+    submitted=1; failure='transport accepted; awaiting conversation acknowledgment'
+  else submitted=0; failure=$INJECT_LAST_FAILURE; fi
+  # Receiver may have acknowledged while submit returned; never overwrite it.
+  fm_receipt_lock "$state" || return 1
+  if fm_receipt_load "$state" && [ "$(fm_receipt_field .pending.token)" = "$token" ]; then
+    FM_RECEIPT=$(printf '%s' "$FM_RECEIPT" | jq --arg failure "$failure" --argjson submitted "$submitted" \
+      '.pending.failure=$failure | .pending.submitted=(.pending.submitted or ($submitted == 1))')
+    fm_receipt_save "$state" || true
+  fi
+  fm_receipt_unlock "$state"
 }
 
 # --- backend-independent active wedge alert ---------------------------------
@@ -2119,14 +2268,21 @@ fm_super_main() {
   local afk_status="off"
   afk_active "$STATE" && afk_status="on"
   log "daemon starting (pid $$); target=$TARGET; target_source=$target_source; backend=$BACKEND; backend_source=$backend_source; afk=$afk_status; inject_skip='${FM_INJECT_SKIP:-$INJECT_SKIP_DEFAULT}'; stale_escalate=${FM_STALE_ESCALATE_SECS:-$STALE_ESCALATE_SECS_DEFAULT}s; batch=${FM_ESCALATE_BATCH_SECS:-$ESCALATE_BATCH_SECS_DEFAULT}s"
+  fm_daemon_receipt_start "$STATE" "$BACKEND" "$TARGET" || {
+    log "startup failed: cannot initialize bounded receiver handshake"
+    fm_lock_release "$LOCK"
+    rm -f "$PIDFILE"
+    exit 1
+  }
   migrate_watcher_pause_markers "$STATE"
 
-  # --- shutdown: flush buffered escalations, reap child, release lock -------
+  # --- shutdown: invalidate coverage, preserve work, reap child, unlock ----
   local WATCHER_PID="" CUR_TMP=""
   cleanup() {
     trap - TERM INT
     wedge_alarm_stop_active_notifier
-    escalate_flush "$STATE" 2>/dev/null || true
+    if [ "$FM_RECEIPT_ACTIVE" = 1 ]; then fm_receipt_invalidate "$STATE" || true
+    else escalate_flush "$STATE" 2>/dev/null || true; fi
     if [ -n "${WATCHER_PID:-}" ]; then
       kill "$WATCHER_PID" 2>/dev/null || true
       wait "$WATCHER_PID" 2>/dev/null || true
@@ -2169,6 +2325,7 @@ fm_super_main() {
 
   local rc reason
   while true; do
+    fm_daemon_receipt_tick "$STATE" || true
     # --- pane-gone guard (preserved) ---------------------------------------
     # With the #29 watcher's enqueue-before-suppress, a wake is no longer
     # swallowed by running the watcher with no injection target. We still back
@@ -2179,7 +2336,7 @@ fm_super_main() {
     if ! fm_backend_target_exists "$BACKEND" "$TARGET"; then
       log "warn: supervisor target '$TARGET' gone; backing off ${INJECT_FAIL_SLEEP}s, will retry"
       # Flush is pointless with no pane; preserve any buffered escalations.
-      sleep "$INJECT_FAIL_SLEEP"
+      fm_daemon_receipt_sleep "$INJECT_FAIL_SLEEP" "$STATE"
       continue
     fi
 
@@ -2200,7 +2357,7 @@ fm_super_main() {
           record_crash
           log "watcher exited rc=$rc reason='$reason'; restarting after ${backoff_secs}s"
           WATCHER_PID=""
-          sleep "$backoff_secs"
+          fm_daemon_receipt_sleep "$backoff_secs" "$STATE"
           continue
         fi
         # Non-wake stdout (e.g. a watcher singleton-collision "already running"
@@ -2210,7 +2367,7 @@ fm_super_main() {
         if ! is_wake_reason "$reason"; then
           log "watcher non-wake stdout, idling: $reason"
           WATCHER_PID=""
-          sleep "${HOUSEKEEPING_TICK:-$HOUSEKEEPING_TICK_DEFAULT}"
+          fm_daemon_receipt_sleep "${HOUSEKEEPING_TICK:-$HOUSEKEEPING_TICK_DEFAULT}" "$STATE"
           continue
         fi
         log "wake: $reason"

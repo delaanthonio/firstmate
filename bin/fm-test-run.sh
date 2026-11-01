@@ -308,7 +308,7 @@ family_for_basename() {
     fm-test-run.test.sh|fm-test-isolation-proof.test.sh|fm-test-tap-verify.test.sh)
       printf '%s\n' pure-contract-unit
       ;;
-    fm-daemon.test.sh|fm-guard-stale-banner.test.sh|fm-pi-watch-extension.test.sh|\
+    fm-daemon.test.sh|fm-supervisor-receipt.test.sh|fm-guard-stale-banner.test.sh|fm-pi-watch-extension.test.sh|\
     fm-session-lock-ancestry.test.sh|fm-cursor-primary.test.sh|fm-agy-primary.test.sh|\
     fm-parent-channel-scan-exclusion.test.sh|\
     fm-supervision-events.test.sh|fm-turnend-guard.test.sh|fm-wake-daemon-lifecycle-e2e.test.sh|\
@@ -364,7 +364,7 @@ family_for_basename() {
     fm-codex-continuity-live-e2e.test.sh|fm-codex-hook-layer-live-e2e.test.sh|\
     fm-grok-continuity-live-e2e.test.sh|\
     fm-cursor-primary-live-e2e.test.sh|fm-agy-primary-live-e2e.test.sh|\
-    fm-droid-afk-herdr-live-e2e.test.sh|fm-droid-primary-live-e2e.test.sh|\
+    fm-supervisor-receipt-live-e2e.test.sh|fm-droid-afk-herdr-live-e2e.test.sh|fm-droid-primary-live-e2e.test.sh|\
     fm-grok-stop-live-e2e.test.sh|fm-harness-adapter-instructions-live-e2e.test.sh|\
     fm-harness-liveness-drift-live-e2e.test.sh|fm-backend-hc-liveness-live-e2e.test.sh|\
     fm-kimi-trust-prompt-live-e2e.test.sh|\
@@ -1595,7 +1595,7 @@ families_for_changed_path() {
       printf '%s\n' "__script__:fm-claude-stop-autoarm.test.sh"
       printf '%s\n' live-harness-optin
       ;;
-    bin/fm-supervisor-target-lib.sh)
+    bin/fm-supervisor-target-lib.sh|bin/fm-supervisor-receipt.sh)
       printf '%s\n' watcher-wake-lock
       printf '%s\n' real-herdr-gated
       printf '%s\n' live-harness-optin

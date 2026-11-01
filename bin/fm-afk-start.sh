@@ -48,30 +48,32 @@ fm_afk_start_usage() {
 }
 
 # fm_afk_clear_stale_artifacts: on a genuinely fresh away-lifecycle entry
-# (state/.afk was absent before entry), drop a prior lifecycle's leftover
-# escalation-delivery artifacts so they cannot surface as current escalations.
+# (state/.afk was absent before entry), drop legacy delivery artifacts.
+# Receipt-era unacknowledged work is preserved across fresh entries as well.
 # The durable away flag survives both daemon and primary-session restarts, so a
 # dead daemon alone never makes these artifacts stale. This helper is not called
 # for same-lifecycle recovery or a live-daemon refresh.
 fm_afk_clear_stale_artifacts() {  # <state-dir>
   local state=$1 line win key
-  # Unknown-state warnings suppress repeats even after delivery. Re-arm only
-  # warnings still in the buffer being discarded, preserving delivered ones.
-  if [ -s "$state/.subsuper-escalations" ] && compgen -G "$state/.subsuper-reported-stale-*" >/dev/null; then
-    _fm_wake_require_classify || return 1
-    while IFS= read -r line || [ -n "$line" ]; do
-      case "$line" in
-        stale\ persisted\ *s\ \(possible\ wedge\):\ *)
-          win=${line#* (possible wedge): }
-          key=$(window_to_task "$win" "$state" | tr ':/.' '___')
-          rm -f "$state/.subsuper-reported-stale-$key" || return 1
-          ;;
-      esac
-    done < "$state/.subsuper-escalations"
+  # Receipt-era work survives fresh entry; legacy discard re-arms its warnings.
+  if [ ! -f "$state/.supervisor-receipt.json" ] || [ ! -s "$state/.subsuper-escalations" ]; then
+    # Unknown-state warnings suppress repeats even after delivery. Re-arm only
+    # warnings still in the buffer being discarded, preserving delivered ones.
+    if [ -s "$state/.subsuper-escalations" ] && compgen -G "$state/.subsuper-reported-stale-*" >/dev/null; then
+      _fm_wake_require_classify || return 1
+      while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in
+          stale\ persisted\ *s\ \(possible\ wedge\):\ *)
+            win=${line#* (possible wedge): }
+            key=$(window_to_task "$win" "$state" | tr ':/.' '___')
+            rm -f "$state/.subsuper-reported-stale-$key" || return 1
+            ;;
+        esac
+      done < "$state/.subsuper-escalations"
+    fi
+    rm -f "$state/.subsuper-escalations" "$state/.subsuper-escalations.since" || return 1
   fi
-  rm -f "$state/.subsuper-escalations" \
-        "$state/.subsuper-escalations.since" \
-        "$state/.subsuper-inject-wedged" \
+  rm -f "$state/.subsuper-inject-wedged" \
         "$state/.subsuper-unknown-acked" 2>/dev/null
 }
 

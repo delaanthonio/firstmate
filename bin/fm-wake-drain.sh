@@ -75,6 +75,9 @@ case "$PRESENTATION_LOCK_TIMEOUT" in ''|*[!0-9]*|0) PRESENTATION_LOCK_TIMEOUT=10
 # safe to split: the branch's ack can never remove a row it was not granted,
 # so it can never swallow a main-owned row still waiting for main.
 ACTOR=$(fm_lease_actor) || exit 2
+if [ "$ACTOR" = main ] && [ -f "$STATE/.supervisor-receipt.json" ]; then
+  "$SCRIPT_DIR/fm-operational-input.sh" coverage >&2 || printf 'coverage unhealthy (receipt status unavailable)\n' >&2
+fi
 ELIGIBLE_ROWS_FILE="$STATE/.branch-eligible-rows"
 ELIGIBLE_OWNER_FILE="$STATE/.branch-eligible-owner"
 MAIN_ROWS_FILE="$STATE/.main-eligible-rows"

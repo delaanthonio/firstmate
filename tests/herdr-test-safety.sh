@@ -68,3 +68,29 @@ herdr_wait_for_shell_ready() { # <session> <pane> [attempts]
   done
   return 1
 }
+
+# Constrain adapter-owned CLI calls to the same helper as explicit test calls.
+# The optional <dir>/swallow-enter file drops one Enter for transport fixtures.
+herdr_make_cli_shim() {  # <dir> <helper> <session> <original-path>
+  local dir=$1
+  mkdir -p "$dir" || return 1
+  {
+    printf '#!/usr/bin/env bash\nset -euo pipefail\n'
+    printf 'helper=%q\nsession=%q\noriginal_path=%q\nswallow=%q\n' "$2" "$3" "$4" "$dir/swallow-enter"
+    cat <<'SHIM'
+args=()
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = --session ]; then
+    [ "${2:-}" = "$session" ] || exit 97
+    shift 2
+  else args+=("$1"); shift; fi
+done
+if [ "${args[0]:-}" = pane ] && [ "${args[1]:-}" = send-keys ] && [ -f "$swallow" ]; then
+  for arg in "${args[@]}"; do
+    if [ "$arg" = enter ]; then rm -f "$swallow"; exit 0; fi
+  done
+fi
+PATH="$original_path" exec "$helper" run "$session" "${args[@]}"
+SHIM
+  } > "$dir/herdr" && chmod +x "$dir/herdr"
+}

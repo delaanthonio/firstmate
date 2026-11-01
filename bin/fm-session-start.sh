@@ -977,6 +977,9 @@ done
 [ "$ORPHAN_STATUS_FOUND" -eq 1 ] || printf '(none)\n'
 
 subsection "AFK"
+if [ -f "$STATE/.supervisor-receipt.json" ]; then
+  "$SCRIPT_DIR/fm-operational-input.sh" coverage || printf 'coverage unhealthy (receipt status unavailable)\n'
+fi
 # The away posture is the record (bin/fm-afk-contract.sh); the legacy flag
 # still marks a running daemon on the harnesses that launch one.
 # A quiet record (bin/fm-afk-contract.sh mode) is a present captain: it holds

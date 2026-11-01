@@ -75,6 +75,11 @@
 #                              announcement and the read-back. With no words
 #                              while away it is a refresh; new words replace
 #                              the mandate. On Pi this is the whole entry.
+# Daemon ownership is launch success, never verified coverage. Launch returns
+# pending; do not wait in the initiating conversation for its next-turn probe.
+# Use bin/fm-operational-input.sh coverage for the tmux/Herdr receiver status.
+# Native Rex/T3 limitations are owned by bin/fm-supervisor-receipt.sh.
+#
 #   fm-afk-launch.sh start     Capture the captain pane, then (unless the daemon
 #                              is already running) launch the daemon in a fresh
 #                              non-visible terminal for the detected backend and
@@ -85,7 +90,7 @@
 #                              Prepare lifecycle state for a harness-native
 #                              background job and record that no terminal exists.
 #   fm-afk-launch.sh stop      Correct-ordered exit: SIGTERM the daemon so its
-#                              cleanup flushes WHILE state/.afk is still present,
+#                              cleanup preserves unacknowledged work,
 #                              wait for it, close a recorded non-native terminal
 #                              by exact id, clear state/.afk, then archive the
 #                              record last. A Pi or native entry that never
@@ -555,7 +560,7 @@ fm_afk_launch_terminal_alive() {  # <backend> <target>
   esac
 }
 
-fm_afk_launch_wait_ready() {  # <backend> <target>
+fm_afk_launch_wait_owner() {  # <backend> <target>
   local backend=$1 target=$2 attempt=0
   if [ -n "${FM_AFK_LAUNCH_ENTRY:-}" ]; then
     fm_afk_launch_terminal_alive "$backend" "$target"
@@ -563,7 +568,13 @@ fm_afk_launch_wait_ready() {  # <backend> <target>
   fi
   while [ "$attempt" -lt 100 ]; do
     attempt=$((attempt + 1))
-    daemon_lock_held_by_live_daemon && return 0
+    if daemon_lock_held_by_live_daemon; then
+      case "$backend" in
+        tmux|herdr) fm_afk_launch_log "daemon ownership established; coverage pending receiver acknowledgment - end this turn so its probe can arrive" ;;
+        rex) fm_afk_launch_log "daemon ownership established; coverage unverified (native receiver identity not supported)" ;;
+      esac
+      return 0
+    fi
     fm_afk_launch_terminal_alive "$backend" "$target" || return 1
     sleep 0.05
   done
@@ -577,8 +588,8 @@ fm_afk_launch_commit_terminal() {  # <backend> <target> <extra> [already-recorde
     fm_afk_launch_close_terminal "$backend" "$target" "$extra"
     return 1
   fi
-  if ! fm_afk_launch_wait_ready "$backend" "$target"; then
-    fm_afk_launch_log "daemon did not become ready; closing $backend:$target"
+  if ! fm_afk_launch_wait_owner "$backend" "$target"; then
+    fm_afk_launch_log "daemon did not acquire ownership; closing $backend:$target"
     FM_AFK_REC_BACKEND=$backend
     FM_AFK_REC_TARGET=$target
     FM_AFK_REC_EXTRA=$extra
@@ -801,7 +812,7 @@ fm_afk_launch_start() {
       fm_afk_launch_log "failed to refresh away-mode flag"
       return 1
     fi
-    fm_afk_launch_log "daemon already running; refreshed away-mode flag (no new terminal)"
+    fm_afk_launch_log "daemon already running; refreshed away-mode flag (no new terminal); check bin/fm-operational-input.sh coverage"
     return 0
   fi
 
@@ -863,7 +874,7 @@ fm_afk_launch_start_native() {
   if daemon_lock_held_by_live_daemon; then
     fm_afk_launch_record_validate_if_present || return 1
     fm_afk_launch_flag_write || return 1
-    fm_afk_launch_log "daemon already running; refreshed away-mode flag"
+    fm_afk_launch_log "daemon already running; refreshed away-mode flag; check bin/fm-operational-input.sh coverage"
     return 0
   fi
   backup=$(mktemp -d "$FM_AFK_LAUNCH_STATE/.afk-launch-backup.XXXXXX") || return 1
@@ -908,9 +919,13 @@ fm_afk_launch_stop() {
     fm_afk_launch_log "malformed daemon terminal record; refusing to stop away mode"
     return 1
   fi
-  # (1) SIGTERM the daemon so its cleanup trap flushes buffered escalations
-  # WHILE state/.afk is still present (the exit-ordering fix: clearing .afk
-  # first would make that flush a no-op via inject_msg's presence gate).
+  # Invalidate receipt authority before signaling; a racing late acknowledgment
+  # must not verify coverage while return catch-up is underway.
+  # shellcheck source=bin/fm-supervisor-receipt.sh
+  . "$FM_AFK_LAUNCH_DIR/fm-supervisor-receipt.sh"
+  fm_receipt_invalidate "$FM_AFK_LAUNCH_STATE" || return 1
+  # (1) Stop the daemon while the posture still stands. Unacknowledged
+  # escalations remain durable for the return catch-up owner.
   pid=""
   pid_identity=""
   if daemon_lock_held_by_live_daemon; then

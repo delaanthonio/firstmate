@@ -47,6 +47,8 @@ For captain-held rechecks under quiet, see [architecture](../../../docs/architec
    credentials, or review-ready work - ordinary chat will not exit this, say
    `/quiet off` when you want normal per-wake responses back."
 
+On a tmux or Herdr daemon path, use the `afk` entry step's pending-coverage announcement and finish the entry turn before its receiver probe can arrive.
+
 ## How to exit quiet mode
 
 Unlike `/afk`, ordinary chat is never the exit signal - that is the entire

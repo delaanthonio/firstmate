@@ -763,7 +763,7 @@ unit_failed_recovery_preserves_readiness_mutations() {
   FM_HOME="$staged" FM_STATE_OVERRIDE="$staged/state" FM_SUPERVISOR_TARGET=unused \
     FM_SUPERVISOR_BACKEND=tmux bash -c '
       . "$1"
-      fm_afk_launch_wait_ready() {
+      fm_afk_launch_wait_owner() {
         printf "newly-staged\n" > "$FM_AFK_LAUNCH_STATE/.subsuper-escalations"
         printf "new-since\n" > "$FM_AFK_LAUNCH_STATE/.subsuper-escalations.since"
         printf "new-wedge\n" > "$FM_AFK_LAUNCH_STATE/.subsuper-inject-wedged"
@@ -794,7 +794,7 @@ unit_failed_recovery_preserves_readiness_mutations() {
   FM_HOME="$cleared" FM_STATE_OVERRIDE="$cleared/state" FM_SUPERVISOR_TARGET=unused \
     FM_SUPERVISOR_BACKEND=tmux bash -c '
       . "$1"
-      fm_afk_launch_wait_ready() {
+      fm_afk_launch_wait_owner() {
         rm -f "$FM_AFK_LAUNCH_STATE/.subsuper-escalations" \
           "$FM_AFK_LAUNCH_STATE/.subsuper-escalations.since" \
           "$FM_AFK_LAUNCH_STATE/.subsuper-inject-wedged"
@@ -812,9 +812,9 @@ unit_failed_recovery_preserves_readiness_mutations() {
     && [ ! -e "$cleared/state/.subsuper-escalations" ] \
     && [ ! -e "$cleared/state/.subsuper-escalations.since" ] \
     && [ ! -e "$cleared/state/.subsuper-inject-wedged" ]; then
-    pass "failed recovery readiness: confirmed submission remains cleared"
+    pass "failed recovery readiness: acknowledged delivery remains cleared"
   else
-    fail "failed recovery readiness: confirmed submission was resurrected from the pre-launch snapshot"
+    fail "failed recovery readiness: acknowledged delivery was resurrected from the pre-launch snapshot"
   fi
   rm -rf "$staged" "$cleared"
 }
@@ -1108,7 +1108,7 @@ unit_readiness_failure_rolls_back_terminal() {
   closed="$st/closed"
   FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" CLOSED="$closed" bash -c '
     . "$1"
-    fm_afk_launch_wait_ready() { return 1; }
+    fm_afk_launch_wait_owner() { return 1; }
     fm_afk_launch_close_terminal() { printf "%s:%s" "$1" "$2" > "$CLOSED"; }
     fm_afk_launch_terminal_absent() { [ -e "$CLOSED" ]; }
     ! fm_afk_launch_commit_terminal tmux exact-session ""
@@ -1127,7 +1127,7 @@ unit_readiness_failure_preserves_unconfirmed_record() {
   st=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-not-ready-unconfirmed.XXXXXX")
   FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" bash -c '
     . "$1"
-    fm_afk_launch_wait_ready() { return 1; }
+    fm_afk_launch_wait_owner() { return 1; }
     fm_afk_launch_close_terminal() { return 1; }
     fm_afk_launch_terminal_absent() { return 1; }
     ! fm_afk_launch_commit_terminal tmux exact-session ""
@@ -1904,35 +1904,48 @@ unit_flag_write_failure_aborts() {
 # ---------------------------------------------------------------------------
 # E2E herdr: topology invariant.
 # ---------------------------------------------------------------------------
-e2e_herdr() {
-  command -v herdr >/dev/null 2>&1 || { echo "skip: herdr not found (herdr e2e)"; return 0; }
-  command -v jq >/dev/null 2>&1 || { echo "skip: jq not found (herdr e2e)"; return 0; }
+e2e_herdr() (
+  command -v herdr >/dev/null 2>&1 || { echo "skip: herdr not found (herdr e2e)"; exit 0; }
+  command -v jq >/dev/null 2>&1 || { echo "skip: jq not found (herdr e2e)"; exit 0; }
   # shellcheck source=tests/herdr-test-safety.sh
   . "$ROOT/tests/herdr-test-safety.sh"
   # shellcheck source=/dev/null
   . "$ROOT/bin/fm-backend.sh"
 
   local SESSION home_tmp cap_ws cap_tab cap_pane target
+  local helper original_path shim provisioned=0
+  helper=${HERDR_LAB_HELPER:-$ROOT/bin/fm-herdr-lab.sh}
+  original_path=$PATH
+  target=
   local before during after ws_before ws_during ws_after out dtgt dtab
-  SESSION="fm-lab-afk-launch-e2e-$$"
+  SESSION=$("$helper" name fm-supervisor-handshake-u1)
   export HERDR_SESSION="$SESSION"
   home_tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-e2e-home.XXXXXX")
+  # shellcheck disable=SC2329 # The isolated function's EXIT trap owns cleanup.
   E2E_HERDR_CLEANUP() {
+    local rc=$?
     # shellcheck disable=SC2031 # Cleanup reads the caller's resolved target; it does not reassign it.
     FM_HOME="$home_tmp" FM_STATE_OVERRIDE="$home_tmp/state" \
       FM_SUPERVISOR_TARGET="$target" FM_SUPERVISOR_BACKEND=herdr "$LAUNCH" stop >/dev/null 2>&1 || true
-    herdr_safe_stop_and_delete "$SESSION" >/dev/null 2>&1 || true
+    trap - EXIT
+    if [ "$provisioned" = 1 ]; then PATH="$original_path" "$helper" teardown "$SESSION" || rc=1; fi
     rm -rf "$home_tmp" 2>/dev/null || true
+    exit "$rc"
   }
-  fm_herdr_lab_prepare "$SESSION" || { fail "herdr e2e: could not prepare isolated lab session"; return 0; }
-  fm_backend_source herdr || { E2E_HERDR_CLEANUP; fail "herdr e2e: fm_backend_source herdr failed"; return 0; }
-  fm_backend_herdr_server_ensure "$SESSION" || { E2E_HERDR_CLEANUP; fail "herdr e2e: lab server did not start"; return 0; }
+  trap E2E_HERDR_CLEANUP EXIT
+  "$helper" provision "$SESSION" || exit 1
+  provisioned=1
+  shim="$home_tmp/tools"
+  herdr_make_cli_shim "$shim" "$helper" "$SESSION" "$original_path" || exit 1
+  export PATH="$shim:$original_path"
+  fm_backend_source herdr || { fail "herdr e2e: fm_backend_source herdr failed"; exit 1; }
+  fm_backend_herdr_server_ensure "$SESSION" || { fail "herdr e2e: lab server did not start"; exit 1; }
 
   out=$(fm_backend_herdr_cli "$SESSION" workspace create --cwd "$ROOT" --label captain --no-focus 2>/dev/null)
   cap_ws=$(printf '%s' "$out" | jq -r '.result.workspace.workspace_id // empty')
   cap_tab=$(printf '%s' "$out" | jq -r '.result.tab.tab_id // empty')
   cap_pane=$(printf '%s' "$out" | jq -r '.result.root_pane.pane_id // empty')
-  if [ -z "$cap_ws" ] || [ -z "$cap_pane" ]; then E2E_HERDR_CLEANUP; fail "herdr e2e: could not create captain workspace"; return 0; fi
+  if [ -z "$cap_ws" ] || [ -z "$cap_pane" ]; then fail "herdr e2e: could not create captain workspace"; exit 1; fi
   target="$SESSION:$cap_pane"
   enter_posture "$home_tmp" || fail "herdr e2e: could not enter fixture posture"
   before=$(fm_backend_herdr_cli "$SESSION" pane list --workspace "$cap_ws" 2>/dev/null | jq --arg t "$cap_tab" '[.result.panes[]?|select(.tab_id==$t)]|length')
@@ -1961,8 +1974,8 @@ e2e_herdr() {
   if [ "$ws_after" = "$ws_before" ]; then pass "herdr e2e: daemon workspace removed by exact id on stop"; else fail "herdr e2e: daemon workspace leaked ($ws_before -> $ws_after)"; fi
   if [ ! -e "$home_tmp/state/.afk-daemon-terminal" ] && [ ! -e "$home_tmp/state/.afk" ]; then pass "herdr e2e: record + .afk cleared on stop"; else fail "herdr e2e: record or .afk not cleared"; fi
 
-  E2E_HERDR_CLEANUP
-}
+  [ "$FAILED" -eq 0 ]
+)
 
 # ---------------------------------------------------------------------------
 # E2E tmux: topology invariant (captain window untouched; daemon in a separate
@@ -2142,7 +2155,7 @@ unit_clear_failure_aborts_entry
 unit_confirmed_absence_succeeds
 unit_incomplete_restore_retains_backup
 unit_flag_write_failure_aborts
-e2e_herdr
+e2e_herdr || FAILED=1
 e2e_tmux
 e2e_rex
 

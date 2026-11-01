@@ -44,6 +44,8 @@
 #   fm-operational-input.sh record <kind>  # body on stdin, doorbell stdout
 #   fm-operational-input.sh doorbell-kind  # doorbell on stdin, record kind stdout
 #   fm-operational-input.sh open <path>    # this home's record body stdout
+#   fm-operational-input.sh ack-supervisor <challenge> # receiving conversation only
+#   fm-operational-input.sh coverage     # read-only daemon consumption coverage
 #   fm-operational-input.sh --help
 #
 # `record` and `open` resolve this home's state as FM_STATE_OVERRIDE, else
@@ -358,6 +360,8 @@ Usage:
   bin/fm-operational-input.sh record <kind>  # body on stdin; prints the doorbell
   bin/fm-operational-input.sh doorbell-kind  # doorbell on stdin; record's kind
   bin/fm-operational-input.sh open <path>    # this home's record; prints its body
+  bin/fm-operational-input.sh ack-supervisor <challenge> # explicit receiver ack
+  bin/fm-operational-input.sh coverage       # pending, verified, unhealthy, inactive, unverified
 
 Current construction kinds:
   session-start watcher turn-end-guard away-supervisor from-firstmate launch-brief
@@ -375,6 +379,30 @@ fm_operational_main() {
   case "$command" in
     -h|--help|help)
       fm_operational_usage
+      ;;
+    ack-supervisor|coverage)
+      if [ "$command" = ack-supervisor ]; then [ "$#" -eq 2 ] || return 2
+      else [ "$#" -eq 1 ] || return 2; fi
+      # Loaded only here: encoding and classification remain pure.
+      local receipt_dir
+      receipt_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd) || return 1
+      # shellcheck source=bin/fm-wake-lib.sh
+      . "$receipt_dir/fm-wake-lib.sh"
+      # shellcheck source=bin/fm-supervision-engine-lib.sh
+      . "$receipt_dir/fm-supervision-engine-lib.sh"
+      # shellcheck source=bin/fm-session-lock-lib.sh
+      . "$receipt_dir/fm-session-lock-lib.sh"
+      # shellcheck source=bin/fm-supervisor-receipt.sh
+      . "$receipt_dir/fm-supervisor-receipt.sh"
+      state=$(fm_operational_home_state) || return 1
+      if [ "$command" = coverage ]; then fm_receipt_status "$state"
+      else
+        fm_receipt_ack "$state" "$argument" || {
+          printf 'Supervisor acknowledgment rejected: stale challenge or wrong receiving conversation.\n' >&2
+          return 1
+        }
+        printf 'Supervisor input acknowledged by receiving conversation.\n'
+      fi
       ;;
     encode)
       [ "$#" -eq 2 ] || return 2

@@ -1,7 +1,8 @@
 # Away-mode injection wedge alarm
 
 The away-mode sub-supervisor (`bin/fm-supervise-daemon.sh`) buffers escalations and injects them into Firstmate's own supervisor endpoint.
-When injection cannot confirm a submit past `FM_MAX_DEFER_SECS`, `inject_wedge_alarm` raises a loud, rate-limited alarm so the stall never stays invisible.
+When injection cannot confirm a submit past `FM_MAX_DEFER_SECS`, or the tmux/Herdr receiver-consumption deadline owned by `bin/fm-supervisor-receipt.sh` expires, `inject_wedge_alarm` raises a loud, rate-limited alarm so the stall never stays invisible.
+The receipt contract in `bin/fm-supervisor-receipt.sh` documents the known Rex/T3 Code native-consumption gap; native transport confirmation does not establish verified coverage.
 The active alert is pane-independent because a tmux status-line flash has no cross-backend equivalent and cannot reach an unattended captain reliably.
 The durable marker and tmux flash remain as additional signals.
 
@@ -20,7 +21,7 @@ It lists channel directives, one per non-empty, non-comment line, and every list
 - `command:<cmd>` runs `<cmd>` through `sh -c` with the alarm summary as `$1` and on stdin, allowing delivery to a phone or pager service.
 
 An absent `config/wedge-alarm` behaves as `auto`, which is default-on on macOS.
-This is deliberate because the alarm fires only after a genuine max-defer wedge and is rate-limited to at most once per max-defer window.
+This is deliberate because the alarm fires only after a delivery or consumption wedge and is rate-limited to at most once per max-defer window.
 
 Each channel is best-effort.
 A missing binary or non-zero exit logs a warning and continues to the next channel without crashing the daemon loop.

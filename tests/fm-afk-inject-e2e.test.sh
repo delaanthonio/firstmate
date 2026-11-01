@@ -27,6 +27,9 @@
 #
 # Assert on submitted CONTENT (logged verbatim by the supervisor pane), not pane
 # appearance - terminal line-wrapping looks like newlines but isn't.
+# These cases prove guarded submission, not receiving-conversation coverage.
+# The watcher/queue integration remains in fm-wake-daemon-lifecycle-e2e, and
+# receipt ownership/consumption has independent deterministic and live guards.
 set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -40,7 +43,6 @@ SOCKET="afk-e2e-$$"
 STATE_DIR=
 TMUX_SHIM_DIR=
 LOG_FILE=
-DAEMON_PID=
 SUPERVISOR_PANE=
 LOOP_SCRIPT=
 
@@ -48,11 +50,6 @@ fail() { printf 'not ok - %s\n' "$1" >&2; cleanup_all; exit 1; }
 pass() { printf 'ok - %s\n' "$1"; }
 
 cleanup_all() {
-  if [ -n "${DAEMON_PID:-}" ]; then
-    afk_exit "${STATE_DIR:-}" 2>/dev/null || true
-    kill "$DAEMON_PID" 2>/dev/null || true
-    wait "$DAEMON_PID" 2>/dev/null || true
-  fi
   if [ -n "${SOCKET:-}" ] && [ -n "${REAL_TMUX:-}" ]; then
     "$REAL_TMUX" -L "$SOCKET" kill-server 2>/dev/null || true
   fi
@@ -85,6 +82,7 @@ cat > "$LOOP_SCRIPT" <<'LOOP'
 #!/usr/bin/env bash
 MARK=$'\xE2\x81\xA3'
 LOG="$1"
+printf '%s\n' "$$" > "$LOG.pid"
 OLD_STTY=$(stty -g 2>/dev/null || true)
 [ -z "$OLD_STTY" ] || stty -echo -icanon min 1 time 0 2>/dev/null || true
 cleanup() {
@@ -134,7 +132,7 @@ chmod +x "$LOOP_SCRIPT"
 
 # Start the loop in the supervisor pane.
 "$REAL_TMUX" -L "$SOCKET" send-keys -t "$SUPERVISOR_PANE" \
-  "bash '$LOOP_SCRIPT' '$LOG_FILE'" Enter
+  "/bin/bash '$LOOP_SCRIPT' '$LOG_FILE'" Enter
 sleep 1  # let the loop start and settle
 
 # tmux shim: redirects bare `tmux` to the private socket. Optionally swallows
@@ -158,51 +156,18 @@ exec "$REAL_TMUX" -L "$SOCKET" "\$@"
 SHIM
 chmod +x "$TMUX_SHIM_DIR/tmux"
 
-# Create a fake crewmate window (the watcher lists fm-* windows for stale
-# detection). The pane is an inert shell - it just needs to exist.
-"$REAL_TMUX" -L "$SOCKET" new-window -d -n fm-fake-c1 -t supervisor
-
-# The fixture pane is no real harness, so each scenario pins the primary harness
-# the daemon would otherwise detect from this test's own process ancestry:
-# "unknown" preserves the typed U+2063 envelope, "claude" selects the
-# record-backed doorbell that a marker-stripping Claude Code primary receives.
-start_daemon() {  # [primary-harness]
-  FM_DAEMON_PRIMARY_HARNESS="${1:-unknown}" \
-  PATH="$TMUX_SHIM_DIR:$PATH" \
-  FM_STATE_OVERRIDE="$STATE_DIR" \
-  FM_SUPERVISOR_TARGET="$SUPERVISOR_PANE" \
-  FM_SUPERVISOR_BACKEND=tmux \
-  FM_ESCALATE_BATCH_SECS=0 \
-  FM_HOUSEKEEPING_TICK=1 \
-  FM_POLL=1 \
-  FM_SIGNAL_GRACE=1 \
-  FM_HEARTBEAT=999999 \
-  FM_CHECK_INTERVAL=999999 \
-  FM_INJECT_CONFIRM_SLEEP=0.3 \
-  FM_INJECT_CONFIRM_RETRIES=5 \
-  FM_STALE_ESCALATE_SECS=999999 \
-  nohup "$DAEMON" >"$STATE_DIR/daemon.out" 2>"$STATE_DIR/daemon.err" &
-  DAEMON_PID=$!
-  # Wait for the daemon to start and acquire the lock.
-  local i=0
-  while [ "$i" -lt 30 ]; do
-    [ -f "$STATE_DIR/.supervise-daemon.pid" ] && break
-    sleep 0.2
-    i=$((i + 1))
-  done
-  [ -f "$STATE_DIR/.supervise-daemon.pid" ] || {
-    echo "daemon stderr:" >&2; cat "$STATE_DIR/daemon.err" >&2
-    fail "daemon did not start (no pid file after 6s)"
-  }
+# Exercise the production transport owner against a simulated composer.
+# Consumption ownership is independently exercised by the receipt CLI suite and
+# the real receiving-agent guard; this shell loop never impersonates a harness.
+prepare_delivery() {  # [primary-harness]
+  export FM_DAEMON_PRIMARY_HARNESS="${1:-unknown}"
+  export FM_SUPERVISOR_BACKEND=tmux
+  export FM_SUPERVISOR_TARGET="$SUPERVISOR_PANE"
+  export FM_INJECT_CONFIRM_SLEEP=0.3 FM_INJECT_CONFIRM_RETRIES=5
 }
 
-stop_daemon() {
-  [ -n "${DAEMON_PID:-}" ] || return 0
-  afk_exit "$STATE_DIR" 2>/dev/null || true
-  kill "$DAEMON_PID" 2>/dev/null || true
-  wait "$DAEMON_PID" 2>/dev/null || true
-  DAEMON_PID=""
-  sleep 1
+flush_delivery() {
+  PATH="$TMUX_SHIM_DIR:$PATH" escalate_flush "$STATE_DIR"
 }
 
 reset_state() {
@@ -262,6 +227,10 @@ wait_for_pane_input_pending() {
   return 1
 }
 
+fixture_pid=$(cat "$LOG_FILE.pid" 2>/dev/null) || fail 'fixture loop never published its process identity'
+kill -0 "$fixture_pid" 2>/dev/null || fail 'fixture loop process exited'
+fixture_args=$(ps -p "$fixture_pid" -o args=) || fail 'fixture process could not be inspected'
+case "$fixture_args" in *"$LOOP_SCRIPT"*) ;; *) fail 'pane is not running the expected fixture loop' ;; esac
 selfcheck_pane_input_pending
 
 # --- Scenario A: human-partial-input ----------------------------------------
@@ -269,7 +238,7 @@ selfcheck_pane_input_pending
 test_scenario_a() {
   reset_state
   afk_enter "$STATE_DIR"
-  start_daemon
+  prepare_delivery
 
   # Type partial text into the supervisor pane with NO Enter. This simulates the
   # captain returning and starting to type before afk has been cleared.
@@ -278,11 +247,10 @@ test_scenario_a() {
     || fail "Scenario A: human draft text did not become detectable as pending input"
 
   # Write a captain-relevant status to trigger a real escalation through the
-  # real watcher child.
-  echo "done: PR https://example.test/pr/100" > "$STATE_DIR/fake-c1.status"
+  # production buffer owner.
+  escalate_add "$STATE_DIR" "done: PR https://example.test/pr/100"
 
-  # Wait for the watcher to detect the change and the daemon to attempt inject.
-  sleep 6
+  if flush_delivery; then fail "Scenario A: unsafe composer accepted delivery"; fi
 
   # Assert: the digest was NOT injected while the pane had pending input.
   if grep -q 'Supervisor escalate' "$LOG_FILE"; then
@@ -299,8 +267,7 @@ test_scenario_a() {
   "$REAL_TMUX" -L "$SOCKET" send-keys -t "$SUPERVISOR_PANE" Enter
   sleep 0.5
 
-  # Wait for the daemon to retry injection (housekeeping tick = 1s).
-  sleep 6
+  flush_delivery || fail "Scenario A: idle composer refused delivery"
 
   # Assert: human text was submitted alone (as a user message).
   grep -q 'human draft text' "$LOG_FILE" \
@@ -332,7 +299,6 @@ test_scenario_a() {
     *) fail "Scenario A: digest misclassified (expected injection): $digest_line" ;;
   esac
 
-  stop_daemon
   pass "Scenario A: partial input defers injection; digest arrives clean after idle"
 }
 
@@ -342,17 +308,15 @@ test_scenario_b() {
   reset_state
   afk_enter "$STATE_DIR"
 
-  # Arm the swallow: the daemon's first Enter will be dropped by the shim.
+  # Arm the swallow: the transport's first Enter is dropped by the shim.
   touch "$STATE_DIR/.swallow-enter"
 
-  start_daemon
+  prepare_delivery
 
-  # Write a captain-relevant status to trigger a real escalation.
-  echo "done: PR https://example.test/pr/200" > "$STATE_DIR/fake-c1.status"
+  # Stage a digest through the production buffer owner.
+  escalate_add "$STATE_DIR" "done: PR https://example.test/pr/200"
 
-  # Wait for the daemon to process the escalation and attempt inject (with the
-  # swallowed Enter, the retry path fires).
-  sleep 8
+  flush_delivery || fail "Scenario B: swallowed-Enter retry failed"
 
   # Assert: exactly ONE terminal-safe marker in the log (no duplicate, no loss).
   local marker_count
@@ -378,7 +342,6 @@ test_scenario_b() {
   [ "$user_count" -eq 0 ] \
     || fail "Scenario B: expected 0 user lines, got $user_count (spurious Enter submitted empty line?)"
 
-  stop_daemon
   pass "Scenario B: swallowed Enter produces exactly one clean digest"
 }
 
@@ -391,10 +354,10 @@ test_scenario_b() {
 test_scenario_c() {
   reset_state
   afk_enter "$STATE_DIR"
-  start_daemon
+  prepare_delivery
 
-  echo "done: PR https://example.test/pr/300" > "$STATE_DIR/fake-c1.status"
-  sleep 6
+  escalate_add "$STATE_DIR" "done: PR https://example.test/pr/300"
+  flush_delivery || fail "safe composer refused delivery"
 
   # Exactly one terminal-safe marker in the submitted log (no duplicate, no loss).
   local marker_count
@@ -422,7 +385,6 @@ test_scenario_c() {
   [ "$user_count" -eq 0 ] \
     || fail "Scenario C: expected 0 user lines, got $user_count (spurious submission?)"
 
-  stop_daemon
   pass "Scenario C: a normal captain status injects exactly one clean single-line sentinel digest"
 }
 
@@ -435,10 +397,10 @@ test_scenario_d() {
   reset_state
   rm -rf "$STATE_DIR/operational-inbox"
   afk_enter "$STATE_DIR"
-  start_daemon claude
+  prepare_delivery claude
 
-  echo "done: PR https://example.test/pr/400" > "$STATE_DIR/fake-c1.status"
-  sleep 6
+  escalate_add "$STATE_DIR" "done: PR https://example.test/pr/400"
+  flush_delivery || fail "safe composer refused delivery"
 
   local submitted_count doorbell record
   submitted_count=$(grep -c '' "$LOG_FILE" || true)
@@ -456,7 +418,6 @@ test_scenario_d() {
   should_exit_afk "$STATE_DIR" "$doorbell" \
     && fail "Scenario D: the submitted doorbell would read as the captain returning"
 
-  stop_daemon
   pass "Scenario D: a claude primary receives one plain doorbell whose record the away-mode return check reads as internal"
 }
 

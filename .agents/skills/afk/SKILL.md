@@ -50,6 +50,7 @@ Hold-for-return is the default and the only reach profile this release records: 
    Then give your own plain-sentence restatement of the words in `AGENTS.md` section 9 language - what you read them as asking for, sentence by sentence, never a numbered field list - beside the expected return, the spend cap, and the one-sentence reach announcement.
    Say plainly which sentence, if any, you could not act on while away (a red merge, a discard, anything on the never-set, local-only landing); it waits for their return.
    This read-back is informational: the record already stands, so never ask for a go or wait for a reply; a captain who wants a different reading sends `/afk` again with new words.
+   On a tmux or Herdr daemon path, report coverage as pending until `bin/fm-operational-input.sh coverage` reports a receiving-conversation acknowledgment, and end the entry turn so the probe can arrive; never wait in that turn for its own next-turn response.
 4. **Do not separately arm `fm-watch.sh` where the daemon runs.** The daemon manages the watcher as its child; the singleton lock no-ops a stray arm harmlessly.
    On Pi nothing changes about arming: the supervision session's own cycle continues.
 
@@ -165,6 +166,8 @@ an ERROR in the daemon log naming the last delivery failure, a durable
 So a guard false-positive becomes a visible stall, never an unbounded silent no-op.
 
 ### Submit model
+
+On tmux and Herdr, transport submission is separate from conversation consumption; `bin/fm-supervisor-receipt.sh` owns the bounded receipt obligation and `bin/fm-operational-input.sh coverage` reports it.
 
 On tmux and Herdr, the digest is typed **once** with a literal, non-submitting send (`send-keys -l` on tmux, `pane send-text` on Herdr).
 Enter submits it, and the selected backend's submit primitive verifies delivery.
