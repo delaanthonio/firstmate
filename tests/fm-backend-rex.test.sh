@@ -261,7 +261,8 @@ test_rex_spawn_refuses_unproven_remote_endpoint() {
   assert_contains "$out" "tcp://rex-linux.example:8723" "the refusal must name the endpoint"
   assert_contains "$out" "Rex workers need a Rex server on this machine" "the refusal must explain the same-machine requirement"
   assert_contains "$out" "remote second mates" "the refusal must point to remote second mates"
-  assert_no_grep 'rex (new|window new)' "$dir/fake/log" "the locality refusal must happen before any tab or session is created"
+  assert_no_grep 'rex new' "$dir/fake/log" "the locality refusal must happen before any tab or session is created"
+  assert_no_grep 'rex window new' "$dir/fake/log" "the locality refusal must happen before any tab is created"
   rex_env "$dir" 'fm_backend_rex_local_server_ensure' || fail "a local Unix-socket server must pass the locality check"
   pass "Rex spawn refuses an endpoint whose server locality is unproven before creating sessions or tabs"
 }

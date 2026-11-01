@@ -105,9 +105,11 @@ hc_ci_session_pids() {  # <name>
   hc_ci_caller_pids
   # shellcheck disable=SC2009 # the match is on the process ENVIRONMENT (HC_SESSION), which pgrep -f cannot read.
   ps ewwax -o pid=,ppid=,pgid=,command= 2>/dev/null \
-    | grep -E "(^|[[:space:]])HC_SESSION=${name}([[:space:]]|$)" \
-    | awk -v excl="$HC_CI_CALLER_PIDS" \
-      'index(excl, " "$1" ") == 0 && index(excl, " "$2" ") == 0 && index(excl, " g"$3" ") == 0 { print $1 }'
+    | awk -v excl="$HC_CI_CALLER_PIDS" -v session="$name" \
+      -v socket="$SOCK_DIR/$name.sock" -v state="$LAB_DIR/$name/env/xdg-state" \
+      'index(" "$0" ", " HC_SESSION="session" ") && index(" "$0" ", " HC_SOCKET="socket" ") &&
+       index(" "$0" ", " XDG_STATE_HOME="state" ") &&
+       index(excl, " "$1" ") == 0 && index(excl, " "$2" ") == 0 && index(excl, " g"$3" ") == 0 { print $1 }'
 }
 
 case "$cmd" in

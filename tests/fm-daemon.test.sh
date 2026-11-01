@@ -3514,6 +3514,78 @@ test_classify_routine_signal_self
 test_classify_terminal_signal_escalates
 test_classify_check_and_unknown_escalate
 test_unknown_wake_ack_suppresses_handled_identity
+test_t3_digest_identity_survives_interrupted_delivery() {
+  local dir state buf variant rc id
+  for variant in success interrupted publication consumption tail unconfirmed; do
+    dir=$(make_supercase "t3-digest-$variant")
+    state="$dir/state"
+    buf="$state/.subsuper-escalations"
+    escalate_add "$state" "event A: release approval required"
+    afk_enter "$state"
+    cat > "$dir/flush" <<'SH'
+#!/usr/bin/env bash
+set -u
+. "$1"
+state=$2 variant=$3 phase=$4
+buf="$state/.subsuper-escalations"
+FM_SUPERVISOR_BACKEND=t3code
+FM_SUPERVISOR_TARGET=thread-fixture
+FM_DAEMON_PRIMARY_HARNESS=codex
+fm_backend_target_exists() { return 0; }
+pane_is_busy() { return 1; }
+fm_backend_composer_state() { printf 'empty\n'; }
+fm_backend_send_text_submit() {
+  [ -s "$buf.frozen" ] || exit 90
+  [ "$(sed -n '2s/^id=//p' "$buf.frozen")" = "$FM_T3CODE_CLIENT_REQUEST_ID" ] || exit 91
+  [ "$(cat "$buf.frozen-msg")" = "$3" ] || exit 92
+  printf '%s\t%s\n' "$FM_T3CODE_CLIENT_REQUEST_ID" "$3" >> "$state/submissions"
+  if [ "$variant:$phase" = unconfirmed:first ]; then printf 'unconfirmed\n'; else printf 'empty\n'; fi
+}
+mv() {
+  local target
+  for target in "$@"; do :; done
+  if [ "$phase" = first ]; then
+    [ "$variant:$target" != "publication:$buf.frozen" ] || return 1
+    [ "$variant:$target" != "consumption:$buf" ] || return 1
+  fi
+  command mv "$@"
+}
+tail() {
+  [ "$variant:$phase:$*" != "tail:first:-n +2 $buf" ] || return 1
+  command tail "$@"
+}
+if [ "$variant:$phase" = interrupted:first ]; then
+  escalate_consume_frozen() { exit 73; }
+fi
+escalate_flush "$state"
+SH
+    rc=0
+    bash "$dir/flush" "$DAEMON" "$state" "$variant" first || rc=$?
+    if [ "$variant" = success ]; then
+      [ "$rc" -eq 0 ] || fail "ordinary T3 digest failed"
+      [ ! -s "$buf" ] || fail "ordinary T3 digest retained its buffer"
+    else
+      [ "$rc" -ne 0 ] || fail "$variant unexpectedly completed"
+      [ -s "$buf" ] || fail "$variant lost the pending buffer"
+      if [ "$variant" = publication ]; then
+        [ ! -e "$state/submissions" ] || fail "failed publication still submitted"
+        id=$(sed -n '2s/^id=//p' "$buf.frozen.tmp")
+      else
+        id=$(sed -n '2s/^id=//p' "$buf.frozen")
+      fi
+      [ -n "$id" ] || fail "$variant lost the request identity"
+      bash "$dir/flush" "$DAEMON" "$state" "$variant" retry || fail "$variant did not recover"
+      [ ! -s "$buf" ] || fail "$variant did not consume the buffer"
+      [ ! -e "$buf.frozen" ] || fail "$variant retained a completed generation"
+      [ "$(cut -f1 "$state/submissions" | sort -u)" = "$id" ] || fail "$variant changed the submission identity"
+      [ "$(sort -u "$state/submissions" | wc -l | tr -d ' ')" = 1 ] || fail "$variant changed the submitted message"
+    fi
+  done
+  pass "T3 digest identity persists before send through interruption and filesystem failures"
+}
+
+test_t3_digest_identity_survives_interrupted_delivery
+
 test_unknown_wake_ack_failure_still_clears_delivered_digest
 test_stale_transient_self_records_marker
 test_stale_diagnostic_wedge_survives_busy_housekeeping

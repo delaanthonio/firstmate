@@ -34,22 +34,11 @@ command -v jq >/dev/null 2>&1 || { echo "skip: jq not found (required by the ter
 # shellcheck source=tests/tern-test-safety.sh
 . "$ROOT/tests/tern-test-safety.sh"
 
-# Bounded probes: a wedged daemon must skip, not hang the lane.
-probe() {  # <seconds> <cmd...>
-  local secs=$1
-  shift
-  if command -v timeout >/dev/null 2>&1; then
-    timeout "$secs" "$@"
-  elif command -v gtimeout >/dev/null 2>&1; then
-    gtimeout "$secs" "$@"
-  else
-    "$@"
-  fi
-}
+. "$ROOT/bin/fm-timeout-lib.sh"
 
-probe 15 tern ls --json >/dev/null 2>&1 \
+fm_run_timed 15 tern ls --json >/dev/null 2>&1 \
   || { echo "skip: no reachable Tern session daemon (tern ls --json failed)"; exit 0; }
-probe 15 tern ctl state >/dev/null 2>&1 \
+fm_run_timed 15 tern ctl state >/dev/null 2>&1 \
   || { echo "skip: no Tern window control endpoint (tern ctl state failed) - native agent state cannot be exercised here"; exit 0; }
 
 # The throwaway session name must be unused: a pre-existing session of that name

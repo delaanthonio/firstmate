@@ -2801,7 +2801,7 @@ test_lock_wait_returns_when_its_directory_is_removed() {
     kill -TERM "$holder" 2>/dev/null || true
     fail "the waiter stopped waiting on a live hold while its directory still existed"
   fi
-  rm -rf "$state"
+  mv "$state" "$dir/removed-state" || fail "could not remove the watched pathname"
   i=0
   while [ "$i" -lt 20 ] && kill -0 "$waiter" 2>/dev/null; do
     sleep 0.1
@@ -2812,10 +2812,12 @@ test_lock_wait_returns_when_its_directory_is_removed() {
   if kill -0 "$waiter" 2>/dev/null; then
     kill -TERM "$waiter" 2>/dev/null || true
     wait "$waiter" 2>/dev/null || true
+    rm -rf "$dir/removed-state"
     fail "the lock wait kept polling after its directory was removed"
   fi
   rc=0
   wait "$waiter" || rc=$?
+  rm -rf "$dir/removed-state"
   [ "$rc" -eq 1 ] || fail "the lock wait over a removed directory returned $rc, not 1"
   pass "a lock wait returns within its bound once its directory is removed"
 }
