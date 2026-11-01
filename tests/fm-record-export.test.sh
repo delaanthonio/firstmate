@@ -277,7 +277,7 @@ test_sync_retracts_stale_records_as_one_live_snapshot() {
 }
 
 test_sync_revalidates_live_sources_before_publication() {
-  python3 - "$ROOT/bin/fm-record-export.py" "$TMP_ROOT/live-source-changes" <<'PYTEST'
+  python3 - "$ROOT/bin/fm-record-export.py" "$TMP_ROOT/live-source-changes" <<'PYTEST' || fail "live source revalidation failed"
 import importlib.util
 import os
 from pathlib import Path
@@ -348,7 +348,6 @@ for change in ("ack", "data-add", "data-remove", "data-replace", "data-write",
         assert not (destination / "live/state/task.inbox/001.msg").exists()
         assert (destination / "live/state/task.inbox/handled/001.msg").read_text() == "message\n"
 PYTEST
-  [ "$?" -eq 0 ] || fail "live source revalidation failed"
   pass "live sync rejects moved, added, removed, replaced, and modified sources before publication"
 }
 
@@ -861,7 +860,7 @@ test_archive_refuses_unsafe_sources_and_destinations() {
 }
 
 test_archive_retention_filesystem_errors_do_not_fail_committed_capture() {
-  python3 - "$ROOT/bin/fm-record-export.py" "$TMP_ROOT/retention-errors" <<'PYTEST'
+  python3 - "$ROOT/bin/fm-record-export.py" "$TMP_ROOT/retention-errors" <<'PYTEST' || fail "retention filesystem errors escaped committed capture"
 from contextlib import redirect_stderr
 import importlib.util
 import io
@@ -914,7 +913,6 @@ for fault in ("stat-permission", "stat-missing", "manifest-permission", "manifes
     if fault != "stat-missing":
         assert "warning:" in warnings.getvalue(), (fault, warnings.getvalue())
 PYTEST
-  [ "$?" -eq 0 ] || fail "retention filesystem errors escaped committed capture"
   pass "retention filesystem errors warn without failing new or idempotent archive capture"
 }
 

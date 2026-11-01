@@ -334,8 +334,9 @@ SH
     sleep 0.05
     count=$((count + 1))
   done
-  kill -0 "$harness" 2>/dev/null && kill -0 "$owner" 2>/dev/null \
-    || fail "disowned handoff rejected its unchanged live session: $(cat "$home/err")"
+  if ! kill -0 "$harness" 2>/dev/null || ! kill -0 "$owner" 2>/dev/null; then
+    fail "disowned handoff rejected its unchanged live session: $(cat "$home/err")"
+  fi
   [ "$(cut -f1 "$home/state/.supervision-host-left")" != "$first_arm" ] \
     || fail "disowned handoff did not replace its closed watcher"
   [ -s "$home/deliveries" ] || fail "disowned handoff stopped retrying delivery"

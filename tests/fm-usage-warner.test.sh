@@ -529,10 +529,11 @@ test_armed_shim_preserves_effective_directories() {
     printf 'five_hour:80\n' > "$config/usage-warner"
     (
       cd "$scope" || exit 1
+      local arm_home=$home arm_config=$config arm_state=$state
       if [ "$mode" = relative ]; then
-        home=home; config='custom config'; state='custom state'
+        arm_home=home; arm_config='custom config'; arm_state='custom state'
       fi
-      FM_HOME="$home" FM_CONFIG_OVERRIDE="$config" FM_STATE_OVERRIDE="$state" "$WARNER" arm
+      FM_HOME="$arm_home" FM_CONFIG_OVERRIDE="$arm_config" FM_STATE_OVERRIDE="$arm_state" "$WARNER" arm
     ) > "$scope/arm.out" 2>&1 || fail "override arm failed: $(cat "$scope/arm.out")"
     FM_STATE_OVERRIDE="$state" bash -c '. "$1/bin/fm-pr-lib.sh"; . "$1/bin/fm-check-lib.sh"; fm_custom_check_registered "$FM_STATE_OVERRIDE" usage-warner' _ "$ROOT" \
       || fail "override shim was not registered in the selected state directory"

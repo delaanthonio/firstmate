@@ -1149,7 +1149,10 @@ test_raw_opencode_probe_uses_selected_runner() {
       read_case_record "$rec"
       mkdir -p "$CASE_DIR/custom"
       runner="$CASE_DIR/custom/opencode"
-      printf '#!/usr/bin/env bash\n[ "${1:-}" != --version ] || printf "%%s\\n" "%s"\n' "$version" > "$runner"
+      cat > "$runner" <<RUNNER
+#!/usr/bin/env bash
+[ "\${1:-}" != --version ] || printf '%s\n' "$version"
+RUNNER
       chmod +x "$runner"
       raw=$runner
       [ "$form" != relative ] || raw=../custom/opencode
