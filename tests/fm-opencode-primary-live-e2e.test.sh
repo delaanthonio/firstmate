@@ -22,7 +22,9 @@ opencode_major() {  # <executable>
   printf '%s\n' "${version%%.*}"
 }
 
-if [ "${FM_OPENCODE_LIVE_E2E:-0}" != 1 ]; then
+credentialed=${FM_OPENCODE_LIVE_E2E:-}
+case "$credentialed" in 0|1) ;; *) credentialed=${FM_LIVE:-0} ;; esac
+if [ "$credentialed" != 1 ]; then
   prerequisites=(python3 git)
   [ -n "${FM_OPENCODE_LIVE_BINS:-}" ] || prerequisites+=(opencode)
   fm_live_gate default-on FM_OPENCODE_V2_OFFLINE_LIVE "${prerequisites[@]}"

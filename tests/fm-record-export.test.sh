@@ -372,7 +372,7 @@ test_sync_refuses_unknown_managed_artifacts_before_publication() {
 }
 
 test_sync_detects_destination_parent_replacement() {
-  local home export_root outside pid rc=0 wait_count=0 stage='' live_target prior_snapshot
+  local home export_root outside pid worker_pid mutation_rc=0 rc=0 wait_count=0 stage='' live_target prior_snapshot
   home=$(make_home sync-destination-race)
   export_root="$TMP_ROOT/export-sync-destination-race"
   outside="$TMP_ROOT/outside-sync-destination-race"
@@ -387,30 +387,28 @@ test_sync_detects_destination_parent_replacement() {
   run_export "$home" sync > "$home/race.out" 2> "$home/race.err" &
   pid=$!
   while kill -0 "$pid" 2>/dev/null; do
-    stage=$(find "$export_root/live/data" -maxdepth 1 -name '.record-export.*' -print -quit 2>/dev/null || true)
-    [ -n "$stage" ] || stage=$(find "$export_root/.live-generations" -maxdepth 1 -name '.stage-*' -print -quit 2>/dev/null || true)
+    stage=$(find "$export_root/.live-generations" -maxdepth 1 -name '.stage-*' -print -quit 2>/dev/null || true)
     [ -z "$stage" ] || break
     wait_count=$((wait_count + 1))
     [ "$wait_count" -le 500 ] || break
     sleep 0.01
   done
   [ -n "$stage" ] || { wait "$pid" || true; fail "destination-race fixture never observed a staged snapshot"; }
-  kill -STOP "$pid"
-  case "$stage" in
-    "$export_root/live/data"/*)
-      mv "$export_root/live/data" "$export_root/live/data.saved"
-      ln -s "$outside" "$export_root/live/data"
-      prior_snapshot="$export_root/live/data.saved/projects.md"
-      ;;
-    "$export_root/.live-generations"/*)
-      mv "$export_root/.live-generations" "$export_root/.live-generations.saved"
-      ln -s "$outside" "$export_root/.live-generations"
-      prior_snapshot="$export_root/.live-generations.saved/${live_target#.live-generations/}/data/projects.md"
-      ;;
-    *) kill -CONT "$pid"; wait "$pid" || true; fail "destination-race fixture observed an unknown staging path" ;;
-  esac
-  kill -CONT "$pid"
+  if export_fixture_worker_pid "$export_root/.stage-$$-foreign" "$pid" >/dev/null; then
+    wait "$pid" || true
+    fail "sync fixture accepted a process outside its invocation"
+  fi
+  worker_pid=$(export_fixture_worker_pid "$stage" "$pid") \
+    || { wait "$pid" || true; fail "sync fixture could not identify its filesystem worker"; }
+  kill -STOP "$worker_pid" || { wait "$pid" || true; fail "could not stop the fixture sync worker"; }
+  mv "$export_root/.live-generations" "$export_root/.live-generations.saved" \
+    && ln -s "$outside" "$export_root/.live-generations" || mutation_rc=$?
+  prior_snapshot="$export_root/.live-generations.saved/${live_target#.live-generations/}/data/projects.md"
+  worker_pid=$(export_fixture_worker_pid "$stage" "$pid") \
+    || fail "sync worker left its fixture ancestry before resume"
+  kill -CONT "$worker_pid" || fail "could not resume the fixture sync worker"
   wait "$pid" || rc=$?
+  [ "$mutation_rc" -eq 0 ] || fail "sync destination-race mutation failed"
   [ "$rc" -ne 0 ] || fail "sync committed after its destination parent was replaced"
   assert_absent "$outside/projects.md" "sync wrote through a replacement destination symlink"
   assert_grep 'initial' "$prior_snapshot" \
@@ -613,10 +611,14 @@ test_archive_refuses_a_corrupt_committed_manifest() {
   pass "teardown archive rejects a corrupt committed manifest"
 }
 
-archive_fixture_worker_pid() {
+export_fixture_worker_pid() {
   local stage=$1 parent=$2 worker ancestor
   worker=${stage##*/}
-  worker=${worker#.archive-stage-}
+  case "$worker" in
+    .stage-*) worker=${worker#.stage-} ;;
+    .archive-stage-*) worker=${worker#.archive-stage-} ;;
+    *) return 1 ;;
+  esac
   worker=${worker%%-*}
   case "$worker" in ''|*[!0-9]*) return 1 ;; esac
   ancestor=$worker
@@ -649,16 +651,16 @@ test_archive_detects_a_source_change_during_capture() {
     sleep 0.01
   done
   [ -n "$stage" ] || { wait "$archive_pid" || true; fail "archive source-race fixture never observed staging"; }
-  if archive_fixture_worker_pid "$export_root/.archive-stage-$$-foreign" "$archive_pid" >/dev/null; then
+  if export_fixture_worker_pid "$export_root/.archive-stage-$$-foreign" "$archive_pid" >/dev/null; then
     wait "$archive_pid" || true
     fail "archive fixture accepted a process outside its invocation"
   fi
-  worker_pid=$(archive_fixture_worker_pid "$stage" "$archive_pid") \
+  worker_pid=$(export_fixture_worker_pid "$stage" "$archive_pid") \
     || { wait "$archive_pid" || true; fail "archive source-race fixture could not identify its filesystem worker"; }
   kill -STOP "$worker_pid" || { wait "$archive_pid" || true; fail "could not stop the fixture archive worker"; }
   local mutation_rc=0
   rm "$home/state/task-a.status" && ln -s "$outside/sentinel" "$home/state/task-a.status" || mutation_rc=$?
-  worker_pid=$(archive_fixture_worker_pid "$stage" "$archive_pid") \
+  worker_pid=$(export_fixture_worker_pid "$stage" "$archive_pid") \
     || fail "archive worker left its fixture ancestry before resume"
   kill -CONT "$worker_pid" || fail "could not resume the fixture archive worker"
   wait "$archive_pid" || rc=$?

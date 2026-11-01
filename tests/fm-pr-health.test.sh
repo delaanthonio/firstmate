@@ -29,6 +29,8 @@ new_home() { # name -> home with the monitor flag on
 #!/usr/bin/env bash
 set -eu
 printf '%s\n' "$*" >> "$FORGE/calls.log"
+printf '%s\t%s\n' "${GH_HOST:-github.com}" "$*" >> "$FORGE/hosts.log"
+if [ -e "$FORGE/require-github" ] && [ "${GH_HOST:-github.com}" != github.com ]; then exit 1; fi
 model() {
   local n=$1 attempt
   if [ -f "$FORGE/barrier-count" ]; then
@@ -154,16 +156,53 @@ pass_once() { # home -> the registered check's output
 
 expect_silent() { # home why
   local out
-  out=$(pass_once "$1")
+  out=$(pass_once "$1") || fail 'could not capture the PR health check'
   [ -z "$out" ] || fail "$2: $out"
 }
 
 expect_one() { # home pattern why
   local out
-  out=$(pass_once "$1")
+  out=$(pass_once "$1") || fail 'could not capture the PR health check'
   if [ "$(printf '%s\n' "$out" | grep -c .)" != 1 ] || ! printf '%s\n' "$out" | grep -E "$2" >/dev/null; then
     fail "$3: $out"
   fi
+}
+
+test_failed_check_is_not_accepted_as_silent() {
+  local home assertion
+  home=$(new_home failed-check)
+  arm "$home"
+  printf '#!/bin/sh\nexit 23\n' > "$home/state/pr-health.check.sh"
+  for assertion in expect_silent expect_one; do
+    if ( "$assertion" "$home" unexpected 'the check should fail' ) > "$home/stdout" 2> "$home/stderr"; then
+      fail "$assertion accepted a failed check with empty stdout"
+    fi
+    assert_grep 'could not capture the PR health check' "$home/stderr" "$assertion did not propagate the check failure"
+  done
+  pass 'failed checks with empty stdout fail both output assertions'
+}
+
+test_reads_are_bound_to_github_com() {
+  local home wt
+  home=$(new_home host-routing)
+  wt="$home/copy"
+  git init -q -b feature-x "$wt"
+  git -C "$wt" remote add origin git@github.com:o/r.git
+  task "$home" recorded pr=https://github.com/o/r/pull/8
+  task "$home" discovered "worktree=$wt"
+  printf '8\n' > "$home/forge/branch-feature-x"
+  pr "$home" 8 "$HEAD_A" "$BASE_1" false false
+  : > "$home/forge/require-github"
+  arm "$home"
+  GH_HOST=enterprise.invalid expect_one "$home" 'pull/8 conflicts' 'github.com reads must ignore an ambient enterprise host'
+  set_pr "$home" 8 '.head = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"'
+  GH_HOST=enterprise.invalid expect_one "$home" 'at latest commit bbbbbbb' 'cached PR reads must stay on github.com'
+  assert_grep $'github.com\tapi repos/o/r/pulls/8' "$home/forge/hosts.log" 'REST was not routed to github.com'
+  assert_grep $'github.com\tapi graphql ' "$home/forge/hosts.log" 'GraphQL was not routed to github.com'
+  assert_grep $'github.com\tpr list ' "$home/forge/hosts.log" 'branch discovery was not routed to github.com'
+  assert_grep $'github.com\tpr view ' "$home/forge/hosts.log" 'PR lookup was not routed to github.com'
+  if grep '^enterprise.invalid[[:space:]]' "$home/forge/hosts.log" >/dev/null; then fail 'a forge read inherited the ambient enterprise host'; fi
+  pass 'REST, GraphQL, fresh discovery, and cached PR reads are bound to github.com'
 }
 
 test_unknown_then_dirty_wakes_once() {
@@ -309,7 +348,7 @@ test_other_homes_red_check_is_silent() {
   printf '20\n' > "$home/forge/branch-mate-branch"
   arm "$home"
   arm "$other"
-  out=$(pass_once "$other")
+  out=$(pass_once "$other") || fail 'could not capture the PR health check'
   printf '%s\n' "$out" | grep -F 'https://github.com/o/r/pull/20 has failing required checks' >/dev/null \
     || fail "the owning home must wake for its own red PR: $out"
   expect_silent "$home" "another home's red PR must wake nothing in this home"
@@ -606,7 +645,7 @@ test_branch_discovery_checks_exact_publishing_head() {
     printf '%s\n' "$records" > "$home/forge/branch-feature-x.json"
     pr "$home" 12 "$HEAD_A" "$BASE_1" false false
     arm "$home"
-    out=$(pass_once "$home")
+    out=$(pass_once "$home") || fail 'could not capture the PR health check'
     if [ "$expected" = yes ]; then
       assert_contains "$out" 'https://github.com/o/r/pull/12 conflicts' "the exact publishing head was not enrolled ($scenario)"
       jq -e '.branches.early.url == "https://github.com/o/r/pull/12"' "$home/state/pr-health.json" >/dev/null \
@@ -642,7 +681,7 @@ test_cached_branch_revalidates_publishing_identity() {
     esac
     printf '%s\n' "$record" > "$home/forge/head-12.json"
     arm "$home"
-    out=$(pass_once "$home")
+    out=$(pass_once "$home") || fail 'could not capture the PR health check'
     if [ "$scenario" = exact ]; then
       assert_contains "$out" 'pull/12 conflicts' 'a validated cached head was not enrolled'
     else
@@ -685,7 +724,7 @@ test_all_owned_pr_reads_start_in_one_wave() {
   printf '4\n' > "$home/forge/branch-barrier-count"
   printf '8\n' > "$home/forge/barrier-count"
   arm "$home"
-  out=$(pass_once "$home")
+  out=$(pass_once "$home") || fail 'could not capture the PR health check'
   [ "$(printf '%s\n' "$out" | grep -c 'conflicts with its base')" = 8 ] \
     || fail "every owned PR must start before a slow read completes: $out"
   pass 'all owned PR reads start in one wave without rotating a backlog'
@@ -718,7 +757,8 @@ SH
 }
 
 failures=0
-for test_name in test_unknown_then_dirty_wakes_once test_dirty_again_at_same_commits_is_silent \
+for test_name in test_failed_check_is_not_accepted_as_silent test_reads_are_bound_to_github_com \
+  test_unknown_then_dirty_wakes_once test_dirty_again_at_same_commits_is_silent \
   test_conflict_once_per_latest_commit test_adopted_draft_red_required_check_after_pause_wakes_once \
   test_reported_failure_does_not_hide_a_later_required_failure \
   test_replaced_cancelled_run_is_not_failing test_latest_commit_moving_between_reads_waits \
