@@ -539,7 +539,7 @@ test_archive_retry_accepts_sources_already_retired_after_commit() {
 }
 
 test_archive_refuses_a_corrupt_committed_manifest() {
-  local home export_root manifest rc case_name
+  local home export_root manifest rc case_name expected_error
   for case_name in wrong-task trailing-garbage duplicate-key wrong-type extra-root extra-entry; do
     home=$(make_home "archive-corrupt-manifest-$case_name")
     export_root="$TMP_ROOT/export-archive-corrupt-manifest-$case_name"
@@ -551,16 +551,24 @@ test_archive_refuses_a_corrupt_committed_manifest() {
     manifest="$export_root/archive/task-a/committed-generation/manifest.v1.json"
     case "$case_name" in
       wrong-task) sed 's/"task": "task-a"/"task": "another-task"/' "$manifest" > "$home/manifest.tmp" ;;
-      trailing-garbage) cp "$manifest" "$home/manifest.tmp"; printf 'not-json\n' >> "$home/manifest.tmp" ;;
-      duplicate-key) sed '/"captured_at":/a\  "captured_at": "2000-01-01T00:00:00Z",' "$manifest" > "$home/manifest.tmp" ;;
+      trailing-garbage) cp "$manifest" "$home/manifest.tmp" && printf 'not-json\n' >> "$home/manifest.tmp" ;;
+      duplicate-key) awk '{ print } /"captured_at":/ { print "  \"captured_at\": \"2000-01-01T00:00:00Z\"," }' "$manifest" > "$home/manifest.tmp" ;;
       wrong-type) sed 's/"captured_at": "[^"]*"/"captured_at": 1/' "$manifest" > "$home/manifest.tmp" ;;
-      extra-root) sed '/"complete": true/a\  "unexpected": true,' "$manifest" > "$home/manifest.tmp" ;;
-      extra-entry) sed '0,/"sha256": "[^"]*"/s//& , "unexpected": true/' "$manifest" > "$home/manifest.tmp" ;;
-    esac
-    mv "$home/manifest.tmp" "$manifest"
+      extra-root) awk '{ print } /"complete": true/ { print "  \"unexpected\": true," }' "$manifest" > "$home/manifest.tmp" ;;
+      extra-entry) awk '!changed && /"sha256":/ { sub(/"sha256": "[^"]*"/, "& , \"unexpected\": true"); changed=1 } { print }' "$manifest" > "$home/manifest.tmp" ;;
+    esac || fail "could not prepare $case_name manifest corruption"
+    mv "$home/manifest.tmp" "$manifest" || fail "could not publish $case_name manifest corruption"
     rc=0
     run_export "$home" archive-task task-a > "$home/retry.out" 2> "$home/retry.err" || rc=$?
     [ "$rc" -ne 0 ] || fail "archive retry accepted a $case_name committed manifest"
+    case "$case_name" in
+      wrong-task|wrong-type) expected_error='record export archive manifest has invalid field values' ;;
+      trailing-garbage) expected_error='invalid record export archive manifest:' ;;
+      duplicate-key) expected_error='duplicate JSON field: captured_at' ;;
+      extra-root) expected_error='record export archive manifest has unknown or missing fields' ;;
+      extra-entry) expected_error='record export archive manifest file entry has unknown or missing fields' ;;
+    esac
+    assert_grep "$expected_error" "$home/retry.err" "$case_name manifest did not reach its intended validation"
     assert_present "$home/state/task-a.meta" "$case_name manifest retry removed live metadata"
   done
   pass "teardown archive rejects a corrupt committed manifest"
