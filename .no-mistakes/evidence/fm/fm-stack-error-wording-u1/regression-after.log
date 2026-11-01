@@ -1,0 +1,2 @@
+ok - stacked auto-merge refusal uses the guarded fallback and refuses red dependencies
+ok - unrelated auto-merge errors retain their refusal without attempting stack fallback

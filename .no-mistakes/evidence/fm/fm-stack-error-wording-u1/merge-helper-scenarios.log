@@ -1,0 +1,330 @@
+
+SCENARIO green (fixture-backed; not live GitHub)
+refusal=GraphQL: Auto-merge is not supported for stacked pull requests. (enablePullRequestAutoMerge)
+exit=0
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+notice: https://github.com/example/repo/pull/9 requires GitHub atomic stack merging; retrying with gh stack merge
+verified: https://github.com/example/repo/pull/9 is merged (state=MERGED, merged=true, isInMergeQueue=false)
+
+GitHub CLI boundary calls:
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+pr view https://github.com/example/repo/pull/8 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+stack merge 9 --yes --squash
+api graphql -f query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}} -F owner=example -F repo=repo -F number=9 --jq .data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")
+
+Persisted merge notification:
+fm-pr-poll-merge-notified-v1
+github
+github.com
+example/repo
+9
+
+SCENARIO red (fixture-backed; not live GitHub)
+refusal=GraphQL: Auto-merge is not supported for stacked pull requests. (enablePullRequestAutoMerge)
+exit=1
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+notice: https://github.com/example/repo/pull/9 requires GitHub atomic stack merging; retrying with gh stack merge
+GraphQL: Auto-merge is not supported for stacked pull requests. (enablePullRequestAutoMerge)
+error: gh stack merge failed for https://github.com/example/repo/pull/9 (exit 1)
+error: refusing to merge https://github.com/example/repo/pull/8
+  - check 'ci' is not green
+error: these checks are not green: ci
+actionable: the merge command for https://github.com/example/repo/pull/9 failed, but the pull request reads back as state=MERGED, merged=true, isInMergeQueue=false
+
+GitHub CLI boundary calls:
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+pr view https://github.com/example/repo/pull/8 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+api graphql -f query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}} -F owner=example -F repo=repo -F number=9 --jq .data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")
+
+Persisted merge notification: absent
+
+SCENARIO missing (fixture-backed; not live GitHub)
+refusal=GraphQL: Auto-merge is not supported for stacked pull requests. (enablePullRequestAutoMerge)
+exit=1
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+notice: https://github.com/example/repo/pull/9 requires GitHub atomic stack merging; retrying with gh stack merge
+GraphQL: Auto-merge is not supported for stacked pull requests. (enablePullRequestAutoMerge)
+error: gh stack merge failed for https://github.com/example/repo/pull/9 (exit 1)
+error: refusing to merge https://github.com/example/repo/pull/8
+  - required check 'ci' has not reported at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+error: these required checks have not reported: ci
+actionable: the merge command for https://github.com/example/repo/pull/9 failed, but the pull request reads back as state=MERGED, merged=true, isInMergeQueue=false
+
+GitHub CLI boundary calls:
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+pr view https://github.com/example/repo/pull/8 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+api graphql -f query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}} -F owner=example -F repo=repo -F number=9 --jq .data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")
+
+Persisted merge notification: absent
+
+SCENARIO changed-head (fixture-backed; not live GitHub)
+refusal=GraphQL: Auto-merge is not supported for stacked pull requests. (enablePullRequestAutoMerge)
+exit=1
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+notice: https://github.com/example/repo/pull/9 requires GitHub atomic stack merging; retrying with gh stack merge
+GraphQL: Auto-merge is not supported for stacked pull requests. (enablePullRequestAutoMerge)
+error: gh stack merge failed for https://github.com/example/repo/pull/9 (exit 1)
+verified: https://github.com/example/repo/pull/8 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+error: stack changed immediately before merge; retry
+actionable: the merge command for https://github.com/example/repo/pull/9 failed, but the pull request reads back as state=MERGED, merged=true, isInMergeQueue=false
+
+GitHub CLI boundary calls:
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+pr view https://github.com/example/repo/pull/8 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+api repos/example/repo/stacks?pull_request=9
+api graphql -f query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}} -F owner=example -F repo=repo -F number=9 --jq .data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")
+
+Persisted merge notification: absent
+
+SCENARIO collision (fixture-backed; not live GitHub)
+refusal=GraphQL: Auto-merge is not supported for stacked pull requests. (enablePullRequestAutoMerge)
+exit=1
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+notice: https://github.com/example/repo/pull/9 requires GitHub atomic stack merging; retrying with gh stack merge
+GraphQL: Auto-merge is not supported for stacked pull requests. (enablePullRequestAutoMerge)
+error: gh stack merge failed for https://github.com/example/repo/pull/9 (exit 1)
+error: the number in https://github.com/example/repo/pull/9 also selects a stack; refusing ambiguous gh stack merge target
+actionable: the merge command for https://github.com/example/repo/pull/9 failed, but the pull request reads back as state=MERGED, merged=true, isInMergeQueue=false
+
+GitHub CLI boundary calls:
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+api graphql -f query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}} -F owner=example -F repo=repo -F number=9 --jq .data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")
+
+Persisted merge notification: absent
+
+SCENARIO away (fixture-backed; not live GitHub)
+refusal=GraphQL: Auto-merge is not supported for stacked pull requests. (enablePullRequestAutoMerge)
+exit=2
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+notice: https://github.com/example/repo/pull/9 requires GitHub atomic stack merging; retrying with gh stack merge
+GraphQL: Auto-merge is not supported for stacked pull requests. (enablePullRequestAutoMerge)
+error: gh stack merge failed for https://github.com/example/repo/pull/9 (exit 2)
+error: gh stack merge is asynchronous and attended-only; nothing was handed to the stack merger
+actionable: the merge command for https://github.com/example/repo/pull/9 failed, but the pull request reads back as state=MERGED, merged=true, isInMergeQueue=false
+
+GitHub CLI boundary calls:
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+api --paginate repos/example/repo/rules/branches/main --jq .[] | select(.type == "merge_queue") | "merge_method=" + (.parameters.merge_method // "")
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api graphql -f query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}} -F owner=example -F repo=repo -F number=9 --jq .data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")
+
+Persisted merge notification: absent
+
+SCENARIO held (fixture-backed; not live GitHub)
+refusal=GraphQL: Auto-merge is not supported for stacked pull requests. (enablePullRequestAutoMerge)
+exit=1
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  2 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+notice: https://github.com/example/repo/pull/9 requires GitHub atomic stack merging; retrying with gh stack merge
+GraphQL: Auto-merge is not supported for stacked pull requests. (enablePullRequestAutoMerge)
+error: gh stack merge failed for https://github.com/example/repo/pull/9 (exit 1)
+error: task dependency is still held for the captain; release it before merging
+actionable: the merge command for https://github.com/example/repo/pull/9 failed, but the pull request reads back as state=MERGED, merged=true, isInMergeQueue=false
+
+GitHub CLI boundary calls:
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+api graphql -f query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}} -F owner=example -F repo=repo -F number=9 --jq .data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")
+
+Persisted merge notification: absent
+
+SCENARIO disabled (fixture-backed; not live GitHub)
+refusal=GraphQL: Auto-merge is not enabled for this repository. (enablePullRequestAutoMerge)
+exit=1
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+GraphQL: Auto-merge is not enabled for this repository. (enablePullRequestAutoMerge)
+actionable: the merge command for https://github.com/example/repo/pull/9 failed, but the pull request reads back as state=MERGED, merged=true, isInMergeQueue=false
+
+GitHub CLI boundary calls:
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api graphql -f query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}} -F owner=example -F repo=repo -F number=9 --jq .data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")
+
+Persisted merge notification: absent
+
+SCENARIO unsupported (fixture-backed; not live GitHub)
+refusal=GraphQL: Auto-merge is not supported for this pull request. (enablePullRequestAutoMerge)
+exit=1
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+GraphQL: Auto-merge is not supported for this pull request. (enablePullRequestAutoMerge)
+actionable: the merge command for https://github.com/example/repo/pull/9 failed, but the pull request reads back as state=MERGED, merged=true, isInMergeQueue=false
+
+GitHub CLI boundary calls:
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api graphql -f query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}} -F owner=example -F repo=repo -F number=9 --jq .data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")
+
+Persisted merge notification: absent
+
+SCENARIO legacy (fixture-backed; not live GitHub)
+refusal=GraphQL: Pull request is part of a stack and must be merged using the asynchronous merge REST API (mergePullRequest)
+exit=0
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+notice: https://github.com/example/repo/pull/9 requires GitHub atomic stack merging; retrying with gh stack merge
+verified: https://github.com/example/repo/pull/9 is merged (state=MERGED, merged=true, isInMergeQueue=false)
+
+GitHub CLI boundary calls:
+pr view https://github.com/example/repo/pull/9 --json headRefOid -q .headRefOid
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr merge 9 --repo example/repo --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --squash
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+pr view https://github.com/example/repo/pull/8 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+pr view https://github.com/example/repo/pull/9 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/example/repo/branches/main
+api --paginate repos/example/repo/rules/branches/main
+api repos/example/repo/stacks?pull_request=9
+api repos/example/repo/stacks/9
+stack merge 9 --yes --squash
+api graphql -f query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}} -F owner=example -F repo=repo -F number=9 --jq .data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")
+
+Persisted merge notification:
+fm-pr-poll-merge-notified-v1
+github
+github.com
+example/repo
+9
