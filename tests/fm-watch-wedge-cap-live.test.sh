@@ -279,7 +279,13 @@ watcher_cycle() {
   say "$label -> exit=$rc woke=$CYCLE_WOKE reason=${reason:-none}"
   # Acknowledge so the next cycle starts from an empty queue and its exit
   # status reflects the pane, not a leftover wake.
-  FM_HOME="$LAB_HOME" "$ROOT/bin/fm-wake-drain.sh" >/dev/null 2>&1 || true
+  local drain_err="$TMP_ROOT/cycle-$cycle.drain.err"
+  FM_HOME="$LAB_HOME" "$ROOT/bin/fm-wake-drain.sh" >/dev/null 2> "$drain_err" \
+    || fail "cycle $cycle drain failed: $(cat "$drain_err")"
+  if [ "$CYCLE_WOKE" -eq 1 ] || grep -q '^WAKE_ACK_REQUIRED:' "$drain_err"; then
+    FM_HOME="$LAB_HOME" ack_drain_err "$STATE" "$drain_err" >/dev/null 2>&1 \
+      || fail "cycle $cycle acknowledgement failed: $(cat "$drain_err")"
+  fi
   cat "$out" >> "$TRANSCRIPT"
 }
 # reset_lab_state: put the wedged worker back to a fresh first sight, so the

@@ -701,6 +701,8 @@ test_wedge_cap_validates_invalid_overrides() {
       reap "$pid"; fail "round $n (garbage override) failed to exit"
     fi
     grep -F "PERMANENTLY-WEDGED" "$out" >/dev/null && fail "garbage override round $n fired PERMANENTLY-WEDGED - validation did not fall back to 0"
+    assert_contains "$(cat "$out")" "possible wedge, escalation $n" "garbage override round $n did not scan and escalate the wedge"
+    ack_stopped_cycle "$state" || fail "garbage override round $n acknowledgement failed"
     n=$((n + 1))
   done
   unset FM_FAKE_CREW_STATE

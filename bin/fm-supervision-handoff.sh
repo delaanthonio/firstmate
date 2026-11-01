@@ -78,7 +78,6 @@ trap 'exit 0' TERM INT
 session_owned() {
   [ "$(cat "$STATE/.lock" 2>/dev/null)" = "$SESSION" ] \
     && [ "$(fm_session_lock_recorded_session_id "$STATE" 2>/dev/null || true)" = "$SESSION_LOCK_ID" ] \
-    && fm_session_lock_owned_by_self "$STATE" \
     && fm_session_pid_alive "$SESSION" \
     && [ "$(fm_session_pid_identity "$SESSION" 2>/dev/null)" = "$SESSION_ID" ]
 }
