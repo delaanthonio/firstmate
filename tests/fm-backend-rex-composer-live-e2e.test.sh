@@ -29,7 +29,7 @@ set -u
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-fm_live_gate opt-in FM_REX_COMPOSER_LIVE jq
+fm_live_gate default-on FM_REX_COMPOSER_LIVE jq
 CHECKED=0
 FAILED=0
 fail() {
@@ -43,7 +43,14 @@ note() { printf '# %s\n' "$1"; }
 # shellcheck source=tests/rex-test-safety.sh
 . "$ROOT/tests/rex-test-safety.sh"
 trap rex_test_cleanup EXIT
-rex_test_prepare || { rc=$?; [ "$rc" = 1 ] && exit 0; exit "$rc"; }
+rex_test_prepare || {
+  rc=$?
+  if [ "$rc" = 1 ]; then
+    fm_live_gate default-on FM_REX_COMPOSER_LIVE jq rex
+    exit 0
+  fi
+  exit "$rc"
+}
 
 # The vendors' own auto-update switches: Claude Code, OpenCode, and the Muse
 # launcher read these from the environment, and Cursor Agent takes a flag.

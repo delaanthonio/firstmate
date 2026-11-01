@@ -488,6 +488,46 @@ SH
   pass "captain presence and quota runway publish derived words only, unknown when unreadable"
 }
 
+test_quota_default_account_is_order_independent() {
+  local home fakebin doc order expected mode
+  home=$(make_home quota-accounts 0 0)
+  fakebin=$(make_probes "$TMP_ROOT/p-quota-accounts" 0.50 60 8 20971520)
+  printf '3\nquota-provider claude\n' > "$home/config/lane-capacity"
+  cat > "$fakebin/quota-axi" <<'SH'
+#!/usr/bin/env bash
+cat "${0%/*}/quota.json"
+SH
+  chmod +x "$fakebin/quota-axi"
+  for order in work-first default-first unmatched empty; do
+    expected=through_reset
+    case "$order" in unmatched|empty) expected=unknown ;; esac
+    jq -cn --arg order "$order" '
+      def row($provider; $key; $runway):
+        {provider:$provider, accountKey:$key, quotaSemantics:{status:"known", effectiveAvailability:[
+          {scope:"all_models", status:"known", effectivePercentRemaining:50, runway:{status:$runway}}
+        ]}};
+      {schemaVersion:6, providers:
+        ([row("claude"; "work"; "exhausted_now"), row("claude"; "default"; "through_reset")] |
+         if $order == "default-first" then reverse
+         elif $order == "unmatched" then [.[] | select(.accountKey != "default")]
+         elif $order == "empty" then []
+         else . end) + [row("codex"; "default"; "exhausted_now")]}
+    ' > "$fakebin/quota.json" || fail "could not generate schema-6 quota fixture"
+    for mode in json publish; do
+      if [ "$mode" = json ]; then
+        doc=$(capacity_doc "$home" "$fakebin") || fail "quota JSON failed for $order"
+      else
+        FM_LANE_CAPACITY_PUBLISH_INTERVAL=0 run_capacity_jq "$home" "$fakebin" --publish >/dev/null \
+          || fail "quota publish failed for $order"
+        doc=$(cat "$home/state/lane-capacity.json") || fail "quota state was not published"
+      fi
+      assert_equals "claude|$expected" "$(printf '%s' "$doc" | jq -r '.quota.provider + "|" + .quota.runway')" \
+        "$mode must select the default account or unknown for $order"
+    done
+  done
+  pass "quota JSON and publication select default accounts independently of row order"
+}
+
 # start_watcher <home>: run the real watcher for that home in the background;
 # the suite's cleanup stops it through the arm script.
 start_watcher() {
@@ -538,6 +578,7 @@ test_beat_with_missing_fields
 test_cap_only_memory_rule_unchanged
 test_limits_and_admit
 test_publish_document
+test_quota_default_account_is_order_independent
 test_captain_and_quota
 test_watcher_publishes_only_when_opted_in
 test_real_host_smoke

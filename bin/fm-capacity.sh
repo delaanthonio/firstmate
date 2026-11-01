@@ -654,9 +654,10 @@ if [ -n "$quota_provider" ]; then
   if command -v quota-axi >/dev/null 2>&1; then
     # shellcheck source=bin/fm-timeout-lib.sh
     . "$SCRIPT_DIR/fm-timeout-lib.sh"
+    . "$SCRIPT_DIR/fm-quota-axi-lib.sh"
     qout=$(fm_run_timed "$QUOTA_TIMEOUT" quota-axi --json --provider "$quota_provider" --max-age 15m 2>/dev/null) || qout=
-    v=$(printf '%s' "$qout" | jq -r --arg p "$quota_provider" '
-      [.providers[]? | select(.provider == $p) | .quotaSemantics.effectiveAvailability[]?
+    v=$(printf '%s' "$qout" | jq -r --arg p "$quota_provider" "$FM_QUOTA_ROW_JQ"'
+      [quota_row(.; $p; "") | .quotaSemantics.effectiveAvailability[]?
        | select(.scope == "all_models") | .runway.status | strings] | first // empty' 2>/dev/null) || v=
     case "$v" in ''|*[!a-z_]*) ;; *) runway=$v ;; esac
   fi
