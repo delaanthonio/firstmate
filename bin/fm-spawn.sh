@@ -112,9 +112,10 @@
 #   OPENCODE_CONFIG_CONTENT JSON its launch already carries (config schema
 #   re-verified on opencode 2.0.21); without a model the effort axis is recorded
 #   but omitted.
-#   Canonical Droid launches observe user and worktree model defaults when no
-#   model override is requested; model= retains the requested selection and
-#   effective_model= records the accounting-only identifier or unknown-at-spawn.
+#   Canonical Droid launches preserve user/worktree defaults without an override.
+#   Explicit models must be exact IDs in `droid exec --help`, including custom:
+#   registry IDs; backing-model shorthand is refused. model= retains the request;
+#   effective_model= stays unknown-at-spawn until this generation is observed.
 #   Their folder-trust gate requires viewport capture (tmux/herdr/zellij), sends
 #   Enter only on the complete affirmative-selected dialog, and waits for work
 #   or a response before success. FM_DROID_READY_POLLS (120) and
@@ -3787,55 +3788,11 @@ effort_flag_for_harness() {
   esac
 }
 
-droid_model_reference() {
-  local model=$1 settings ref
-  [ -n "$model" ] && [ "$model" != default ] || return 0
-  settings="$HOME/.factory/settings.json"
-  ref=
-  if [ -f "$settings" ]; then
-    # A custom model's registry id, not its provider-facing model field, pins the
-    # custom provider in sessionDefaultSettings. Read only those two fields; the
-    # same file may contain credentials that must never enter firstmate state.
-    ref=$(jq -r --arg model "$model" \
-      '[.customModels[]? | select(.model == $model) | .id][0] // empty' \
-      "$settings" 2>/dev/null || true)
-  fi
-  printf '%s' "${ref:-$model}"
-}
-
 droid_effort_value() {
   local effort=$1
   case "$effort" in
   low | medium | high | xhigh | max | dynamic) printf '%s' "$effort" ;;
   esac
-}
-
-# Observe defaults without turning them into a runtime model override. The
-# session-default scalar is most-local-wins; local files overlay their peer.
-# Read only model identifiers, never copy credential-bearing settings to state.
-droid_default_model() { # <worktree>
-  local worktree=$1 settings model='' value catalog
-  for settings in "$HOME/.factory/settings.json" "$HOME/.factory/settings.local.json" \
-    "$worktree/.factory/settings.json" "$worktree/.factory/settings.local.json"; do
-    [ -f "$settings" ] || continue
-    value=$(jq -er '
-      (.sessionDefaultSettings.model // .model // "") |
-      select(type == "string" and (test("[\\r\\n]") | not))
-    ' "$settings") || {
-      echo "error: cannot read Droid model default from $settings" >&2
-      return 1
-    }
-    [ -z "$value" ] || model=$value
-  done
-  if [ -z "$model" ] || [ "$model" = default ]; then
-    catalog=$(fm_run_timed 10 droid exec --help 2>/dev/null || true)
-    model=$(printf '%s\n' "$catalog" | awk '
-      /^Available Models:/ { models=1; next }
-      models && /^[^[:space:]]/ { models=0 }
-      models && /\(default\)/ { print $1; exit }
-    ')
-  fi
-  printf '%s' "$model"
 }
 
 case "$LAUNCH" in
@@ -4522,7 +4479,7 @@ TURNEND="$STATE_REAL/$ID.turn-ended"
 SPAWN_GEN="s$(date +%s).${BASHPID:-$$}.$RANDOM"
 
 if [ "$DROID_TEMPLATE" -eq 1 ]; then
-  DROID_MODEL=$(droid_model_reference "$MODEL")
+  DROID_MODEL=$(bash "$SCRIPT_DIR/fm-droid-model.sh" resolve "$MODEL") || exit 1
   DROID_EFFORT=$(droid_effort_value "$EFFORT")
   DROID_HOOK_COMMAND=
   [ "$KIND" = secondmate ] || DROID_HOOK_COMMAND="touch $(shell_quote "$TURNEND")"
@@ -6206,13 +6163,9 @@ fi
 
 RECORDED_MODEL=$MODEL
 if [ "$DROID_TEMPLATE" -eq 1 ]; then
-  RECORDED_MODEL=$DROID_MODEL
-  if [ -z "$RECORDED_MODEL" ]; then
-    RECORDED_MODEL=$(droid_default_model "$WT") || exit 1
-  fi
-  case "$RECORDED_MODEL" in
-    ''|default|*'*'*|anthropic-latest-*|openai-latest-*|oss-latest-*) RECORDED_MODEL=unknown-at-spawn ;;
-  esac
+  # A requested pin or inferred default does not prove what Droid executed.
+  # Only this generation's runtime hook may publish an effective identifier.
+  RECORDED_MODEL=unknown-at-spawn
 fi
 
 # Pre-register Claude's workspace trust for the directory this launch starts in,
