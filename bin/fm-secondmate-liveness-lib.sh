@@ -224,7 +224,7 @@ fm_secondmate_liveness_probe() {  # <meta> <id> <full|poll>
   [ -n "$target" ] || target="$window"
   agent_state=$(fm_backend_agent_state "$backend" "$target" 2>/dev/null) || agent_state=unreadable
   case "$harness" in
-    claude|codex|opencode|pi|pi-signed|grok|kimi|cursor|droid|omp) ;;
+    claude|codex|opencode|pi|pi-signed|grok|kimi|cursor|droid|omp|agy) ;;
     *)
       case "$agent_state" in dead|missing) agent_state=unverified-harness ;; esac
       ;;
