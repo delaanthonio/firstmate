@@ -98,7 +98,8 @@ T3 sets environment variables per provider instance, never per thread, so nothin
 Each harness reads its own configuration from the thread's working directory instead, and Firstmate writes the facts a pane would have exported into that directory before the launch turn.
 For `claude` that is an `env` block in the directory's `.claude/settings.local.json`, merged alongside the busy hooks a worker already carries there; for `codex` it is a `.codex/config.toml` holding a `[shell_environment_policy]` `set` table.
 Codex applies that file only in a project it [trusts](#setup); in an untrusted project a Codex thread runs without any of these values, so its Git hook entry, and with it the AI-trailer strip and a `forge=external` ship's push guard, does not apply; Firstmate warns at spawn when it cannot confirm that trust, but never grants it.
-The Claude `env` block keeps entries Firstmate did not write, such as a secondmate home's own, and lists the keys Firstmate wrote in `FM_T3CODE_ENV_KEYS` so a respawn replaces exactly those; a symlinked `.claude/settings.local.json` is refused.
+The Claude `env` block keeps entries Firstmate did not write, such as a secondmate home's own, and lists the keys Firstmate wrote in `FM_T3CODE_ENV_KEYS` so a respawn replaces exactly those; installation refuses a symlinked `.claude/settings.local.json`.
+Installation, aborted-launch rollback, and cleanup refuse a symlinked or non-directory `.claude` parent, preserving external settings.
 The thread's `GIT_CONFIG_*` entries are Firstmate's own `core.hooksPath` hook entry only: inherited `GIT_CONFIG_*` values, or any other inherited environment value, are never written to these files, because they can carry credentials.
 That entry sets `GIT_CONFIG_COUNT=1` and index 0, so numbered `GIT_CONFIG_KEY_<n>`/`GIT_CONFIG_VALUE_<n>` entries in the T3 server's environment do not apply in the thread; with `config/keep-ai-trailers` no hook entry is written and they apply unchanged, except on a [`forge=external`](external-review-forge.md) ship, whose push guard always installs the hook entry.
 A T3 server whose agents need extra Git config, such as a `credential.helper`, supplies it through Git config files, which the hook entry leaves alone: for example the service user's global config, or `GIT_CONFIG_GLOBAL` in its service environment.
@@ -136,8 +137,10 @@ The submit primitive reports `empty` when T3 accepts the message, `unconfirmed` 
 The direct-submit plane of `fm-send.sh` reports `unconfirmed` as exit 3 with any reply expectation kept armed; an inbox steer's exit status still follows the [durable-record contract](../bin/fm-send.sh).
 After `unconfirmed`, an unmarked send can reuse its request id by resending identical text within that window; a marked secondmate request is not resent, because a rerun mints a new reply correlation and so a new message.
 While the logical delivery still holds its id, a retry that fails for any reason other than T3 refusing the send, including an unreachable server, stays `unconfirmed` and keeps that id.
-The away daemon mints a request id for each T3 digest.
-It freezes an unconfirmed digest and retries its exact text under that id, with no expiry, until T3 accepts or refuses it, while events that arrive meanwhile wait for the next digest.
+The away daemon freezes each T3 digest's event snapshot, exact text, and request id before submission.
+Recovery retries that text under the same id, with no expiry, until T3 accepts or refuses it, while events that arrive meanwhile wait for the next digest.
+Once construction completes, snapshot-publication or buffer-consumption failures preserve that identity.
+An interrupted construction without its completed message is discarded before any submission, so an incomplete snapshot cannot become a delivered generation.
 Task completion remains a separate worker status event.
 Escape and Ctrl-C are both a `t3_thread_interrupt`; Enter is a no-op and Ctrl-U is unsupported.
 
@@ -250,6 +253,7 @@ If a task's thread no longer reads back, release the task by hand:
 
 1. Archive the task's thread in T3 Code and satisfy the [cleanup proof above](#current-lifecycle-and-safety) before releasing its worktree or home.
 2. For a worker, undo the per-worktree environment with `bin/fm-t3code-codex-env.sh cleanup <worktree>`, then remove `.claude/settings.local.json` and, unless the project tracks it, `CLAUDE.local.md` from the worktree.
+   Before manual file removal, verify the [per-directory harness environment](#per-directory-harness-environment) path ownership checks.
    Skipping this hands the next holder of the slot a hidden `.codex/config.toml` overlay carrying the dead task's environment, and refuses the next T3 Codex spawn there.
    For a secondmate, release its own tasks in this same order, then run `bin/fm-t3code-codex-env.sh cleanup <home>`, remove the keys `FM_T3CODE_ENV_KEYS` lists, and `FM_T3CODE_ENV_KEYS` itself, from the home's `.claude/settings.local.json`, keeping the home's own entries, and remove the `config/t3code-token` symlink before releasing the home.
 3. For a worker, return its slot with `treehouse return --force <worktree>` from its project.
