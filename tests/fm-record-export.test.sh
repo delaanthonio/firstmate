@@ -307,16 +307,16 @@ for change in ("ack", "data-add", "data-remove", "data-replace", "data-write",
     original_add = exporter.add_source
     original_copy = exporter.copy_source
 
-    def add_source(sources, parent_fd, name, relative, label):
-        original_add(sources, parent_fd, name, relative, label)
+    def add_source(sources, parent_fd, name, relative, label, root_fd):
+        original_add(sources, parent_fd, name, relative, label, root_fd)
         if change == "ack" and relative == "state/task.inbox/001.msg" and pending.exists():
             pending.rename(pending.parent / "handled/001.msg")
 
     def copy_source(source, stage_fd):
         global changed
-        original_copy(source, stage_fd)
+        digest = original_copy(source, stage_fd)
         if changed or change == "ack":
-            return
+            return digest
         changed = True
         area, action = change.split("-")
         record = home / ("data/projects.md" if area == "data" else "state/task.status")
@@ -330,6 +330,7 @@ for change in ("ack", "data-add", "data-remove", "data-replace", "data-write",
             replacement.replace(record)
         else:
             record.write_text("changed bytes\n")
+        return digest
 
     with patch.object(exporter, "add_source", add_source), patch.object(exporter, "copy_source", copy_source):
         try:
@@ -424,6 +425,44 @@ write_archive_fixture() {  # <home> <spawn-gen>
   printf 'working: underway\ndone: landed\n' > "$home/state/task-a.status"
   printf 'pending captain text\n' > "$home/state/task-a.inbox/001.msg"
   printf 'handled captain text\n' > "$home/state/task-a.inbox/handled/002.msg"
+}
+
+test_export_bounds_descriptors_for_large_source_sets() {
+  local home export_root index
+  home=$(make_home bounded-descriptors)
+  export_root="$TMP_ROOT/export-bounded-descriptors"
+  printf '%s\n' "$export_root" > "$home/config/record-export-root"
+  write_archive_fixture "$home" bounded-generation
+  mkdir -p "$home/data/task-a"
+  for index in $(seq 3 402); do
+    printf 'message %s\n' "$index" > "$home/state/task-a.inbox/handled/$index.msg"
+    printf 'data %s\n' "$index" > "$home/data/task-a/status.$index.log"
+  done
+  ( ulimit -n 128 && run_export "$home" sync ) > "$home/sync.out" 2> "$home/sync.err" \
+    || fail "live export exceeded its descriptor budget: $(cat "$home/sync.err")"
+  ( ulimit -n 128 && run_export "$home" archive-task task-a ) > "$home/archive.out" 2> "$home/archive.err" \
+    || fail "archive export exceeded its descriptor budget: $(cat "$home/archive.err")"
+  ( ulimit -n 128 && run_export "$home" archive-task task-a ) > "$home/retry.out" 2> "$home/retry.err" \
+    || fail "archive retry exceeded its descriptor budget: $(cat "$home/retry.err")"
+  python3 - "$home" "$export_root" <<'PYTEST' || fail "bounded-descriptor export omitted or changed records"
+import hashlib
+import json
+from pathlib import Path
+import sys
+home, root = map(Path, sys.argv[1:])
+archive = root / "archive/task-a/bounded-generation"
+manifest = json.loads((archive / "manifest.v1.json").read_text())
+assert len(manifest["files"]) == 404
+for entry in manifest["files"]:
+    expected = (home / entry["source"]).read_bytes()
+    assert (root / "live" / entry["source"]).read_bytes() == expected
+    assert (archive / entry["archive"]).read_bytes() == expected
+    assert entry["bytes"] == len(expected)
+    assert entry["sha256"] == hashlib.sha256(expected).hexdigest()
+for record in (home / "data/task-a").iterdir():
+    assert (root / "live/data/task-a" / record.name).read_bytes() == record.read_bytes()
+PYTEST
+  pass "record export bounds descriptors across large live snapshots, archives, and committed retries"
 }
 
 test_archive_commits_manifest_last_with_integrity_metadata() {
@@ -942,6 +981,7 @@ test_sync_retracts_stale_records_as_one_live_snapshot
 test_sync_revalidates_live_sources_before_publication
 test_sync_refuses_unknown_managed_artifacts_before_publication
 test_sync_detects_destination_parent_replacement
+test_export_bounds_descriptors_for_large_source_sets
 test_archive_commits_manifest_last_with_integrity_metadata
 test_archive_is_off_before_any_state_read_when_config_is_absent
 test_archive_retry_is_idempotent_and_generations_never_overwrite
