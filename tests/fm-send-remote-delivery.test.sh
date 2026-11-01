@@ -225,7 +225,7 @@ test_remote_large_steer_uses_stdin() {
   fb=$(make_stubs "$dir"); ssh_log="$dir/ssh.log"; : > "$ssh_log"
   rhome=$(setup_remote_secondmate_home remote-large)
   home=$(setup_remote_parent_home remote-large "$rhome")
-  python3 - "$dir/expected" <<'PY'
+  python3 - "$dir/expected" <<'PY' || fail "could not generate the large remote steer fixture"
 import sys
 with open(sys.argv[1], "w") as f:
     f.write("large steer " + "x" * 46000)
@@ -237,7 +237,7 @@ PY
   expect_code 0 "$rc" "a large remote steer must be delivered through the remote stdin channel: $(cat "$dir/err")"
   rec=$(remote_inbox_records "$rhome" | head -1)
   [ -n "$rec" ] || fail "the large remote steer must land in the remote steering inbox"
-  python3 - "$dir/expected" "$ssh_log.stdin.1" "$rec" <<'PY'
+  python3 - "$dir/expected" "$ssh_log.stdin.1" "$rec" <<'PY' || fail "large remote steer payload validation failed"
 import sys
 expected = open(sys.argv[1]).read()
 stdin_payload = open(sys.argv[2]).read()

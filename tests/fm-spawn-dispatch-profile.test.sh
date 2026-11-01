@@ -3097,6 +3097,7 @@ test_codex_permission_modes() {
         "${args[@]}" --model gpt-5 --effort high)
       status=$?
       expect_code 0 "$status" "Codex $kind spawn under $mode should succeed: $out"
+      assert_present "$FAKEBIN_DIR/.spawn-window" "successful Codex spawn did not create its endpoint artifact"
       launch=$(cat "$LAUNCH_LOG")
       flags="codex --model 'gpt-5' -c 'model_reasoning_effort=\"high\"' "
       if [ "$mode" = restricted ]; then
@@ -3159,7 +3160,7 @@ test_codex_permission_invalid_refuses_before_mutation() {
       assert_contains "$out" 'config/codex-permission-mode' "refusal must identify the setting"
       assert_contains "$out" 'bypass or restricted' "refusal must identify accepted values"
       [ ! -s "$LAUNCH_LOG" ] || fail "invalid config launched an agent"
-      [ ! -e "$FAKEBIN_DIR/.spawn-windows" ] || fail "invalid config created an endpoint"
+      [ ! -e "$FAKEBIN_DIR/.spawn-window" ] || fail "invalid config created an endpoint"
       [ "$(ls -a "$HOME_DIR/state")" = "$before" ] || fail "invalid config mutated state"
       if [ "$kind" = relaunch ]; then
         [ "$(cat "$HOME_DIR/state/$id.meta")" = 'preserve existing task metadata' ] \

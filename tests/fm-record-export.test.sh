@@ -574,6 +574,21 @@ test_archive_refuses_a_corrupt_committed_manifest() {
   pass "teardown archive rejects a corrupt committed manifest"
 }
 
+archive_fixture_worker_pid() {
+  local stage=$1 parent=$2 worker ancestor
+  worker=${stage##*/}
+  worker=${worker#.archive-stage-}
+  worker=${worker%%-*}
+  case "$worker" in ''|*[!0-9]*) return 1 ;; esac
+  ancestor=$worker
+  while [ "$ancestor" -gt 1 ] && [ "$ancestor" != "$parent" ]; do
+    ancestor=$(ps -o ppid= -p "$ancestor" 2>/dev/null | tr -d '[:space:]')
+    case "$ancestor" in ''|*[!0-9]*) return 1 ;; esac
+  done
+  [ "$ancestor" = "$parent" ] || return 1
+  printf '%s\n' "$worker"
+}
+
 test_archive_detects_a_source_change_during_capture() {
   local home export_root archive outside archive_pid worker_pid rc=0 wait_count=0 stage=
   home=$(make_home archive-source-race)
@@ -595,14 +610,20 @@ test_archive_detects_a_source_change_during_capture() {
     sleep 0.01
   done
   [ -n "$stage" ] || { wait "$archive_pid" || true; fail "archive source-race fixture never observed staging"; }
-  worker_pid=$(ps -eo pid=,args= | awk -v pattern="$ROOT/bin/fm-record-export.py archive-task task-a" \
-    'index($0, pattern) { print $1; exit }')
-  [ -n "$worker_pid" ] || { wait "$archive_pid" || true; fail "archive source-race fixture could not identify the filesystem worker"; }
-  kill -STOP "$worker_pid"
-  rm "$home/state/task-a.status"
-  ln -s "$outside/sentinel" "$home/state/task-a.status"
-  kill -CONT "$worker_pid"
+  if archive_fixture_worker_pid "$export_root/.archive-stage-$$-foreign" "$archive_pid" >/dev/null; then
+    wait "$archive_pid" || true
+    fail "archive fixture accepted a process outside its invocation"
+  fi
+  worker_pid=$(archive_fixture_worker_pid "$stage" "$archive_pid") \
+    || { wait "$archive_pid" || true; fail "archive source-race fixture could not identify its filesystem worker"; }
+  kill -STOP "$worker_pid" || { wait "$archive_pid" || true; fail "could not stop the fixture archive worker"; }
+  local mutation_rc=0
+  rm "$home/state/task-a.status" && ln -s "$outside/sentinel" "$home/state/task-a.status" || mutation_rc=$?
+  worker_pid=$(archive_fixture_worker_pid "$stage" "$archive_pid") \
+    || fail "archive worker left its fixture ancestry before resume"
+  kill -CONT "$worker_pid" || fail "could not resume the fixture archive worker"
   wait "$archive_pid" || rc=$?
+  [ "$mutation_rc" -eq 0 ] || fail "archive source-race mutation failed"
   [ "$rc" -ne 0 ] || fail "archive committed while a source changed during capture"
   assert_absent "$archive/manifest.v1.json" "source race committed a manifest"
   assert_present "$home/state/task-a.meta" "source race removed live metadata"

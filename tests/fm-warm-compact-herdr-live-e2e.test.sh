@@ -247,12 +247,25 @@ acked() {
   local t
   t=$(transcript)
   [ -n "$t" ] || return 1
-  jq -r --argjson since "$after" '
-    select(.type == "assistant")
-    | (.timestamp | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601) as $at
-    | select($at >= $since)
-    | .message.content[]? | select(.type == "tool_use" and .name == "Bash") | .input.command' "$t" 2>/dev/null \
-    | grep -q 'fm-wake-drain.sh --ack-through [0-9]* --recovery-generation'
+  jq -se --argjson since "$after" '
+    def recent: (.timestamp | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601) >= $since;
+    . as $events
+    | any(range(0; length); . as $i
+        | $events[$i] | select(.type == "assistant" and recent)
+        | .message.content[]?
+        | select(.type == "tool_use" and .name == "Bash")
+        | select(.input.command | test("fm-wake-drain.sh --ack-through [0-9]+ --recovery-generation"))
+        | .id as $ack_id
+        | any($events[0:$i][]; select(.type == "user" and recent)
+            | .message.content[]?
+            | select(.type == "tool_result" and (.is_error // false) == false)
+            | .content | tostring | contains("lab-after-compact"))
+          and any($events[$i + 1:][]; select(.type == "user")
+            | .message.content[]?
+            | .type == "tool_result" and .tool_use_id == $ack_id and (.is_error // false) == false))
+  ' "$t" >/dev/null 2>&1 || return 1
+  [ -f "$FM/state/.wake-queue" ] || return 1
+  awk 'index($0, "lab-after-compact") { exit 1 }' "$FM/state/.wake-queue"
 }
 wait_until "$POLLS" acked || fail "the compacted primary never drained and acknowledged the pending wake"$'\n'"$(diagnose)"
 evidence "compacted primary drained and acknowledged the wake queued after compaction"
