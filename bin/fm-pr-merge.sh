@@ -2043,7 +2043,7 @@ case "$PROVIDER" in
       "${merge_args[@]+"${merge_args[@]}"}" "${FM_PR_GITHUB_PR_ARGS[@]+"${FM_PR_GITHUB_PR_ARGS[@]}"}" 2>&1) || merge_status=$?
     if [ "$merge_status" -ne 0 ]; then
       case "$merge_output" in
-        *"part of a stack"*|*"must be merged using the asynchronous merge REST API"*)
+        *"part of a stack"*|*"must be merged using the asynchronous merge REST API"*|*"Auto-merge is not supported for stacked pull requests."*)
           printf 'notice: %s requires GitHub atomic stack merging; retrying with gh stack merge\n' "$URL" >&2
           fm_afk_contract_lock_release || exit 1
           fm_lock_release "$MERGE_CONTROL_LOCK" || exit 1

@@ -842,6 +842,51 @@ test_stack_merge_preserves_method_and_records_outcome() {
   pass "stack fallback delegates atomic merging to gh stack merge with methods, preflight and recorded outcome"
 }
 
+test_stack_auto_merge_refusal_uses_guarded_fallback() {
+  local case_dir scenario rc
+  for scenario in green red; do
+    case_dir=$(make_stack_case "stack-auto-merge-$scenario")
+    printf 'GraphQL: Auto-merge is not supported for stacked pull requests. (enablePullRequestAutoMerge)\n' > "$case_dir/github-merge-output"
+    if [ "$scenario" = red ]; then
+      jq '.statusCheckRollup[0].conclusion = "FAILURE"' "$case_dir/github-member-8.json" > "$case_dir/member.tmp"
+      mv "$case_dir/member.tmp" "$case_dir/github-member-8.json"
+    fi
+    rc=0
+    run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 > "$case_dir/out" 2>&1 || rc=$?
+    grep -q 'pr view https://github.com/example/repo/pull/8 .*statusCheckRollup' "$case_dir/gh.log" || fail "$scenario: stack dependency not verified"
+    if [ "$scenario" = green ]; then
+      [ "$rc" -eq 0 ] || fail "stack auto-merge fallback failed: $(cat "$case_dir/out")"
+      grep -qxF 'stack merge 9 --yes --squash' "$case_dir/gh.log" || fail "stack auto-merge refusal did not invoke extension"
+      [ -f "$case_dir/state/task-x1.pr-poll-merge-notified" ] || fail "stack auto-merge outcome not recorded"
+    else
+      [ "$rc" -ne 0 ] || fail "stack auto-merge fallback accepted red dependency"
+      ! grep -q '^stack merge ' "$case_dir/gh.log" || fail "red dependency reached stack merger"
+      [ ! -f "$case_dir/state/task-x1.pr-poll-merge-notified" ] || fail "red dependency claimed landed"
+    fi
+  done
+  pass "stacked auto-merge refusal uses the guarded fallback and refuses red dependencies"
+}
+
+test_unrelated_auto_merge_errors_do_not_use_stack_fallback() {
+  local case_dir scenario message rc
+  for scenario in disabled unsupported; do
+    case "$scenario" in
+      disabled) message='GraphQL: Auto-merge is not enabled for this repository. (enablePullRequestAutoMerge)' ;;
+      unsupported) message='GraphQL: Auto-merge is not supported for this pull request. (enablePullRequestAutoMerge)' ;;
+    esac
+    case_dir=$(make_stack_case "auto-merge-error-$scenario")
+    printf '%s\n' "$message" > "$case_dir/github-merge-output"
+    rc=0
+    run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 > "$case_dir/out" 2>&1 || rc=$?
+    [ "$rc" -ne 0 ] || fail "$scenario: unrelated auto-merge error accepted"
+    assert_contains "$(cat "$case_dir/out")" "$message" "$scenario: original auto-merge error lost"
+    ! grep -q '^api repos/example/repo/stacks' "$case_dir/gh.log" || fail "$scenario: unrelated error reached stack discovery"
+    ! grep -q '^stack merge ' "$case_dir/gh.log" || fail "$scenario: unrelated error reached stack merger"
+    [ ! -f "$case_dir/state/task-x1.pr-poll-merge-notified" ] || fail "$scenario: unrelated error claimed landed"
+  done
+  pass "unrelated auto-merge errors retain their refusal without attempting stack fallback"
+}
+
 test_stack_collision_is_rechecked_before_dispatch() {
   local case_dir scenario rc
   for scenario in collision unreadable; do
@@ -5378,6 +5423,8 @@ test_allow_no_pipeline_is_attended_only_and_gitlab_only() {
 }
 
 test_stack_merge_preserves_method_and_records_outcome
+test_stack_auto_merge_refusal_uses_guarded_fallback
+test_unrelated_auto_merge_errors_do_not_use_stack_fallback
 test_stack_participant_locks_and_authority
 test_stack_collision_is_rechecked_before_dispatch
 test_stack_failure_before_submission_publishes_nothing
