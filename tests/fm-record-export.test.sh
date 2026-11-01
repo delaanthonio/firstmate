@@ -713,7 +713,7 @@ test_archive_retry_removes_stale_files_from_a_partial_generation() {
 }
 
 test_archive_revalidates_sources_immediately_before_publication() {
-  local home export_root archive archive_pid rc=0 wait_count=0 index
+  local home export_root archive rc=0
   home=$(make_home archive-final-revalidate)
   export_root="$TMP_ROOT/export-archive-final-revalidate"
   printf '%s\n' "$export_root" > "$home/config/record-export-root"
@@ -722,25 +722,43 @@ test_archive_revalidates_sources_immediately_before_publication() {
     || fail "final revalidation setup could not initialize its root: $(cat "$home/sync.err")"
   archive="$export_root/archive/task-a/final-revalidate-generation"
   mkdir -p "$archive/inbox"
-  index=0
-  while [ "$index" -lt 10000 ]; do
-    printf 'stale %s\n' "$index" > "$archive/inbox/$(printf '%05d' "$index").msg"
-    index=$((index + 1))
-  done
+  printf 'stale\n' > "$archive/inbox/001.msg"
+  # Inject at the real filesystem boundary after stale-generation removal.
+  # Directory iteration order and polling speed must not decide whether the
+  # source changes before the final comparison or after publication.
+  FM_HOME="$home" python3 - "$ROOT/bin/fm-record-export.py" "$home" \
+    > "$home/archive.out" 2> "$home/archive.err" <<'PYTEST' || rc=$?
+import os
+from pathlib import Path
+import runpy
+import sys
+from unittest.mock import patch
 
-  run_export "$home" archive-task task-a > "$home/archive.out" 2> "$home/archive.err" &
-  archive_pid=$!
-  while [ -e "$archive/inbox/00000.msg" ]; do
-    kill -0 "$archive_pid" 2>/dev/null || break
-    wait_count=$((wait_count + 1))
-    [ "$wait_count" -le 1000 ] || break
-    sleep 0.01
-  done
-  [ ! -e "$archive/inbox/00000.msg" ] \
-    || { wait "$archive_pid" || true; fail "archive did not begin replacing its stale partial generation"; }
-  printf 'changed after final comparison\n' >> "$home/state/task-a.status"
-  wait "$archive_pid" || rc=$?
+script, home = sys.argv[1:]
+remove = os.rmdir
+injected = False
+
+def remove_and_change_source(path, *args, **kwargs):
+    global injected
+    result = remove(path, *args, **kwargs)
+    if path == "final-revalidate-generation":
+        with (Path(home) / "state/task-a.status").open("a") as source:
+            source.write("changed during stale-generation replacement\n")
+        (Path(home) / "source-change-injected").touch()
+        injected = True
+    return result
+
+sys.argv = [script, "archive-task", "task-a"]
+try:
+    with patch("os.rmdir", side_effect=remove_and_change_source):
+        runpy.run_path(script, run_name="__main__")
+finally:
+    assert injected, "archive never reached stale-generation replacement"
+PYTEST
+  assert_present "$home/source-change-injected" "archive never reached stale-generation replacement"
   [ "$rc" -ne 0 ] || fail "archive committed after a source changed during stale-generation replacement"
+  assert_grep 'record export source changed during archive capture' "$home/archive.err" \
+    "archive must refuse because the source changed, rather than an unrelated failure"
   assert_absent "$archive/manifest.v1.json" "archive committed a manifest after its final source comparison"
   assert_present "$home/state/task-a.meta" "final comparison race removed live metadata"
   pass "teardown archive revalidates sources immediately before publication"
