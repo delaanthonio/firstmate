@@ -27,17 +27,6 @@ set -u
 
 TMP_ROOT=$(fm_test_tmproot fm-watch-triage-tests)
 
-# Wait up to <limit> 0.1s ticks while <pid> stays alive; 0 if still alive, 1 if it died.
-wait_live() {
-  local pid=$1 limit=${2:-30} i=0
-  while [ "$i" -lt "$limit" ]; do
-    kill -0 "$pid" 2>/dev/null || return 1
-    sleep 0.1
-    i=$((i + 1))
-  done
-  return 0
-}
-
 # Prime <file>'s .seen-* suppressor to its CURRENT signature, so the per-poll
 # no-verb signal scan (which watches every *.turn-ended for a size:mtime change)
 # treats a just-created or just-backdated turn-ended marker as already seen.

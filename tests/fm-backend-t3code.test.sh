@@ -506,7 +506,7 @@ test_capture_renders_activity_and_status() {
   out=$(t3_run 'fm_backend_t3code_capture thread-live 1')
   [ "$out" = 't3code: status=running run=run-1' ] || fail "capture must honour the line bound, got '$out'"
   read=$(t3_log_line_of 'r.tool === "t3_thread_read" && r.arguments.view === "activity"')
-  [ -n "$read" ] || fail "capture must read the activity view"
+  [ "$read" -gt 0 ] || fail "capture must read the activity view"
   # T3 pages oldest-first, so a thread longer than one page must still show its newest items.
   t3_fake_set 'w.threads["thread-live"].items = Array.from({ length: 250 }, (_, i) => ({ type: "assistant_message", status: "completed", text: `item ${i}` }));'
   out=$(t3_run 'fm_backend_t3code_capture thread-live 3')

@@ -235,7 +235,9 @@ test_engine_conversation_the_next_turn_would_not_resume_is_not_compacted() {
     FM_TEST_SUPERVISION_HOST_CLOCK="$home/park-clock" start_host "$home"
   wait_until 150 watcher_live "$home" || fail "warm-compact-stale: no watcher started"
   seed_idle_engine_record "$home" 600
-  sed -i 's/^model=.*/model=another-model/' "$home/state/.supervision-host-engine"
+  sed 's/^model=.*/model=another-model/' "$home/state/.supervision-host-engine" > "$home/state/.supervision-host-engine.tmp" \
+    && mv "$home/state/.supervision-host-engine.tmp" "$home/state/.supervision-host-engine" \
+    || fail "could not change the fixture engine model"
   echo 10 > "$home/park-clock"
   sleep 3
   [ "$(compact_calls "$home")" = 0 ] || fail "warm-compact-stale: compacted a conversation the next turn would not resume"
