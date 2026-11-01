@@ -1263,13 +1263,15 @@ test_wedge_cap_releases_after_declared_wait() {
 
   # The crew declares an external wait, so the pane is absorbed on the long
   # pause cadence - the wedge episode it was in ends there, not on the busy
-  # branch the previous case exercises.
+  # branch the previous case exercises. A shell-only endpoint proves that no
+  # live agent is waiting on an interactive decision gate.
   export FM_FAKE_CREW_STATE='state: paused · source: status-log · holding for the upstream tool release'
   printf 'paused: holding for the upstream tool release\n' > "$statusf"
   mark_status_seen "$state" "$statusf"
   : > "$out"
   PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" \
+    FM_FAKE_TMUX_CURRENT_COMMAND=bash \
     FM_STALE_ESCALATE_SECS=999 FM_PAUSE_RESURFACE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 FM_WEDGE_MAX_ESCALATIONS=$max \
     "$WATCH" > "$out" &

@@ -1141,28 +1141,28 @@ test_opencode1_without_effort_keeps_permission_only_config() {
 }
 
 test_raw_opencode_probe_uses_selected_runner() {
-  local rec id out rc version other raw runner plugin result form
-  for version in 1.18.32 2.0.21; do
+  local rec id out rc runner_version other raw runner plugin result form
+  for runner_version in 1.18.32 2.0.21; do
     for form in absolute relative environment; do
-      id="raw-oc-${version%%.*}-$form"
+      id="raw-oc-${runner_version%%.*}-$form"
       rec=$(make_spawn_case "$id" opencode "$id")
       read_case_record "$rec"
       mkdir -p "$CASE_DIR/custom"
       runner="$CASE_DIR/custom/opencode"
       cat > "$runner" <<RUNNER
 #!/usr/bin/env bash
-[ "\${1:-}" != --version ] || printf '%s\n' "$version"
+[ "\${1:-}" != --version ] || printf '%s\n' "$runner_version"
 RUNNER
       chmod +x "$runner"
       raw=$runner
       [ "$form" != relative ] || raw=../custom/opencode
       [ "$form" != environment ] || raw="PATH=$CASE_DIR/custom:\$PATH opencode"
       other=1.18.32
-      [ "$version" != 1.18.32 ] || other=2.0.21
+      [ "$runner_version" != 1.18.32 ] || other=2.0.21
       out=$(FM_TEST_OPENCODE_VERSION="$other" run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
         "$id" "$PROJ_DIR" "$raw --standalone --prompt __BRIEF__"); rc=$?
       expect_code 0 "$rc" "raw OpenCode spawn failed: $out"
-      assert_grep "opencode_version=$version" "$HOME_DIR/state/$id.meta" "raw runner version must control metadata"
+      assert_grep "opencode_version=$runner_version" "$HOME_DIR/state/$id.meta" "raw runner version must control metadata"
       assert_grep "$raw --standalone --prompt" "$LAUNCH_LOG" "raw launch must preserve the selected runner"
       plugin="$WT_DIR/.opencode/plugins/fm-busy-state.js"
       node --input-type=module - "$plugin" <<'JS' || fail "generated raw-runner plugin failed"
@@ -1176,9 +1176,9 @@ for (const event of [
 ]) await hooks.event({event});
 JS
       result=$(. "$ROOT/bin/fm-busy-lib.sh"; fm_busy_classify tmux fake:w opencode "$id" "$HOME_DIR/state")
-      case "$version:$result" in
+      case "$runner_version:$result" in
         1.*:'idle opencode-plugin'|2.*:'busy opencode-plugin') ;;
-        *) fail "raw runner plugin selected the wrong event contract: $version $result" ;;
+        *) fail "raw runner plugin selected the wrong event contract: $runner_version $result" ;;
       esac
     done
   done
@@ -1612,22 +1612,22 @@ test_droid_observes_default_model_without_pinning_it() {
     mkdir -p "$HOME_DIR/user-home/.factory" "$WT_DIR/.factory"
     printf '%s\n' '{"sessionDefaultSettings":{"model":"glm-5.3-flash"},"secret":"not-for-task-state"}' \
       > "$HOME_DIR/user-home/.factory/settings.json"
-    expected=glm-5.3-flash
+    expected="glm-5.3-flash"
     case "$scenario" in
       local)
         printf '%s\n' '{"sessionDefaultSettings":{"model":"custom:local-default"}}' \
           > "$HOME_DIR/user-home/.factory/settings.local.json"
-        expected=custom:local-default ;;
+        expected="custom:local-default" ;;
       project)
         printf '.factory/settings.local.json\n' >> "$PROJ_DIR/.git/info/exclude"
         printf '%s\n' '{"sessionDefaultSettings":{"model":"project-default"}}' \
           > "$WT_DIR/.factory/settings.local.json"
-        expected=project-default ;;
-      absent) rm "$HOME_DIR/user-home/.factory/settings.json"; expected=catalog-model ;;
+        expected="project-default" ;;
+      absent) rm "$HOME_DIR/user-home/.factory/settings.json"; expected="catalog-model" ;;
       unknown)
         rm "$HOME_DIR/user-home/.factory/settings.json"
         touch "$FAKEBIN_DIR/droid-no-catalog"
-        expected=unknown-at-spawn ;;
+        expected="unknown-at-spawn" ;;
       invalid) printf '%s\n' '{bad json' > "$HOME_DIR/user-home/.factory/settings.json" ;;
     esac
     if [ "$scenario" = sentinel ]; then

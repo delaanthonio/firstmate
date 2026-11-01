@@ -507,11 +507,11 @@ SH
           {scope:"all_models", status:"known", effectivePercentRemaining:50, runway:{status:$runway}}
         ]}};
       {schemaVersion:6, providers:
-        ([row("claude"; "work"; "exhausted_now"), row("claude"; "default"; "through_reset")] |
+        (([row("claude"; "work"; "exhausted_now"), row("claude"; "default"; "through_reset")] |
          if $order == "default-first" then reverse
          elif $order == "unmatched" then [.[] | select(.accountKey != "default")]
          elif $order == "empty" then []
-         else . end) + [row("codex"; "default"; "exhausted_now")]}
+         else . end) + [row("codex"; "default"; "exhausted_now")])}
     ' > "$fakebin/quota.json" || fail "could not generate schema-6 quota fixture"
     for mode in json publish; do
       if [ "$mode" = json ]; then

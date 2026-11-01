@@ -819,6 +819,45 @@ unit_failed_recovery_preserves_readiness_mutations() {
   rm -rf "$staged" "$cleared"
 }
 
+unit_failed_native_recovery_preserves_delivery_mutations() {
+  local st mutation artifact
+  for mutation in staged cleared; do
+    st=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-native-recovery.XXXXXX")
+    mkdir -p "$st/state"
+    printf 'original-away-epoch\n' > "$st/state/.afk"
+    for artifact in .subsuper-escalations .subsuper-escalations.since .subsuper-inject-wedged .subsuper-unknown-acked .subsuper-reported-stale-fixture; do
+      printf 'original\n' > "$st/state/$artifact"
+    done
+    enter_posture "$st" || fail "native recovery: could not enter fixture posture"
+    FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" bash -c '
+      . "$1"
+      mutation=$2
+      fm_afk_launch_record_write() {
+        local artifact
+        for artifact in .subsuper-escalations .subsuper-escalations.since .subsuper-inject-wedged .subsuper-unknown-acked .subsuper-reported-stale-fixture; do
+          if [ "$mutation" = staged ]; then
+            printf "newly-staged\n" > "$FM_AFK_LAUNCH_STATE/$artifact"
+          else
+            rm -f "$FM_AFK_LAUNCH_STATE/$artifact"
+          fi
+        done
+        return 1
+      }
+      ! fm_afk_launch_start_native
+    ' _ "$LAUNCH" "$mutation" || fail "native recovery: expected startup failure"
+    [ "$(cat "$st/state/.afk")" = original-away-epoch ] || fail "native recovery: lifecycle changed"
+    for artifact in .subsuper-escalations .subsuper-escalations.since .subsuper-inject-wedged .subsuper-unknown-acked .subsuper-reported-stale-fixture; do
+      if [ "$mutation" = staged ]; then
+        [ "$(cat "$st/state/$artifact")" = newly-staged ] || fail "native recovery restored stale $artifact"
+      else
+        [ ! -e "$st/state/$artifact" ] || fail "native recovery resurrected $artifact"
+      fi
+    done
+    rm -rf "$st"
+  done
+  pass "failed native recovery preserves staged and consumed delivery state"
+}
+
 unit_concurrent_start_serialized() {
   command -v tmux >/dev/null 2>&1 || { echo "skip: tmux not found (concurrent start)"; return 0; }
   local st cap_session cap_pane first second rec count
@@ -2067,6 +2106,7 @@ unit_recovery_rejects_stale_owner_and_retargets_primary
 unit_failed_start_rolls_back_state
 unit_failed_recovery_rolls_back_state
 unit_failed_recovery_preserves_readiness_mutations
+unit_failed_native_recovery_preserves_delivery_mutations
 unit_concurrent_start_serialized
 unit_lock_initialization_grace
 unit_signal_exits_with_lock_cleanup
