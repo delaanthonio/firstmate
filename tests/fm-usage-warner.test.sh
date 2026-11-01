@@ -513,6 +513,41 @@ test_armed_shim_runs_a_real_check() {
   pass "fm-usage-warner: the armed shim is exactly what the watcher would dispatch"
 }
 
+test_armed_shim_preserves_effective_directories() {
+  local mode home config state fakebin notify_log out scope
+  for mode in absolute relative; do
+    scope="$TMP_ROOT/overrides-$mode 'quoted'"
+    home="$scope/home"
+    config="$scope/custom config"
+    state="$scope/custom state"
+    fakebin="$scope/fakebin"
+    notify_log="$scope/notify.log"
+    mkdir -p "$home/config" "$home/state" "$config" "$state" "$scope/other-cwd"
+    fake_osascript_recorder "$fakebin" "$notify_log"
+    fake_quota_axi "$fakebin" '{"id":"five_hour","percentUsed":92}'
+    printf 'five_hour:95\n' > "$home/config/usage-warner"
+    printf 'five_hour:80\n' > "$config/usage-warner"
+    (
+      cd "$scope" || exit 1
+      if [ "$mode" = relative ]; then
+        home=home; config='custom config'; state='custom state'
+      fi
+      FM_HOME="$home" FM_CONFIG_OVERRIDE="$config" FM_STATE_OVERRIDE="$state" "$WARNER" arm
+    ) > "$scope/arm.out" 2>&1 || fail "override arm failed: $(cat "$scope/arm.out")"
+    FM_STATE_OVERRIDE="$state" bash -c '. "$1/bin/fm-pr-lib.sh"; . "$1/bin/fm-check-lib.sh"; fm_custom_check_registered "$FM_STATE_OVERRIDE" usage-warner' _ "$ROOT" \
+      || fail "override shim was not registered in the selected state directory"
+    out=$(cd "$scope/other-cwd" && env -u FM_HOME -u FM_CONFIG_OVERRIDE -u FM_STATE_OVERRIDE \
+      PATH="$fakebin:$PATH" QUOTA_AXI_ARGV_LOG="$fakebin/.argv-log" "$state/usage-warner.check.sh" </dev/null)
+    assert_contains "$out" "five_hour at 92%" "the shim lost the configured threshold for $mode paths"
+    assert_present "$state/.usage-warner" "the shim lost the selected state directory"
+    assert_absent "$home/state/.usage-warner" "the shim wrote de-duplication into the default state directory"
+    out=$(cd "$scope/other-cwd" && env -u FM_HOME -u FM_CONFIG_OVERRIDE -u FM_STATE_OVERRIDE \
+      PATH="$fakebin:$PATH" QUOTA_AXI_ARGV_LOG="$fakebin/.argv-log" "$state/usage-warner.check.sh" </dev/null)
+    [ -z "$out" ] || fail "the override shim did not retain its de-duplication state: $out"
+  done
+  pass "fm-usage-warner: armed shims retain absolute and relative config and state selections"
+}
+
 test_check_repeated_directive_reports_once() {
   local home fakebin notify_log out
   home=$(make_home repeated-directive)
@@ -592,6 +627,7 @@ if [ "$(uname)" = Darwin ]; then
   test_arm_writes_and_binds_the_check_and_disarm_removes_it
   test_arm_refuses_a_symlink_at_the_shim_path
   test_armed_shim_runs_a_real_check
+  test_armed_shim_preserves_effective_directories
 else
   printf 'ok - fm-usage-warner: shim-writing arm cases are macOS-only; skipping on %s\n' "$(uname)"
 fi

@@ -2415,12 +2415,13 @@ test_push_wait_escalates_pending_question_once() {
   pass "t3code push wait: a pending question wakes the supervisor once with how to answer it, approvals are named apart, and answering clears it"
 }
 
+run_answer() { FM_HOME="$CASE_DIR/home" FM_STATE_OVERRIDE="$CTRL_STATE" FM_CONFIG_OVERRIDE="$CONFIG" "$ROOT/bin/fm-t3-answer.sh" "$@" 2>&1; }
+
 test_answer_script_reads_and_answers_questions() {
   local id thread=mcp:7e8f9a0b-2c3d-4e4f-9a5b-456789abcdef out rc
   id=$(t3_uid t3answer1)
   make_t3_control_task answer "$id" "$thread" running
   FM_T3_T="$thread" t3_world_set 'w.threads[process.env.FM_T3_T].runtimeRequests = [{ id: "req-q1", kind: "user_input", status: "pending", questions: [{ id: "q1", header: "h", question: "Ship it?", options: [{ label: "yes", description: "y" }] }] }]'
-  run_answer() { FM_HOME="$CASE_DIR/home" FM_STATE_OVERRIDE="$CTRL_STATE" FM_CONFIG_OVERRIDE="$CONFIG" "$ROOT/bin/fm-t3-answer.sh" "$@" 2>&1; }
   out=$(run_answer "$id"); rc=$?
   expect_code 0 "$rc" "listing pending questions: $out"
   assert_contains "$out" '"requestId":"req-q1"' "the question id is listed"
@@ -2433,6 +2434,34 @@ test_answer_script_reads_and_answers_questions() {
   out=$(run_answer tmuxtask); rc=$?
   expect_code 1 "$rc" "a non-T3 task has no pending requests to answer"
   pass "fm-t3-answer.sh: lists a T3 worker's pending questions and answers one by request id"
+}
+
+test_answer_script_respects_task_leases() {
+  local id thread=mcp:7e8f9a0b-2c3d-4e4f-9a5b-456789abcdef out rc holder caller
+  id=$(t3_uid t3answerlease)
+  make_t3_control_task answer-lease "$id" "$thread" running
+  printf '%s\n' "$$" > "$CTRL_STATE/.lock"
+  for holder in branch main; do
+    if [ "$holder" = branch ]; then caller=main; else caller=branch; fi
+    printf '%s\t%s\t%s\n' "$holder" "$$" "$(date +%s)" > "$CTRL_STATE/.lease-$id"
+    FM_T3_T="$thread" t3_world_set 'w.threads[process.env.FM_T3_T].runtimeRequests = [{ id: "req-q1", kind: "user_input", status: "pending", questions: [{ id: "q1", question: "Ship it?", options: [] }] }]'
+    : > "$T3_FAKE_LOG"
+    out=$(FM_SUPERVISION_ACTOR="$caller" run_answer "$id"); rc=$?
+    expect_code 0 "$rc" "listing while the other actor owns the task: $out"
+    assert_contains "$out" '"requestId":"req-q1"' "read-only listing must remain available"
+    out=$(FM_SUPERVISION_ACTOR="$caller" run_answer "$id" req-q1 '{"q1":"yes"}'); rc=$?
+    expect_code 6 "$rc" "another actor's answer must be refused: $out"
+    [ -z "$(t3_fake_calls t3_pending_request_respond)" ] || fail "lease refusal sent an answer"
+    out=$(FM_SUPERVISION_ACTOR="$holder" run_answer "$id" req-q1 '{malformed'); rc=$?
+    [ "$rc" -ne 0 ] || fail "malformed answers unexpectedly succeeded"
+    assert_absent "$CTRL_STATE/.fm-lease-command.lock" "failed answering did not release the lease guard"
+    out=$(FM_SUPERVISION_ACTOR="$holder" run_answer "$id" req-q1 '{"q1":"yes"}'); rc=$?
+    expect_code 0 "$rc" "the lease owner must be able to answer: $out"
+    [ "$(t3_fake_calls t3_pending_request_respond)" = "{\"threadId\":\"$thread\",\"requestId\":\"req-q1\",\"answers\":{\"q1\":\"yes\"}}" ] \
+      || fail "the lease owner did not send exactly one answer"
+    assert_absent "$CTRL_STATE/.fm-lease-command.lock" "answering did not release the lease guard"
+  done
+  pass "fm-t3-answer.sh honors both actors' task leases while preserving read-only listing"
 }
 
 # A secondmate whose last T3 run failed still has a readable thread; recovery
@@ -2768,6 +2797,7 @@ test_lost_send_reply_to_secondmate_names_armed_correlation
 test_status_table
 test_push_wait_escalates_pending_question_once
 test_answer_script_reads_and_answers_questions
+test_answer_script_respects_task_leases
 test_failed_t3_secondmate_is_resumed_in_place
 test_t3_secondmate_missing_thread_reproves_close_before_replacement
 test_daemon_unconfirmed_digest_is_frozen_and_retried_verbatim
