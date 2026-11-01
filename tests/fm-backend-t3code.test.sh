@@ -1897,17 +1897,33 @@ test_spawn_refuses_raw_launch_command() {
 }
 
 test_spawn_abort_returns_lease_only_after_archive() {  # <ok|fail>
-  local archive=$1 id out rc return_line
+  local archive=$1 id out rc return_line fb real_mkdir
   id=$(t3_uid "t3abortz$archive")
   t3_case "spawn-abort-$archive"
   [ "$archive" = ok ] || t3_world_set 'w.failTools = { t3_thread_organize: { code: "boom", message: "archive failed" } }'
-  # A regular file where the Claude hooks go aborts the spawn after the
-  # thread exists and before its record is published.
+  # Fail hook-directory creation after the thread exists, before publication.
+  # An unsafe .claude parent is deliberately kept leased by the ownership
+  # guard; it cannot stand in for an otherwise clean, returnable slot.
   t3_worker_setup "$id"
-  printf 'blocker\n' > "$WORKER_WT/.claude"
-  printf '.claude\n' >> "$(git -C "$WORKER_WT" rev-parse --git-path info/exclude)"
-  out=$(t3_worker_spawn "$id" claude --model claude-sonnet-5); rc=$?
+  real_mkdir=$(command -v mkdir)
+  fb=$(make_treehouse_fakebin "$CASE_DIR")
+  cat > "$fb/mkdir" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  if [ "$arg" = "$FM_T3_ABORT_MKDIR" ]; then
+    printf 'injected hook-directory creation failure\n' >&2
+    : > "$FM_T3_ABORT_MARKER"
+    exit 1
+  fi
+done
+exec "$FM_T3_REAL_MKDIR" "$@"
+SH
+  chmod +x "$fb/mkdir"
+  out=$(FM_T3_ABORT_MKDIR="$WORKER_WT/.claude" FM_T3_ABORT_MARKER="$CASE_DIR/abort-injected" \
+    FM_T3_REAL_MKDIR="$real_mkdir" t3_worker_spawn "$id" claude --model claude-sonnet-5); rc=$?
   [ "$rc" -ne 0 ] || fail "the blocked spawn should abort"$'\n'"$out"
+  assert_present "$CASE_DIR/abort-injected" "spawn must reach the injected filesystem failure"
+  assert_contains "$out" "injected hook-directory creation failure" "the abort must name the injected failure"
   return_line=$(t3_log_line_of 'r.tool === "treehouse" && r.args.indexOf("return --force") === 0')
   if [ "$archive" = ok ]; then
     [ "$(t3_dispatch_types)" = "t3_thread_launch t3_thread_organize" ] || fail "an abort must archive the idle thread, got '$(t3_dispatch_types)'"
