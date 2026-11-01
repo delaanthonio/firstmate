@@ -125,7 +125,7 @@ git -C "$FM" init -q -b main
 git -C "$FM" add -A >/dev/null
 git -C "$FM" -c user.name=fmtest -c user.email=fmtest@example.invalid commit -q -m lab
 mkdir -p "$FM/state" "$FM/config" "$FM/data"
-: > "$FM/config/supervision-host"
+printf 'claude %s\n' "$MODEL" > "$FM/config/supervision-host"
 printf 'idle-seconds=60\nmin-context-tokens=5000\n' > "$FM/config/warm-compact"
 printf 'project=demo\nwindow=fm-demo\nharness=claude\n' > "$FM/state/demo.meta"
 : > "$FM/state/demo.status"

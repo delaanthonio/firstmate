@@ -182,13 +182,7 @@ read_pr() { # url deadline output-directory -> rest.json gql.json
 }
 
 lookup_branch_pr() { # worktree branch deadline -> url
-  local wt=$1 branch=$2 deadline=$3 left number url remote
-  remote=$(git -C "$wt" remote get-url origin 2>/dev/null) || return 1
-  case "$remote" in
-    git@github.com:*) remote="https://github.com/${remote#git@github.com:}" ;;
-    ssh://git@github.com/*) remote="https://github.com/${remote#ssh://git@github.com/}" ;;
-  esac
-  fm_pr_url_parse "${remote%.git}/pull/1" && [ "$FM_PR_PROVIDER" = github ] || return 1
+  local wt=$1 branch=$2 deadline=$3 left number url
   left=$((deadline - $(date +%s)))
   [ "$left" -gt 0 ] || return 1
   [ "$left" -le 5 ] || left=5
@@ -199,7 +193,7 @@ lookup_branch_pr() { # worktree branch deadline -> url
 }
 
 enroll_new() { # deadline : enroll recorded and branch PRs not yet durably owned
-  local deadline=$1 id wt url branch default cached pid
+  local deadline=$1 id wt url branch default cached pid repository record
   local pids=()
   : > "$TMP/enroll.tsv"
   jq -r --slurpfile health "$TMP/health.json" '
@@ -216,12 +210,18 @@ enroll_new() { # deadline : enroll recorded and branch PRs not yet durably owned
       .prs as $prs | .branches[$id] | select(.branch == $branch) | .url
       | select(($prs[.].final // false) | not)
       | select(. as $url | any($owned[0][]; .url == $url and .final) | not)' "$TMP/health.json")
-    if [ -n "$cached" ]; then
-      printf '%s\t%s\n' "$id" "$cached" >> "$TMP/enroll.tsv"
-      continue
-    fi
     (
-      url=$(lookup_branch_pr "$wt" "$branch" "$deadline") || exit 0
+      if [ -n "$cached" ]; then
+        repository=$(fm_pr_branch_repository "$wt" "$branch") || exit 0
+        record=$(cd "$wt" && gh_read "$deadline" pr view "$cached" \
+          --json url,state,headRefName,headRepository,headRepositoryOwner 2>/dev/null) || exit 0
+        record=$(fm_pr_json_branch_match "[$record]" "$repository" "$branch") || exit 0
+        [ "$(printf '%s\n' "$record" | jq -r '.url')" = "$cached" ] \
+          && [ "$(printf '%s\n' "$record" | jq -r '.state')" = OPEN ] || exit 0
+        url=$cached
+      else
+        url=$(lookup_branch_pr "$wt" "$branch" "$deadline") || exit 0
+      fi
       printf '%s\t%s\t%s\n' "$id" "$url" "$branch" > "$TMP/branches/$id"
     ) &
     pids+=("$!")

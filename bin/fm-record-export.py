@@ -966,11 +966,17 @@ def prune_archives(archive_fd: int) -> None:
                         )
                     except FileNotFoundError:
                         continue
+                    except OSError as exc:
+                        print(
+                            f"warning: could not scan record export archive: archive/{task}/{spawn_gen}: {exc}",
+                            file=sys.stderr,
+                        )
+                        continue
                     if not stat.S_ISREG(manifest_info.st_mode) or manifest_info.st_mtime >= cutoff:
                         continue
                     try:
                         load_and_validate_manifest(generation_fd, task, spawn_gen)
-                    except ExportError:
+                    except (ExportError, OSError):
                         print(
                             f"warning: refusing to prune unsafe record export archive: archive/{task}/{spawn_gen}",
                             file=sys.stderr,

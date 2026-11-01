@@ -168,7 +168,9 @@ case "${1:-}" in
     exit 0
     ;;
   capture-pane)
-    if ! fake_opencode_composer_drawn; then
+    if [ ! -f "$(fake_opencode_plugin)" ]; then
+      printf '%s\n' "${FM_FAKE_PANE_CAPTURE:-}"
+    elif ! fake_opencode_composer_drawn; then
       :
     elif [ -f "$(fake_opencode_plugin).fake-pending" ]; then
       printf '╭──────────────╮\n│ prefilled    │\n╰──────────────╯\n'

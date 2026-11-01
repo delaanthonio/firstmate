@@ -998,6 +998,17 @@ test_no_pr_recorded_discovers_merged_pr_by_branch_allows() {
   pr_head=$(commit_tree_from_wt_head "$case_dir" "$local_head" "no-mistakes auto-fix")
   land_on_origin_main "$case_dir" feature.txt hello
   add_gh_pr_merged_for_head "$case_dir" "$pr_head"
+  git -C "$case_dir/wt" remote add publication git@github.com:example/repo.git
+  git -C "$case_dir/wt" config remote.pushDefault publication
+  mv "$case_dir/fakebin/gh" "$case_dir/fakebin/gh-pr-view"
+  cat > "$case_dir/fakebin/gh" <<'SH'
+#!/usr/bin/env bash
+case "${1:-} ${2:-}" in
+  'pr list') printf '[{"number":7,"headRefName":"fm/task-x1","headRepository":{"name":"repo"},"headRepositoryOwner":{"login":"example"}}]\n' ;;
+  *) exec "$(dirname "$0")/gh-pr-view" "$@" ;;
+esac
+SH
+  chmod +x "$case_dir/fakebin/gh"
   seed_backlog_in_flight "$case_dir"
   # No append_pr_meta_* call: state/task-x1.meta has no pr= or pr_head= line.
 

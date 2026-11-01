@@ -42,6 +42,7 @@ model() {
   cat "$FORGE/pr-$n.json"
 }
 case "$1 $2" in
+  'pr list') exec "$FORGE/../fakebin/branch-list" "$@" ;;
   'api graphql')
     case "$*" in
       *reviewThreads*) printf '[{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}]\n'; exit 0 ;;
@@ -64,6 +65,14 @@ case "$1 $2" in
         else . end' ;;
   'pr view')
     case "$*" in
+      *url,state,headRefName,headRepository,headRepositoryOwner*)
+        n=${3##*/}
+        if [ -f "$FORGE/head-$n.json" ]; then cat "$FORGE/head-$n.json"; else
+          branch=$(git symbolic-ref --short HEAD)
+          jq -n --arg n "$n" --arg branch "$branch" \
+            '{url:("https://github.com/o/r/pull/"+$n),state:"OPEN",headRefName:$branch,
+              headRepository:{name:"r"},headRepositoryOwner:{login:"o"}}'
+        fi ;;
       *headRefOid,reviewDecision*) model "${3##*/}" | jq '{headRefOid:.head,reviewDecision:""}' ;;
       *) printf 'https://github.com/o/r/pull/%s\n' "$3" ;;
     esac ;;
@@ -83,10 +92,8 @@ case "$1 $2" in
   *) printf 'unexpected gh fixture call: %s\n' "$*" >&2; exit 1 ;;
 esac
 SH
-  # gh-axi resolves the open PR for a branch, as fm-teardown.sh's lookup reads it.
-  cat > "$home/fakebin/gh-axi" <<'SH'
+  cat > "$home/fakebin/branch-list" <<'SH'
 #!/usr/bin/env bash
-printf 'gh-axi %s\n' "$*" >> "$FORGE/calls.log"
 branch=
 while [ "$#" -gt 0 ]; do [ "$1" = --head ] && branch=$2; shift; done
 if [ -f "$FORGE/branch-barrier-count" ]; then
@@ -98,12 +105,16 @@ if [ -f "$FORGE/branch-barrier-count" ]; then
   [ "$(find "$FORGE" -name 'branch-arrived-*' | wc -l)" -ge "$(cat "$FORGE/branch-barrier-count")" ] || exit 1
 fi
 file="$FORGE/branch-$(printf '%s' "$branch" | tr '/' '_')"
-if [ -f "$file" ]; then
-  printf '%s\n' 'count: 1' 'pull_requests[1]{number,title,state,author,draft,review}:' "  $(cat "$file"),\"t\",open,author,yes,none"
+if [ -f "$file.json" ]; then
+  cat "$file.json"
+elif [ -f "$file" ]; then
+  jq -n --argjson number "$(cat "$file")" --arg branch "$branch" \
+    '[{number:$number,headRefName:$branch,headRepository:{name:"r"},headRepositoryOwner:{login:"o"}}]'
 else
-  printf '%s\n' 'count: 0' 'pull_requests: []'
+  printf '[]\n'
 fi
 SH
+  printf '#!/bin/sh\nexit 1\n' > "$home/fakebin/gh-axi"
   chmod +x "$home/fakebin/"* "$home/root/bin/fm-guard.sh"
   : > "$home/forge/calls.log"
   printf '%s\n' "$home"
@@ -568,6 +579,81 @@ test_unsupported_provider_has_no_github_reads() {
   pass 'GitLab ownership and branch discovery make no GitHub reads'
 }
 
+test_branch_discovery_checks_exact_publishing_head() {
+  local scenario home wt out records expected
+  for scenario in exact foreign-owner foreign-repo wrong-branch ambiguous mixed full push-url branch-push; do
+    home=$(new_home "identity-$scenario")
+    wt="$home/copy"
+    git init -q -b feature-x "$wt"
+    git -C "$wt" remote add origin git@github.com:o/r.git
+    git -C "$wt" remote add publication git@github.com:mine/source.git
+    case "$scenario" in
+      push-url) git -C "$wt" remote set-url --push origin https://github.com/mine/source.git ;;
+      branch-push) git -C "$wt" config branch.feature-x.pushRemote publication ;;
+      *) git -C "$wt" config remote.pushDefault publication ;;
+    esac
+    task "$home" early "worktree=$wt"
+    records='[{"number":12,"headRefName":"feature-x","headRepository":{"name":"source"},"headRepositoryOwner":{"login":"mine"}}]'
+    expected=yes
+    case "$scenario" in
+      foreign-owner) records=$(printf '%s' "$records" | jq '.[0].headRepositoryOwner.login="someone-else"'); expected=no ;;
+      foreign-repo) records=$(printf '%s' "$records" | jq '.[0].headRepository.name="another-repo"'); expected=no ;;
+      wrong-branch) records=$(printf '%s' "$records" | jq '.[0].headRefName="feature-xy"'); expected=no ;;
+      ambiguous) records=$(printf '%s' "$records" | jq '. + [.[0] | .number=13]'); expected=no ;;
+      mixed) records=$(printf '%s' "$records" | jq '[.[0] | .number=11 | .headRepositoryOwner.login="foreign"] + .') ;;
+      full) records=$(printf '%s' "$records" | jq '[range(100) as $n | .[0] | .number=($n+1)]'); expected=no ;;
+    esac
+    printf '%s\n' "$records" > "$home/forge/branch-feature-x.json"
+    pr "$home" 12 "$HEAD_A" "$BASE_1" false false
+    arm "$home"
+    out=$(pass_once "$home")
+    if [ "$expected" = yes ]; then
+      assert_contains "$out" 'https://github.com/o/r/pull/12 conflicts' "the exact publishing head was not enrolled ($scenario)"
+      jq -e '.branches.early.url == "https://github.com/o/r/pull/12"' "$home/state/pr-health.json" >/dev/null \
+        || fail "the validated PR was not cached ($scenario)"
+    else
+      [ -z "$out" ] || fail "foreign or ambiguous discovery notified ($scenario): $out"
+      jq -e '.branches.early == null and (.prs | length) == 0' "$home/state/pr-health.json" >/dev/null \
+        || fail "foreign or ambiguous discovery was cached ($scenario)"
+      assert_absent "$home/data/early/contributions.json" "foreign or ambiguous discovery was enrolled ($scenario)"
+    fi
+    if grep -q 'pulls/11$' "$home/forge/calls.log"; then fail "a foreign PR was polled ($scenario)"; fi
+  done
+  pass 'branch discovery validates the publishing repository and exact branch and rejects ambiguous heads'
+}
+
+test_cached_branch_revalidates_publishing_identity() {
+  local scenario home wt record out
+  for scenario in exact foreign-owner foreign-repo wrong-branch closed wrong-url; do
+    home=$(new_home "cached-identity-$scenario")
+    wt="$home/copy"
+    git init -q -b feature-x "$wt"
+    git -C "$wt" remote add origin git@github.com:mine/source.git
+    task "$home" early "worktree=$wt"
+    pr "$home" 12 "$HEAD_A" "$BASE_1" false false
+    printf '%s\n' '{"schema":"fm-pr-health.v1","prs":{},"branches":{"early":{"branch":"feature-x","url":"https://github.com/o/r/pull/12"}}}' > "$home/state/pr-health.json"
+    record='{"url":"https://github.com/o/r/pull/12","state":"OPEN","headRefName":"feature-x","headRepository":{"name":"source"},"headRepositoryOwner":{"login":"mine"}}'
+    case "$scenario" in
+      foreign-owner) record=$(printf '%s' "$record" | jq '.headRepositoryOwner.login="foreign"') ;;
+      foreign-repo) record=$(printf '%s' "$record" | jq '.headRepository.name="another-repo"') ;;
+      wrong-branch) record=$(printf '%s' "$record" | jq '.headRefName="other-branch"') ;;
+      closed) record=$(printf '%s' "$record" | jq '.state="CLOSED"') ;;
+      wrong-url) record=$(printf '%s' "$record" | jq '.url="https://github.com/o/r/pull/13"') ;;
+    esac
+    printf '%s\n' "$record" > "$home/forge/head-12.json"
+    arm "$home"
+    out=$(pass_once "$home")
+    if [ "$scenario" = exact ]; then
+      assert_contains "$out" 'pull/12 conflicts' 'a validated cached head was not enrolled'
+    else
+      [ -z "$out" ] || fail "a mismatched cached head notified ($scenario): $out"
+      assert_absent "$home/data/early/contributions.json" "a mismatched cached head was enrolled ($scenario)"
+      if grep -q 'pulls/12$' "$home/forge/calls.log"; then fail "a mismatched cached head was polled ($scenario)"; fi
+    fi
+  done
+  pass 'cached branch ownership is validated before enrollment or polling'
+}
+
 test_checks_on_later_pages() {
   local home
   home=$(new_home paged)
@@ -645,7 +731,8 @@ for test_name in test_unknown_then_dirty_wakes_once test_dirty_again_at_same_com
   test_nothing_prints_while_nothing_changed test_merged_pr_is_not_read_again test_absent_flag_changes_nothing \
   test_watcher_surfaces_one_wake test_failure_once_per_latest_commit_after_cleanup \
   test_all_owned_pr_reads_start_in_one_wave test_checks_on_later_pages \
-  test_unsupported_provider_has_no_github_reads test_final_contributions_are_not_enrolled_again; do
+  test_unsupported_provider_has_no_github_reads test_final_contributions_are_not_enrolled_again \
+  test_branch_discovery_checks_exact_publishing_head test_cached_branch_revalidates_publishing_identity; do
   ( "$test_name" ) || failures=$((failures + 1))
 done
 [ "$failures" -eq 0 ] || fail "$failures PR health regressions"

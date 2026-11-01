@@ -357,19 +357,45 @@ fm_pr_head_valid() {
   [[ "$head" =~ ^[0-9a-f]{40}$|^[0-9a-f]{64}$ ]]
 }
 
-# Resolve the PR number for a task copy's branch via gh-axi, run inside that
-# copy so gh-axi resolves the copy's own repository. Echoes the number on a
+fm_pr_branch_repository() {
+  local wt=$1 branch=$2 remote url
+  remote=$(git -C "$wt" config --get "branch.$branch.pushRemote" 2>/dev/null) \
+    || remote=$(git -C "$wt" config --get remote.pushDefault 2>/dev/null) \
+    || remote=$(git -C "$wt" config --get "branch.$branch.remote" 2>/dev/null) \
+    || remote=origin
+  url=$(git -C "$wt" remote get-url --push --all "$remote" 2>/dev/null) || return 1
+  case "$url" in
+    git@*:*) url=${url#git@}; url="https://${url%%:*}/${url#*:}" ;;
+    ssh://git@*) url="https://${url#ssh://git@}" ;;
+  esac
+  fm_pr_url_parse "${url%.git}/pull/1" && [ "$FM_PR_PROVIDER" = github ] || return 1
+  printf '%s\n' "$FM_PR_PATH"
+}
+
+fm_pr_json_branch_match() {
+  local records=$1 repository=$2 branch=$3
+  printf '%s\n' "$records" | jq -ec --arg repository "$repository" --arg branch "$branch" '
+    select(type == "array" and length < 100)
+    | map(select(.headRefName == $branch
+      and ((.headRepositoryOwner.login // "") | ascii_downcase) == ($repository | split("/")[0] | ascii_downcase)
+      and ((.headRepository.name // "") | ascii_downcase) == ($repository | split("/")[1] | ascii_downcase)))
+    | select(length == 1) | .[0]'
+}
+
+# Resolve the PR number for a task copy's branch via gh, run inside that
+# copy so gh resolves the copy's own repository. Echoes the number on a
 # single match and returns 0; returns non-zero on no match or any lookup
 # failure, so callers treat it as "no PR found" (fail-safe). bin/fm-teardown.sh
 # reads any state for its landed check; bin/fm-pr-health.sh reads open PRs to
 # enroll a branch whose PR was never recorded.
 fm_pr_number_from_branch() {  # <worktree> <branch> [open|closed|all]
-  local wt=$1 branch=$2 state=${3:-all} out n
+  local wt=$1 branch=$2 state=${3:-all} out repository record
   [ -n "$branch" ] && [ "$branch" != HEAD ] || return 1
-  out=$( cd "$wt" && gh-axi pr list --state "$state" --head "$branch" --limit 1 2>/dev/null ) || return 1
-  n=$(printf '%s\n' "$out" | sed -n 's/^[[:space:]]*\([0-9][0-9]*\),.*/\1/p' | head -1)
-  [ -n "$n" ] || return 1
-  printf '%s' "$n"
+  repository=$(fm_pr_branch_repository "$wt" "$branch") || return 1
+  out=$(cd "$wt" && gh pr list --state "$state" --head "$branch" --limit 100 \
+    --json number,headRefName,headRepository,headRepositoryOwner 2>/dev/null) || return 1
+  record=$(fm_pr_json_branch_match "$out" "$repository" "$branch") || return 1
+  printf '%s\n' "$record" | jq -er '.number | select(type == "number" and . > 0 and floor == .)'
 }
 
 # The one reading of a GitHub pull request's draft state. Prints "true" or

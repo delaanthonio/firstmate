@@ -772,6 +772,64 @@ test_archive_refuses_unsafe_sources_and_destinations() {
   pass "teardown archive refuses malformed generations, unknown artifacts, symlinks, and non-regular files"
 }
 
+test_archive_retention_filesystem_errors_do_not_fail_committed_capture() {
+  python3 - "$ROOT/bin/fm-record-export.py" "$TMP_ROOT/retention-errors" <<'PYTEST'
+from contextlib import redirect_stderr
+import importlib.util
+import io
+import json
+import os
+from pathlib import Path
+import sys
+from unittest.mock import patch
+
+spec = importlib.util.spec_from_file_location("record_export", sys.argv[1])
+exporter = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = exporter
+spec.loader.exec_module(exporter)
+base = Path(sys.argv[2])
+for fault in ("stat-permission", "stat-missing", "manifest-permission", "manifest-missing"):
+    home = base / fault / "home"
+    for name in ("config", "data", "state"):
+        (home / name).mkdir(parents=True, exist_ok=True)
+    destination = base / fault / "export"
+    (home / "config/record-export-root").write_text(str(destination) + "\n")
+    args = (str(home), *(str(home / name) for name in ("config", "data", "state")))
+    (home / "state/old.meta").write_text("spawn_gen=old-generation\n")
+    exporter.archive_task(*args, "old")
+    old = destination / "archive/old/old-generation"
+    os.utime(old / "manifest.v1.json", (1, 1))
+    old_identity = exporter.stat_identity(old.stat())
+    (home / "state/current.meta").write_text("spawn_gen=current-generation\n")
+    original_stat = exporter.os.stat
+    original_validate = exporter.load_and_validate_manifest
+    error = PermissionError("fixture retention denied") if fault.endswith("permission") else FileNotFoundError("fixture concurrent removal")
+
+    def stat_record(path, *positional, **kwargs):
+        fd = kwargs.get("dir_fd")
+        if fault.startswith("stat") and path == "manifest.v1.json" and fd is not None and exporter.fd_identity(fd) == old_identity:
+            raise error
+        return original_stat(path, *positional, **kwargs)
+
+    def validate(fd, task, generation):
+        if fault.startswith("manifest") and task == "old":
+            raise error
+        return original_validate(fd, task, generation)
+
+    warnings = io.StringIO()
+    with patch.object(exporter.os, "stat", stat_record), patch.object(exporter, "load_and_validate_manifest", validate), redirect_stderr(warnings):
+        exporter.archive_task(*args, "current")
+        exporter.archive_task(*args, "current")
+    manifest = json.loads((destination / "archive/current/current-generation/manifest.v1.json").read_text())
+    assert manifest["task"] == "current", manifest
+    assert (old / "manifest.v1.json").exists(), fault
+    if fault != "stat-missing":
+        assert "warning:" in warnings.getvalue(), (fault, warnings.getvalue())
+PYTEST
+  [ "$?" -eq 0 ] || fail "retention filesystem errors escaped committed capture"
+  pass "retention filesystem errors warn without failing new or idempotent archive capture"
+}
+
 test_archive_retention_prunes_only_old_committed_generations() {
   local home export_root archive_root rc=0
   home=$(make_home archive-retention)
@@ -867,6 +925,7 @@ test_archive_revalidates_sources_immediately_before_publication
 test_archive_waits_for_the_task_lock_before_enumerating_sources
 test_archive_allows_missing_optional_records
 test_archive_refuses_unsafe_sources_and_destinations
+test_archive_retention_filesystem_errors_do_not_fail_committed_capture
 test_archive_retention_prunes_only_old_committed_generations
 test_export_root_stays_cold_to_firstmate_readers
 
