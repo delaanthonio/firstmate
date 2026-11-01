@@ -276,6 +276,81 @@ test_sync_retracts_stale_records_as_one_live_snapshot() {
   pass "record export sync publishes the exact current allowlist as one live snapshot"
 }
 
+test_sync_revalidates_live_sources_before_publication() {
+  python3 - "$ROOT/bin/fm-record-export.py" "$TMP_ROOT/live-source-changes" <<'PYTEST'
+import importlib.util
+import os
+from pathlib import Path
+import sys
+from unittest.mock import patch
+
+spec = importlib.util.spec_from_file_location("record_export", sys.argv[1])
+exporter = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = exporter
+spec.loader.exec_module(exporter)
+base = Path(sys.argv[2])
+for change in ("ack", "data-add", "data-remove", "data-replace", "data-write",
+               "state-add", "state-remove", "state-replace", "state-write"):
+    home = base / change
+    for directory in ("config", "data", "state/task.inbox/handled"):
+        (home / directory).mkdir(parents=True, exist_ok=True)
+    destination = base / f"{change}-export"
+    (home / "config/record-export-root").write_text(str(destination) + "\n")
+    (home / "data/projects.md").write_text("old data\n")
+    (home / "state/task.status").write_text("old state\n")
+    pending = home / "state/task.inbox/001.msg"
+    pending.write_text("message\n")
+    args = tuple(str(home / name) for name in ("config", "data", "state"))
+    exporter.sync_records(str(home), *args)
+    previous = os.readlink(destination / "live")
+    changed = False
+    original_add = exporter.add_source
+    original_copy = exporter.copy_source
+
+    def add_source(sources, parent_fd, name, relative, label):
+        original_add(sources, parent_fd, name, relative, label)
+        if change == "ack" and relative == "state/task.inbox/001.msg" and pending.exists():
+            pending.rename(pending.parent / "handled/001.msg")
+
+    def copy_source(source, stage_fd):
+        global changed
+        original_copy(source, stage_fd)
+        if changed or change == "ack":
+            return
+        changed = True
+        area, action = change.split("-")
+        record = home / ("data/projects.md" if area == "data" else "state/task.status")
+        if action == "add":
+            (home / ("data/backlog.md" if area == "data" else "state/new.meta")).write_text("new\n")
+        elif action == "remove":
+            record.unlink()
+        elif action == "replace":
+            replacement = home / "replacement"
+            replacement.write_bytes(record.read_bytes())
+            replacement.replace(record)
+        else:
+            record.write_text("changed bytes\n")
+
+    with patch.object(exporter, "add_source", add_source), patch.object(exporter, "copy_source", copy_source):
+        try:
+            exporter.sync_records(str(home), *args)
+        except exporter.ExportError:
+            pass
+        else:
+            raise AssertionError(f"sync published after {change}")
+    assert os.readlink(destination / "live") == previous, change
+    assert (destination / "live/data/projects.md").read_text() == "old data\n", change
+    assert (destination / "live/state/task.status").read_text() == "old state\n", change
+    exporter.sync_records(str(home), *args)
+    assert os.readlink(destination / "live") != previous, change
+    if change == "ack":
+        assert not (destination / "live/state/task.inbox/001.msg").exists()
+        assert (destination / "live/state/task.inbox/handled/001.msg").read_text() == "message\n"
+PYTEST
+  [ "$?" -eq 0 ] || fail "live source revalidation failed"
+  pass "live sync rejects moved, added, removed, replaced, and modified sources before publication"
+}
+
 test_sync_refuses_unknown_managed_artifacts_before_publication() {
   local home export_root rc=0
   home=$(make_home sync-unknown-managed)
@@ -777,6 +852,7 @@ test_sync_requires_a_dedicated_disjoint_single_home_root
 test_sync_does_not_mutate_an_unowned_root_before_rejecting_it
 test_live_publication_staging_cannot_wedge_archives_or_sync
 test_sync_retracts_stale_records_as_one_live_snapshot
+test_sync_revalidates_live_sources_before_publication
 test_sync_refuses_unknown_managed_artifacts_before_publication
 test_sync_detects_destination_parent_replacement
 test_archive_commits_manifest_last_with_integrity_metadata

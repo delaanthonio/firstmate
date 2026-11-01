@@ -12,6 +12,8 @@ set -u
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
+. "$ROOT/bin/fm-timeout-lib.sh"
+
 fm_live_gate opt-in FM_AGY_PRIMARY_LIVE,FM_AGY_PRIMARY_LIVE_E2E agy jq
 
 AGY_BIN=${FM_AGY_BIN:-$(command -v agy 2>/dev/null || true)}
@@ -46,8 +48,8 @@ trap cleanup_all EXIT
 run_agy() {  # <home> <prompt> [env...]
   local home=$1 prompt=$2
   shift 2
-  (cd "$home" && env HOME="$AGY_USER_HOME" FM_HOME="$home" "$@" \
-    timeout 600 "$AGY_BIN" -p "$prompt" ${AGY_MODEL_ARGS[@]+"${AGY_MODEL_ARGS[@]}"} \
+  (cd "$home" && fm_run_timed 600 env HOME="$AGY_USER_HOME" FM_HOME="$home" "$@" \
+    "$AGY_BIN" -p "$prompt" ${AGY_MODEL_ARGS[@]+"${AGY_MODEL_ARGS[@]}"} \
     --effort low --dangerously-skip-permissions 2>&1 || true)
 }
 

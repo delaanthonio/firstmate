@@ -444,6 +444,22 @@ def collect_state_sources(state_fd: int) -> list[Source]:
     return sources
 
 
+def revalidate_live_sources(data_fd: int, state_fd: int, sources: list[Source]) -> None:
+    current = collect_data_sources(data_fd) + collect_state_sources(state_fd)
+    try:
+        originals = sorted(sources, key=lambda source: source.relative)
+        reopened = sorted(current, key=lambda source: source.relative)
+        if [source.relative for source in originals] != [source.relative for source in reopened]:
+            fail("record export source set changed during live capture")
+        for original, live in zip(originals, reopened):
+            if stable_identity(original.initial) != stable_identity(live.initial) \
+                    or stable_identity(original.initial) != stable_identity(os.fstat(original.fd)):
+                fail(f"record export source changed during live capture: {original.relative}")
+    finally:
+        for source in current:
+            source.close()
+
+
 def ensure_relative_directory(root_fd: int, parts: list[str]) -> int:
     fd = os.dup(root_fd)
     try:
@@ -1091,6 +1107,7 @@ def sync_records(home: str, config: str, data: str, state: str) -> None:
                 for source in sources:
                     copy_source(source, stage_fd)
                 os.fsync(stage_fd)
+                revalidate_live_sources(data_fd, state_fd, sources)
             except Exception:
                 os.close(stage_fd)
                 stage_fd = -1

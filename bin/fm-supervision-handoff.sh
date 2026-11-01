@@ -48,8 +48,9 @@ case "$RETRY" in ''|0*|*[!0-9]*) RETRY=300 ;; esac
 fm_session_lock_owned_by_self "$STATE" || exit 1
 [ "$(cat "$PENDING" 2>/dev/null)" = "$TOKEN" ] || exit 1
 SESSION=$(cat "$STATE/.lock" 2>/dev/null) || exit 1
-SESSION_ID=$(fm_pid_identity "$SESSION") || exit 1
+SESSION_ID=$(fm_session_pid_identity "$SESSION") || exit 1
 [ -n "$SESSION_ID" ] || exit 1
+SESSION_LOCK_ID=$(fm_session_lock_recorded_session_id "$STATE" 2>/dev/null || true)
 ARM=
 OUT=
 ARM_RECORDED=0
@@ -76,8 +77,10 @@ trap 'exit 0' TERM INT
 
 session_owned() {
   [ "$(cat "$STATE/.lock" 2>/dev/null)" = "$SESSION" ] \
-    && fm_pid_alive "$SESSION" \
-    && [ "$(fm_pid_identity "$SESSION" 2>/dev/null)" = "$SESSION_ID" ]
+    && [ "$(fm_session_lock_recorded_session_id "$STATE" 2>/dev/null || true)" = "$SESSION_LOCK_ID" ] \
+    && fm_session_lock_owned_by_self "$STATE" \
+    && fm_session_pid_alive "$SESSION" \
+    && [ "$(fm_session_pid_identity "$SESSION" 2>/dev/null)" = "$SESSION_ID" ]
 }
 
 retry_delivery() {

@@ -1899,7 +1899,7 @@ if [ "$count" -eq 2 ]; then
     while [ ! -e "${FM_GO_FILE:?}" ] && [ -e "$0" ]; do [ "$SECONDS" -lt "$deadline" ] || exit 1; sleep 0.02; done
     printf "watcher: started pid=%s (beacon fresh) recovery-generation=fixture-stale\n" "$1"
     while [ ! -e "$FM_STOP_FILE" ] && [ -e "$0" ]; do [ "$SECONDS" -lt "$deadline" ] || exit 1; sleep 0.05; done
-  ' _ "$dead" &
+  ' "$0" "$dead" &
   fm_test_track_child "$!"
   exit 0
 fi
@@ -2397,7 +2397,7 @@ if [ "$count" -eq 1 ]; then
   exit 0
 fi
 if [ "$count" -eq 2 ]; then
-  bash -c 'fm_test_track_child "$$"; deadline=$((SECONDS + 15)); while [ ! -e "$FM_STOP_FILE" ] && [ -e "$0" ]; do [ "$SECONDS" -lt "$deadline" ] || exit 1; sleep 0.05; done' &
+  bash -c 'fm_test_track_child "$$"; deadline=$((SECONDS + 15)); while [ ! -e "$FM_STOP_FILE" ] && [ -e "$0" ]; do [ "$SECONDS" -lt "$deadline" ] || exit 1; sleep 0.05; done' "$0" &
   fm_test_track_child "$!"
   exit 0
 fi
@@ -2499,7 +2499,7 @@ if [ "$count" -eq 2 ]; then
 fi
 printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
 if [ "$count" -eq 3 ]; then
-  bash -c 'fm_test_track_child "$$"; deadline=$((SECONDS + 15)); while [ ! -e "$FM_STOP_FILE" ] && [ -e "$0" ]; do [ "$SECONDS" -lt "$deadline" ] || exit 1; sleep 0.05; done' &
+  bash -c 'fm_test_track_child "$$"; deadline=$((SECONDS + 15)); while [ ! -e "$FM_STOP_FILE" ] && [ -e "$0" ]; do [ "$SECONDS" -lt "$deadline" ] || exit 1; sleep 0.05; done' "$0" &
   fm_test_track_child "$!"
   exit 0
 fi
