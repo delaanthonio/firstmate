@@ -1,0 +1,19 @@
+$ unset guard variables /bin/bash tests/fm-backend-rex-composer-live-e2e.test.sh
+skip: rex CLI not found at $REX_BIN_DIR, on PATH, or at the server bundle path
+skip: live: rex absent
+exit=0
+$ {'FM_REX_COMPOSER_LIVE': '1'} /bin/bash tests/fm-backend-rex-composer-live-e2e.test.sh
+skip: rex CLI not found at $REX_BIN_DIR, on PATH, or at the server bundle path
+not ok - FM_REX_COMPOSER_LIVE was requested but rex is not installed
+exit=1
+$ {'FM_LIVE': '1'} /bin/bash tests/fm-backend-rex-composer-live-e2e.test.sh
+skip: rex CLI not found at $REX_BIN_DIR, on PATH, or at the server bundle path
+not ok - FM_REX_COMPOSER_LIVE was requested but rex is not installed
+exit=1
+$ {'FM_REX_COMPOSER_LIVE': '0', 'FM_LIVE': '1'} /bin/bash tests/fm-backend-rex-composer-live-e2e.test.sh
+skip: live: disabled by FM_REX_COMPOSER_LIVE=0
+exit=0
+$ {'FM_REX_COMPOSER_LIVE': '1', 'FM_LIVE': '0'} /bin/bash tests/fm-backend-rex-composer-live-e2e.test.sh
+skip: rex CLI not found at $REX_BIN_DIR, on PATH, or at the server bundle path
+not ok - FM_REX_COMPOSER_LIVE was requested but rex is not installed
+exit=1

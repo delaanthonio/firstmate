@@ -1,0 +1,59 @@
+{
+  "schema": "fm-lane-capacity.v1",
+  "generated_epoch": 1793571341,
+  "home": "main",
+  "machine": "disposable-lab",
+  "lanes": {
+    "count": 1,
+    "pr_ready": 0,
+    "ids": [
+      "ship-a"
+    ]
+  },
+  "cap": {
+    "target": 3,
+    "status": "ok"
+  },
+  "projects": [],
+  "pressure": {
+    "level": "ok",
+    "why": [],
+    "basis": "beat",
+    "beat_age_s": 1,
+    "avail_gb": 20,
+    "total_gb": 32,
+    "runq_per_core": 0.1,
+    "swap_rate_pps_1m": 0,
+    "mem_stall_pct": null,
+    "load1": 0.5,
+    "on_battery": false,
+    "disks": [
+      {
+        "label": "lab",
+        "free_gb": 500
+      }
+    ]
+  },
+  "uptime_s": 157970,
+  "boot_id": "1793413371",
+  "boots": [
+    1793413371
+  ],
+  "watcher_beat_age_s": null,
+  "reserve": {
+    "flag": "absent",
+    "label": null
+  },
+  "captain": "not-configured",
+  "quota": null,
+  "limits": {
+    "min_avail_gb": 2,
+    "min_disk_gb": 10,
+    "max_load1": 10
+  },
+  "verdict": {
+    "admit": true,
+    "free_lanes": 2,
+    "reasons": []
+  }
+}

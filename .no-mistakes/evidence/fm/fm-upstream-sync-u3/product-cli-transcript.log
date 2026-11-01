@@ -1,0 +1,472 @@
+SCENARIO: capacity counts ships, keeps secondmates outside lane usage, and closes on pressure
+$ fm-capacity.sh
+capacity: free_lanes=unknown reason=no-target lanes=2 target=none secondmates=1 load1=5.59 cores=8 mem_free_pct=52 disk_free_mb=72529
+Lanes: 2 running, no target set (config/lane-capacity absent).
+Secondmates: 1 (hold no lane).
+Host: load 5.59 on 8 cores, memory free 52%, disk free 72529 MB.
+exit: 0
+$ fm-capacity.sh --json
+{
+  "schema": "fm-lane-capacity.v1",
+  "generated_epoch": 1793570936,
+  "home": "main",
+  "machine": "disposable",
+  "lanes": {
+    "count": 2,
+    "pr_ready": 1,
+    "ids": [
+      "scout-b",
+      "ship-a"
+    ]
+  },
+  "cap": {
+    "target": 4,
+    "status": "ok"
+  },
+  "projects": [],
+  "pressure": {
+    "level": "ok",
+    "why": [],
+    "basis": "beat",
+    "beat_age_s": 0,
+    "avail_gb": 16,
+    "total_gb": 32,
+    "runq_per_core": 0.1,
+    "swap_rate_pps_1m": null,
+    "mem_stall_pct": null,
+    "load1": 0.1,
+    "on_battery": false,
+    "disks": [
+      {
+        "label": "disk",
+        "free_gb": 100
+      }
+    ]
+  },
+  "uptime_s": 157565,
+  "boot_id": "1793413371",
+  "boots": [
+    1793413371
+  ],
+  "watcher_beat_age_s": null,
+  "reserve": {
+    "flag": "not-configured",
+    "label": null
+  },
+  "captain": "not-configured",
+  "quota": null,
+  "limits": {
+    "min_avail_gb": null,
+    "min_disk_gb": null,
+    "max_load1": null
+  },
+  "verdict": {
+    "admit": true,
+    "free_lanes": 2,
+    "reasons": []
+  }
+}
+exit: 0
+$ fm-capacity.sh --admit
+exit: 0
+$ fm-capacity.sh --json
+{
+  "schema": "fm-lane-capacity.v1",
+  "generated_epoch": 1793570936,
+  "home": "main",
+  "machine": "disposable",
+  "lanes": {
+    "count": 2,
+    "pr_ready": 1,
+    "ids": [
+      "scout-b",
+      "ship-a"
+    ]
+  },
+  "cap": {
+    "target": 4,
+    "status": "ok"
+  },
+  "projects": [],
+  "pressure": {
+    "level": "critical",
+    "why": [],
+    "basis": "beat",
+    "beat_age_s": 0,
+    "avail_gb": 16,
+    "total_gb": 32,
+    "runq_per_core": 0.1,
+    "swap_rate_pps_1m": null,
+    "mem_stall_pct": null,
+    "load1": 0.1,
+    "on_battery": false,
+    "disks": [
+      {
+        "label": "disk",
+        "free_gb": 100
+      }
+    ]
+  },
+  "uptime_s": 157565,
+  "boot_id": "1793413371",
+  "boots": [
+    1793413371
+  ],
+  "watcher_beat_age_s": null,
+  "reserve": {
+    "flag": "not-configured",
+    "label": null
+  },
+  "captain": "not-configured",
+  "quota": null,
+  "limits": {
+    "min_avail_gb": null,
+    "min_disk_gb": null,
+    "max_load1": null
+  },
+  "verdict": {
+    "admit": false,
+    "free_lanes": 0,
+    "reasons": [
+      "pressure critical"
+    ]
+  }
+}
+exit: 0
+$ fm-capacity.sh --admit
+deferred: lane capacity of this home (/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/.test-runtime/product/home/config/lane-capacity) does not admit another lane: pressure critical
+exit: 75
+$ fm-capacity.sh --json
+{
+  "schema": "fm-lane-capacity.v1",
+  "generated_epoch": 1793570936,
+  "home": "main",
+  "machine": "mac-mini",
+  "lanes": {
+    "count": 2,
+    "pr_ready": 1,
+    "ids": [
+      "scout-b",
+      "ship-a"
+    ]
+  },
+  "cap": {
+    "target": null,
+    "status": "invalid"
+  },
+  "projects": [],
+  "pressure": {
+    "level": "ok",
+    "why": [],
+    "basis": "probe",
+    "beat_age_s": null,
+    "avail_gb": 8.16,
+    "total_gb": 16,
+    "runq_per_core": 0.68,
+    "swap_rate_pps_1m": null,
+    "mem_stall_pct": null,
+    "load1": 5.46,
+    "on_battery": null,
+    "disks": [
+      {
+        "label": "home",
+        "free_gb": 70.8
+      }
+    ]
+  },
+  "uptime_s": 157565,
+  "boot_id": "1793413371",
+  "boots": [
+    1793413371
+  ],
+  "watcher_beat_age_s": null,
+  "reserve": {
+    "flag": "not-configured",
+    "label": null
+  },
+  "captain": "not-configured",
+  "quota": null,
+  "limits": {
+    "min_avail_gb": null,
+    "min_disk_gb": null,
+    "max_load1": null
+  },
+  "verdict": {
+    "admit": false,
+    "free_lanes": null,
+    "reasons": [
+      "config/lane-capacity: line 2: unknown key"
+    ]
+  }
+}
+fm-capacity: config/lane-capacity: line 2: unknown key 'unknown-key'
+exit: 1
+SCENARIO: schema-6 quota joins default account regardless of row order; unmatched stays unknown
+quota input: [{"provider": "claude", "accountKey": "work", "quotaSemantics": {"status": "known", "effectiveAvailability": [{"scope": "all_models", "status": "known", "effectivePercentRemaining": 50, "runway": {"status": "exhausted_now"}}]}}, {"provider": "claude", "accountKey": "default", "quotaSemantics": {"status": "known", "effectiveAvailability": [{"scope": "all_models", "status": "known", "effectivePercentRemaining": 50, "runway": {"status": "through_reset"}}]}}]
+$ fm-capacity.sh --json
+{
+  "schema": "fm-lane-capacity.v1",
+  "generated_epoch": 1793570936,
+  "home": "main",
+  "machine": "disposable",
+  "lanes": {
+    "count": 2,
+    "pr_ready": 1,
+    "ids": [
+      "scout-b",
+      "ship-a"
+    ]
+  },
+  "cap": {
+    "target": 4,
+    "status": "ok"
+  },
+  "projects": [],
+  "pressure": {
+    "level": "ok",
+    "why": [],
+    "basis": "beat",
+    "beat_age_s": 0,
+    "avail_gb": 16,
+    "total_gb": 32,
+    "runq_per_core": 0.1,
+    "swap_rate_pps_1m": null,
+    "mem_stall_pct": null,
+    "load1": 0.1,
+    "on_battery": false,
+    "disks": [
+      {
+        "label": "disk",
+        "free_gb": 100
+      }
+    ]
+  },
+  "uptime_s": 157565,
+  "boot_id": "1793413371",
+  "boots": [
+    1793413371
+  ],
+  "watcher_beat_age_s": null,
+  "reserve": {
+    "flag": "not-configured",
+    "label": null
+  },
+  "captain": "not-configured",
+  "quota": {
+    "provider": "claude",
+    "runway": "through_reset"
+  },
+  "limits": {
+    "min_avail_gb": null,
+    "min_disk_gb": null,
+    "max_load1": null
+  },
+  "verdict": {
+    "admit": true,
+    "free_lanes": 2,
+    "reasons": []
+  }
+}
+exit: 0
+$ fm-capacity.sh --publish
+exit: 0
+published quota: {'provider': 'claude', 'runway': 'through_reset'}
+quota input: [{"provider": "claude", "accountKey": "default", "quotaSemantics": {"status": "known", "effectiveAvailability": [{"scope": "all_models", "status": "known", "effectivePercentRemaining": 50, "runway": {"status": "through_reset"}}]}}, {"provider": "claude", "accountKey": "work", "quotaSemantics": {"status": "known", "effectiveAvailability": [{"scope": "all_models", "status": "known", "effectivePercentRemaining": 50, "runway": {"status": "exhausted_now"}}]}}]
+$ fm-capacity.sh --json
+{
+  "schema": "fm-lane-capacity.v1",
+  "generated_epoch": 1793570937,
+  "home": "main",
+  "machine": "disposable",
+  "lanes": {
+    "count": 2,
+    "pr_ready": 1,
+    "ids": [
+      "scout-b",
+      "ship-a"
+    ]
+  },
+  "cap": {
+    "target": 4,
+    "status": "ok"
+  },
+  "projects": [],
+  "pressure": {
+    "level": "ok",
+    "why": [],
+    "basis": "beat",
+    "beat_age_s": 1,
+    "avail_gb": 16,
+    "total_gb": 32,
+    "runq_per_core": 0.1,
+    "swap_rate_pps_1m": null,
+    "mem_stall_pct": null,
+    "load1": 0.1,
+    "on_battery": false,
+    "disks": [
+      {
+        "label": "disk",
+        "free_gb": 100
+      }
+    ]
+  },
+  "uptime_s": 157566,
+  "boot_id": "1793413371",
+  "boots": [
+    1793413371
+  ],
+  "watcher_beat_age_s": null,
+  "reserve": {
+    "flag": "not-configured",
+    "label": null
+  },
+  "captain": "not-configured",
+  "quota": {
+    "provider": "claude",
+    "runway": "through_reset"
+  },
+  "limits": {
+    "min_avail_gb": null,
+    "min_disk_gb": null,
+    "max_load1": null
+  },
+  "verdict": {
+    "admit": true,
+    "free_lanes": 2,
+    "reasons": []
+  }
+}
+exit: 0
+$ fm-capacity.sh --publish
+exit: 0
+published quota: {'provider': 'claude', 'runway': 'through_reset'}
+quota input: [{"provider": "claude", "accountKey": "work", "quotaSemantics": {"status": "known", "effectiveAvailability": [{"scope": "all_models", "status": "known", "effectivePercentRemaining": 50, "runway": {"status": "exhausted_now"}}]}}]
+$ fm-capacity.sh --json
+{
+  "schema": "fm-lane-capacity.v1",
+  "generated_epoch": 1793570937,
+  "home": "main",
+  "machine": "disposable",
+  "lanes": {
+    "count": 2,
+    "pr_ready": 1,
+    "ids": [
+      "scout-b",
+      "ship-a"
+    ]
+  },
+  "cap": {
+    "target": 4,
+    "status": "ok"
+  },
+  "projects": [],
+  "pressure": {
+    "level": "ok",
+    "why": [],
+    "basis": "beat",
+    "beat_age_s": 1,
+    "avail_gb": 16,
+    "total_gb": 32,
+    "runq_per_core": 0.1,
+    "swap_rate_pps_1m": null,
+    "mem_stall_pct": null,
+    "load1": 0.1,
+    "on_battery": false,
+    "disks": [
+      {
+        "label": "disk",
+        "free_gb": 100
+      }
+    ]
+  },
+  "uptime_s": 157566,
+  "boot_id": "1793413371",
+  "boots": [
+    1793413371
+  ],
+  "watcher_beat_age_s": null,
+  "reserve": {
+    "flag": "not-configured",
+    "label": null
+  },
+  "captain": "not-configured",
+  "quota": {
+    "provider": "claude",
+    "runway": "unknown"
+  },
+  "limits": {
+    "min_avail_gb": null,
+    "min_disk_gb": null,
+    "max_load1": null
+  },
+  "verdict": {
+    "admit": true,
+    "free_lanes": 2,
+    "reasons": []
+  }
+}
+exit: 0
+$ fm-capacity.sh --publish
+exit: 0
+published quota: {'provider': 'claude', 'runway': 'unknown'}
+SCENARIO: record sync copies owned allowlist, retracts retired records, and rejects symlink escape
+$ fm-record-export.sh sync
+exit: 0
+exported registry: Synthetic project registry
+$ fm-record-export.sh sync
+exit: 0
+retired task metadata absent from current snapshot
+SCENARIO: archive commits an integrity manifest and retries idempotently
+$ fm-record-export.sh archive-task task-a
+exit: 0
+committed archive manifest: {
+  "schema": "firstmate-record-export-archive.v1",
+  "schema_version": 1,
+  "task": "task-a",
+  "spawn_gen": "fixture-generation",
+  "captured_at": "2026-11-01T22:08:58Z",
+  "complete": true,
+  "files": [
+    {
+      "source": "state/task-a.meta",
+      "archive": "meta",
+      "bytes": 39,
+      "sha256": "b9baa18a25566a55660375f449fc29d00c4ea2eee33d54a7b4b3dbce02c3513e"
+    },
+    {
+      "source": "state/task-a.status",
+      "archive": "status",
+      "bytes": 25,
+      "sha256": "781ab86388e5680163906e3030df07653ec9eaa59a0c0b838868ad5bbc53439f"
+    },
+    {
+      "source": "state/task-a.inbox/001.msg",
+      "archive": "inbox/001.msg",
+      "bytes": 27,
+      "sha256": "4c131404c8877ff872fb1e9f830ca46d44401832b1de0f5c3796bfe69948caec"
+    }
+  ]
+}
+
+$ fm-record-export.sh archive-task task-a
+exit: 0
+archive retry preserved the complete integrity manifest byte for byte
+$ fm-record-export.sh sync
+error: data/projects.md is not a regular non-symlink file
+exit: 1
+outside sentinel and prior complete export preserved
+SCENARIO: default role refuses self-repo publication; fork consent authorizes only the fork
+$ fm-role.sh report
+fm-role: user (default)
+exit: 0
+$ fm-role.sh check /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF
+refused: this home runs as firstmate user/operator and holds no publication authority for github.com/delaanthonio/firstmate
+exit: 1
+$ fm-role.sh check /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF upstream-consent github.com/kunchenguid/firstmate
+refused: this home runs as firstmate user/operator and holds no publication authority for github.com/delaanthonio/firstmate
+exit: 1
+$ fm-role.sh check /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF upstream-consent github.com/delaanthonio/firstmate
+authorized: task consent for github.com/delaanthonio/firstmate
+exit: 0
+All manual product assertions passed.
+Disposable product home removed.

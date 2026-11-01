@@ -1,0 +1,15 @@
+git merge-base --is-ancestor 3b2ee7f65912e3457ca3f0134e0f5c74b8471b00 0df67ac74185d77d68defea48a5f5686ee558a57: exit 0
+git merge-base --is-ancestor a7157e8563b5f3a55a48810aa88ee44f0cde0bec 0df67ac74185d77d68defea48a5f5686ee558a57: exit 0
+git merge-base --is-ancestor 41a47c095d0d126349ab392158a365c117a2c9d2 0df67ac74185d77d68defea48a5f5686ee558a57: exit 0
+git merge-base --is-ancestor e7523395 0df67ac74185d77d68defea48a5f5686ee558a57: exit 0
+git merge-base --is-ancestor 2c8fa7a0 0df67ac74185d77d68defea48a5f5686ee558a57: exit 0
+git merge-base --is-ancestor 7beeee1b 0df67ac74185d77d68defea48a5f5686ee558a57: exit 0
+git merge-base --is-ancestor 45708899 0df67ac74185d77d68defea48a5f5686ee558a57: exit 0
+$ git show --no-patch --format=%H%n%P%n%s a7157e85
+a7157e8563b5f3a55a48810aa88ee44f0cde0bec
+e752339547e020c55c7d98c3d55d40bffec82a15 41a47c095d0d126349ab392158a365c117a2c9d2
+Merge kunchenguid/main into fork main
+$ git remote -v
+origin	https://github.com/delaanthonio/firstmate.git (fetch)
+origin	https://github.com/delaanthonio/firstmate.git (push)
+Read-only graph check: upstream merge and all four fork commits remain ancestors; merge commit retains both parents. No publication or waiting-branch mutation performed.

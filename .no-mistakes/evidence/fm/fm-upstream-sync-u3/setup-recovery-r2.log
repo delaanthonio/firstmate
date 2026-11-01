@@ -1,0 +1,11 @@
+Initial T3 fixture run refused teardown because tasks-axi compatibility failed under the isolated HOME.
+The mise shim resolved tasks-axi 0.2.5 under that HOME, whereas the existing runtime bin provides 0.2.6.
+A diagnostic shim invocation automatically materialized Node under the disposable workspace HOME; that scratch directory is removed at teardown. Subsequent commands disable automatic installation and use the existing runtime bin.
+$ PATH=<existing node 24.20.0 bin> HOME=<disposable> MISE_AUTO_INSTALL=0 /bin/bash -c command -v tasks-axi
+/Users/dela/.local/share/mise/installs/node/24.20.0/bin/tasks-axi
+exit=0
+$ PATH=<existing node 24.20.0 bin> HOME=<disposable> MISE_AUTO_INSTALL=0 tasks-axi --version
+0.2.6
+exit=0
+Second T3 run passed cleanup, then correctly refused the fixture secondmate home because a TMPDIR inside the source worktree violates the secondmate-home placement contract. Re-running the test command without a TMPDIR override uses the suite normal disposable temporary directories, covered by the workspace test-toolchain scratch exception.
+The final T3 failure was a stale abort fixture: its non-directory .claude blocker correctly triggered the approved ownership guard. The fixture now injects a mkdir failure into a clean slot and asserts the failure was reached. Focused success/failure archive cases plus linked-settings safety passed; the full T3 suite then exited 0. No production behavior was changed.

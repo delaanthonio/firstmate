@@ -1,0 +1,74 @@
+[
+  {
+    "scenario": "Unrequested run capability-skips missing Rex",
+    "exit": 0,
+    "stdout": "skip: rex CLI not found at $REX_BIN_DIR, on PATH, or at the server bundle path\nskip: live: rex absent\n",
+    "stderr": ""
+  },
+  {
+    "scenario": "Explicit FM_REX_COMPOSER_LIVE refuses missing Rex",
+    "exit": 1,
+    "stdout": "skip: rex CLI not found at $REX_BIN_DIR, on PATH, or at the server bundle path\n",
+    "stderr": "not ok - FM_REX_COMPOSER_LIVE was requested but rex is not installed\n"
+  },
+  {
+    "scenario": "Explicit FM_LIVE refuses missing Rex",
+    "exit": 1,
+    "stdout": "skip: rex CLI not found at $REX_BIN_DIR, on PATH, or at the server bundle path\n",
+    "stderr": "not ok - FM_REX_COMPOSER_LIVE was requested but rex is not installed\n"
+  },
+  {
+    "scenario": "Default-on reaches the disposable Rex executable",
+    "exit": 2,
+    "stdout": "",
+    "stderr": "not ok - private Rex server failed to start; see /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/.test-phase-tmp/fm-rex-test.I4suod/server.log\n"
+  },
+  {
+    "stub_calls": "--autostart=false -S unix:///Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/.test-phase-tmp/fm-rex-test.I4suod/rex.sock api call server.status\n--autostart=false server run --listen unix:///Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/.test-phase-tmp/fm-rex-test.I4suod/rex.sock --state-dir /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/.test-phase-tmp/fm-rex-test.I4suod/server-state --config /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/.test-phase-tmp/fm-rex-test.I4suod/rex-config.lua --exit-empty\n--autostart=false -S unix:///Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/.test-phase-tmp/fm-rex-test.I4suod/rex.sock api call server.status\n",
+    "note": "Local executable stub only; no real Rex lifecycle."
+  },
+  {
+    "scenario": "Per-guard off overrides global on",
+    "exit": 0,
+    "stdout": "skip: live: disabled by FM_REX_COMPOSER_LIVE=0\n",
+    "stderr": ""
+  },
+  {
+    "scenario": "Per-guard on overrides global off",
+    "exit": 2,
+    "stdout": "",
+    "stderr": "not ok - private Rex server failed to start; see /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/.test-phase-tmp/fm-rex-test.cytPSg/server.log\n"
+  },
+  {
+    "scenario": "T3 cleanup refuses linked parent before touching external settings",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "error: /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/.test-phase-tmp/guards-qogxivjl/owned-home/.claude is not an owned directory; refusing to mutate T3 settings\n"
+  },
+  {
+    "external_settings_after_refusal": {
+      "env": {
+        "OUTSIDE": "keep",
+        "FM_T3CODE_ENV_KEYS": "OUTSIDE"
+      }
+    }
+  },
+  {
+    "scenario": "T3 cleanup removes only its own environment keys",
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "owned_settings_after_cleanup": {
+      "env": {
+        "CAPTAIN_VAR": "keep"
+      },
+      "permissions": {
+        "allow": [
+          "Bash(ls:*)"
+        ]
+      }
+    }
+  }
+]

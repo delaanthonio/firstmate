@@ -1,0 +1,63 @@
+FM_TEST_BEGIN 2026-11-01T22:33:40Z tests/fm-record-export.test.sh family=unclassified expected_gate_skip=none
+ok - record export sync is inert when config is absent
+ok - record export sync copies only the fixed v1 allowlist with restrictive modes
+ok - record export sync leaves the prior live snapshot intact when capture fails
+ok - record export accepts an absolute export root with spaces
+ok - record export sync refuses malformed config, traversal-shaped names, symlinks, and non-regular files
+ok - record export requires a dedicated root disjoint from and owned by exactly one home
+ok - record export rejects an unowned root without changing its mode
+ok - interrupted live publication staging cannot wedge archive or sync
+ok - record export sync publishes the exact current allowlist as one live snapshot
+ok - live sync rejects moved, added, removed, replaced, and modified sources before publication
+ok - record export refuses unknown managed artifacts before publishing a snapshot
+ok - record export sync binds destination validation to descriptor-safe publication
+ok - record export bounds descriptors across large live snapshots, archives, and committed retries
+ok - teardown archive commits a complete v1 manifest after every allowlisted source
+ok - teardown archive is inert before any state read when config is absent
+ok - teardown archive retries idempotently and reused task IDs stay separated by spawn_gen
+ok - teardown archive retry accepts sources already retired after a committed capture
+ok - teardown archive rejects a corrupt committed manifest
+ok - teardown archive refuses to commit when a source changes during capture
+ok - teardown archive safely repairs an uncommitted same-generation attempt
+ok - teardown archive retry publishes a fresh generation without stale partial files
+ok - teardown archive revalidates sources immediately before publication
+ok - teardown archive holds the task producer lock through source enumeration and commit
+ok - teardown archive treats absent status and inbox records as a complete capture
+ok - teardown archive refuses malformed generations, unknown artifacts, symlinks, and non-regular files
+ok - retention filesystem errors warn without failing new or idempotent archive capture
+ok - record export retention mirrors 30 completed days and prunes only owned committed generations
+ok - presentation, wake, classification, and snapshot readers leave the export root cold
+ALL TESTS PASSED
+FM_TEST_END 2026-11-01T22:33:52Z tests/fm-record-export.test.sh exit=0 duration_ms=12141 gate_skip=false
+FM_TEST_BEGIN 2026-11-01T22:33:52Z tests/fm-capacity.test.sh family=standalone expected_gate_skip=none
+ok - absent config/lane-capacity reports counts and no target
+ok - the Constrained line is printed only when config/lane-capacity exists
+ok - a target yields open lanes, full, and never a negative count
+ok - cpu, memory, and disk pressure close every lane and are named
+ok - unavailable probes print unknown and do not constrain
+ok - a malformed target is reported, not guessed
+ok - keyed config lines parse, and unknown, repeated, or malformed lines are refused
+ok - a fresh beat replaces probes, and its warn level closes lanes with its reason
+ok - late beats count, and stale, missing, malformed, or foreign beats fall back to probes
+ok - several pressure files: worst level wins, first supplies memory, every disk counts
+ok - a beat with missing fields keeps its fields aligned and limits fall back to probes
+ok - the lane footprint memory rule applies only with min-avail-gb
+ok - limits close lanes with named reasons, and --admit exits 0, 75, or 1
+ok - publish is opt-in, private, throttled, records boots, and publishes an invalid config as invalid
+ok - quota JSON and publication select default accounts independently of row order
+ok - captain presence and quota runway publish derived words only, unknown when unreadable
+ok - the watcher publishes lane facts only for an opted-in home
+ok - real host probes produce a well-formed report
+# all fm-capacity tests passed
+FM_TEST_END 2026-11-01T22:34:10Z tests/fm-capacity.test.sh exit=0 duration_ms=17769 gate_skip=false
+FM_TEST_BEGIN 2026-11-01T22:34:10Z tests/fm-hc-lab.test.sh family=unclassified expected_gate_skip=none
+lab core session fm-hclab-good ready (server pid 123)
+ok - private roots, exclusive sessions, and fail-closed tripwire
+FM_TEST_END 2026-11-01T22:34:12Z tests/fm-hc-lab.test.sh exit=0 duration_ms=1833 gate_skip=false
+FM_TEST_SUMMARY total=3 failed=0 skipped_gate=0 duration_ms=32018
+FM_TEST_SUMMARY_FAMILY family=standalone count=1 duration_ms=17769 failed=0
+FM_TEST_SUMMARY_FAMILY family=unclassified count=2 duration_ms=13974 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-capacity.test.sh duration_ms=17769
+FM_TEST_SLOWEST rank=2 script=tests/fm-record-export.test.sh duration_ms=12141
+FM_TEST_SLOWEST rank=3 script=tests/fm-hc-lab.test.sh duration_ms=1833
+fm-test-run: wrote timing artifact: /Users/dela/.no-mistakes/evidence/01M6C0X5BHNQ0K1NAZ55FZ12GF/targeted-timing-r3.json

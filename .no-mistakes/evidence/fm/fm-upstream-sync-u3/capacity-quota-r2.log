@@ -1,0 +1,24 @@
+
+Input work-first: {"schemaVersion": 6, "providers": [{"provider": "claude", "accountKey": "work", "quotaSemantics": {"status": "known", "effectiveAvailability": [{"scope": "all_models", "status": "known", "effectivePercentRemaining": 50, "runway": {"status": "exhausted_now"}}]}}, {"provider": "claude", "accountKey": "default", "quotaSemantics": {"status": "known", "effectiveAvailability": [{"scope": "all_models", "status": "known", "effectivePercentRemaining": 50, "runway": {"status": "through_reset"}}]}}]}
+$ FM_HOME=<disposable quota-home> bash bin/fm-capacity.sh --json
+{"schema": "fm-lane-capacity.v1", "quota": {"provider": "claude", "runway": "through_reset"}}
+$ FM_HOME=<disposable quota-home> bash bin/fm-capacity.sh --publish
+{"schema": "fm-lane-capacity.v1", "quota": {"provider": "claude", "runway": "through_reset"}}
+
+Input default-first: {"schemaVersion": 6, "providers": [{"provider": "claude", "accountKey": "default", "quotaSemantics": {"status": "known", "effectiveAvailability": [{"scope": "all_models", "status": "known", "effectivePercentRemaining": 50, "runway": {"status": "through_reset"}}]}}, {"provider": "claude", "accountKey": "work", "quotaSemantics": {"status": "known", "effectiveAvailability": [{"scope": "all_models", "status": "known", "effectivePercentRemaining": 50, "runway": {"status": "exhausted_now"}}]}}]}
+$ FM_HOME=<disposable quota-home> bash bin/fm-capacity.sh --json
+{"schema": "fm-lane-capacity.v1", "quota": {"provider": "claude", "runway": "through_reset"}}
+$ FM_HOME=<disposable quota-home> bash bin/fm-capacity.sh --publish
+{"schema": "fm-lane-capacity.v1", "quota": {"provider": "claude", "runway": "through_reset"}}
+
+Input unmatched: {"schemaVersion": 6, "providers": [{"provider": "claude", "accountKey": "work", "quotaSemantics": {"status": "known", "effectiveAvailability": [{"scope": "all_models", "status": "known", "effectivePercentRemaining": 50, "runway": {"status": "exhausted_now"}}]}}]}
+$ FM_HOME=<disposable quota-home> bash bin/fm-capacity.sh --json
+{"schema": "fm-lane-capacity.v1", "quota": {"provider": "claude", "runway": "unknown"}}
+$ FM_HOME=<disposable quota-home> bash bin/fm-capacity.sh --publish
+{"schema": "fm-lane-capacity.v1", "quota": {"provider": "claude", "runway": "unknown"}}
+
+Input empty: {"schemaVersion": 6, "providers": []}
+$ FM_HOME=<disposable quota-home> bash bin/fm-capacity.sh --json
+{"schema": "fm-lane-capacity.v1", "quota": {"provider": "claude", "runway": "unknown"}}
+$ FM_HOME=<disposable quota-home> bash bin/fm-capacity.sh --publish
+{"schema": "fm-lane-capacity.v1", "quota": {"provider": "claude", "runway": "unknown"}}

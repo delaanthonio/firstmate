@@ -1,0 +1,40 @@
+[
+  {
+    "action": "snapshot",
+    "root": "root-a",
+    "exit": 0,
+    "stdout": "",
+    "stderr": "fm-hc-ci-cleanup.sh: wrote lab session snapshot to /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/.test-phase-tmp/hc-cleanup-vguinrls/snapshot-a (0 names)\n"
+  },
+  {
+    "action": "snapshot",
+    "root": "root-b",
+    "exit": 0,
+    "stdout": "",
+    "stderr": "fm-hc-ci-cleanup.sh: wrote lab session snapshot to /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/.test-phase-tmp/hc-cleanup-vguinrls/snapshot-b (0 names)\n"
+  },
+  {
+    "action": "teardown",
+    "root": "root-a",
+    "exit": 0,
+    "stdout": "",
+    "stderr": "fm-hc-ci-cleanup.sh: stopping job-owned lab core session fm-hclab-same\nfm-hc-ci-cleanup.sh: removed job-owned lab core session fm-hclab-same\n"
+  },
+  {
+    "first_root_signal_log": "-TERM 900001\n",
+    "other_root_directory_preserved": true,
+    "other_root_synthetic_process_preserved": true
+  },
+  {
+    "action": "teardown",
+    "root": "root-b",
+    "exit": 0,
+    "stdout": "",
+    "stderr": "fm-hc-ci-cleanup.sh: stopping job-owned lab core session fm-hclab-same\nfm-hc-ci-cleanup.sh: removed job-owned lab core session fm-hclab-same\n"
+  },
+  {
+    "all_mock_signals": "-TERM 900001\n-TERM 900002\n",
+    "stub_backend_calls": "/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/.test-phase-tmp/hc-cleanup-vguinrls/sockets-a/fm-hclab-same.sock /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/.test-phase-tmp/hc-cleanup-vguinrls/root-a/fm-hclab-same/env/xdg-state server stop --json\n/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/.test-phase-tmp/hc-cleanup-vguinrls/sockets-b/fm-hclab-same.sock /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/.test-phase-tmp/hc-cleanup-vguinrls/root-b/fm-hclab-same/env/xdg-state server stop --json\n",
+    "real_signals_or_backend_calls": false
+  }
+]

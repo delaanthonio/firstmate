@@ -1,0 +1,53 @@
+tests/.test-phase-digest.sh: line 3510: 50614 Killed: 9                  bash "$dir/flush" "$DAEMON" "$state" "$variant" first
+tests/.test-phase-digest.sh: line 3510: 50745 Killed: 9                  bash "$dir/flush" "$DAEMON" "$state" "$variant" first
+ok - T3 digest identity persists before send through interruption and filesystem failures
+[
+  {
+    "variant": "t3-digest-construction",
+    "submitted": "fm-digest-1793572493-50651-3015919947\t\u2063FIRSTMATE_OP: v1 away-supervisor: Supervisor escalate (2 event(s)): event A: release approval required | event B: release approval required (pre-read; re-arm not needed \u2014 watcher daemon-managed)\n",
+    "pending_buffer": "",
+    "frozen_retained": false
+  },
+  {
+    "variant": "t3-digest-consumption",
+    "submitted": "fm-digest-1793572493-50211-180729846\t\u2063FIRSTMATE_OP: v1 away-supervisor: Supervisor escalate (2 event(s)): event A: release approval required | event B: release approval required (pre-read; re-arm not needed \u2014 watcher daemon-managed)\nfm-digest-1793572493-50211-180729846\t\u2063FIRSTMATE_OP: v1 away-supervisor: Supervisor escalate (2 event(s)): event A: release approval required | event B: release approval required (pre-read; re-arm not needed \u2014 watcher daemon-managed)\n",
+    "pending_buffer": "",
+    "frozen_retained": false
+  },
+  {
+    "variant": "t3-digest-interrupted",
+    "submitted": "fm-digest-1793572492-50010-13377607\t\u2063FIRSTMATE_OP: v1 away-supervisor: Supervisor escalate (2 event(s)): event A: release approval required | event B: release approval required (pre-read; re-arm not needed \u2014 watcher daemon-managed)\nfm-digest-1793572492-50010-13377607\t\u2063FIRSTMATE_OP: v1 away-supervisor: Supervisor escalate (2 event(s)): event A: release approval required | event B: release approval required (pre-read; re-arm not needed \u2014 watcher daemon-managed)\n",
+    "pending_buffer": "",
+    "frozen_retained": false
+  },
+  {
+    "variant": "t3-digest-partial",
+    "submitted": "fm-digest-1793572494-50771-958021837\t\u2063FIRSTMATE_OP: v1 away-supervisor: Supervisor escalate (2 event(s)): event A: release approval required | event B: release approval required (pre-read; re-arm not needed \u2014 watcher daemon-managed)\n",
+    "pending_buffer": "",
+    "frozen_retained": false
+  },
+  {
+    "variant": "t3-digest-publication",
+    "submitted": "fm-digest-1793572492-50115-2105412969\t\u2063FIRSTMATE_OP: v1 away-supervisor: Supervisor escalate (2 event(s)): event A: release approval required | event B: release approval required (pre-read; re-arm not needed \u2014 watcher daemon-managed)\n",
+    "pending_buffer": "",
+    "frozen_retained": false
+  },
+  {
+    "variant": "t3-digest-success",
+    "submitted": "fm-digest-1793572492-49953-1804020362\t\u2063FIRSTMATE_OP: v1 away-supervisor: Supervisor escalate (2 event(s)): event A: release approval required | event B: release approval required (pre-read; re-arm not needed \u2014 watcher daemon-managed)\n",
+    "pending_buffer": "",
+    "frozen_retained": false
+  },
+  {
+    "variant": "t3-digest-tail",
+    "submitted": "fm-digest-1793572493-50323-126431750\t\u2063FIRSTMATE_OP: v1 away-supervisor: Supervisor escalate (2 event(s)): event A: release approval required | event B: release approval required (pre-read; re-arm not needed \u2014 watcher daemon-managed)\nfm-digest-1793572493-50323-126431750\t\u2063FIRSTMATE_OP: v1 away-supervisor: Supervisor escalate (2 event(s)): event A: release approval required | event B: release approval required (pre-read; re-arm not needed \u2014 watcher daemon-managed)\n",
+    "pending_buffer": "",
+    "frozen_retained": false
+  },
+  {
+    "variant": "t3-digest-unconfirmed",
+    "submitted": "fm-digest-1793572493-50463-2900618211\t\u2063FIRSTMATE_OP: v1 away-supervisor: Supervisor escalate (2 event(s)): event A: release approval required | event B: release approval required (pre-read; re-arm not needed \u2014 watcher daemon-managed)\nfm-digest-1793572493-50463-2900618211\t\u2063FIRSTMATE_OP: v1 away-supervisor: Supervisor escalate (2 event(s)): event A: release approval required | event B: release approval required (pre-read; re-arm not needed \u2014 watcher daemon-managed)\n",
+    "pending_buffer": "",
+    "frozen_retained": false
+  }
+]

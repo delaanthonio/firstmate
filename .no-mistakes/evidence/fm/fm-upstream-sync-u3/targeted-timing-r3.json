@@ -1,0 +1,55 @@
+{
+  "families": [
+    {
+      "count": 1,
+      "duration_ms": 17769,
+      "failed": 0,
+      "name": "standalone"
+    },
+    {
+      "count": 2,
+      "duration_ms": 13974,
+      "failed": 0,
+      "name": "unclassified"
+    }
+  ],
+  "finished_at": "2026-11-01T22:34:12Z",
+  "run_id": "fm-test-run-1793572420261-24617",
+  "scripts": [
+    {
+      "duration_ms": 12141,
+      "exit": 0,
+      "expected_gate_skip": "none",
+      "family": "unclassified",
+      "gate_skip": false,
+      "gate_skip_reason": "",
+      "path": "tests/fm-record-export.test.sh"
+    },
+    {
+      "duration_ms": 17769,
+      "exit": 0,
+      "expected_gate_skip": "none",
+      "family": "standalone",
+      "gate_skip": false,
+      "gate_skip_reason": "",
+      "path": "tests/fm-capacity.test.sh"
+    },
+    {
+      "duration_ms": 1833,
+      "exit": 0,
+      "expected_gate_skip": "none",
+      "family": "unclassified",
+      "gate_skip": false,
+      "gate_skip_reason": "",
+      "path": "tests/fm-hc-lab.test.sh"
+    }
+  ],
+  "selection": "scripts;jobs=1",
+  "started_at": "2026-11-01T22:33:40Z",
+  "summary": {
+    "duration_ms": 32018,
+    "failed": 0,
+    "skipped_gate": 0,
+    "total": 3
+  }
+}

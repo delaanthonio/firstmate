@@ -1,0 +1,46 @@
+{
+  "families": [
+    {
+      "count": 1,
+      "duration_ms": 36111,
+      "failed": 1,
+      "name": "backend-dispatch"
+    },
+    {
+      "count": 1,
+      "duration_ms": 35953,
+      "failed": 0,
+      "name": "rex"
+    }
+  ],
+  "finished_at": "2026-11-01T22:06:41Z",
+  "run_id": "fm-test-run-1793570729220-41002",
+  "scripts": [
+    {
+      "duration_ms": 35953,
+      "exit": 0,
+      "expected_gate_skip": "optional-binary",
+      "family": "rex",
+      "gate_skip": false,
+      "gate_skip_reason": "",
+      "path": "tests/fm-backend-rex.test.sh"
+    },
+    {
+      "duration_ms": 36111,
+      "exit": 1,
+      "expected_gate_skip": "none",
+      "family": "backend-dispatch",
+      "gate_skip": false,
+      "gate_skip_reason": "",
+      "path": "tests/fm-teardown-endpoint-safety.test.sh"
+    }
+  ],
+  "selection": "scripts;jobs=1",
+  "started_at": "2026-11-01T22:05:29Z",
+  "summary": {
+    "duration_ms": 72231,
+    "failed": 1,
+    "skipped_gate": 0,
+    "total": 2
+  }
+}

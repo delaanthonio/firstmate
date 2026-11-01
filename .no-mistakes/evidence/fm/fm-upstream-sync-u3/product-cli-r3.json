@@ -1,0 +1,315 @@
+[
+  {
+    "action": "Export disabled without local opt-in",
+    "command": [
+      "/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/bin/fm-record-export.sh",
+      "sync"
+    ],
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "action": "Publish an allowlisted live snapshot",
+    "command": [
+      "/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/bin/fm-record-export.sh",
+      "sync"
+    ],
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "published_live_projects": "Synthetic project ledger\n",
+    "excluded_private_file_present": false
+  },
+  {
+    "action": "Update the live snapshot",
+    "command": [
+      "/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/bin/fm-record-export.sh",
+      "sync"
+    ],
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "action": "Refuse a linked source and preserve prior complete snapshot",
+    "command": [
+      "/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/bin/fm-record-export.sh",
+      "sync"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": "error: data/projects.md is not a regular non-symlink file\n"
+  },
+  {
+    "action": "Archive a task generation",
+    "command": [
+      "/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/bin/fm-record-export.sh",
+      "archive-task",
+      "task-a"
+    ],
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "action": "Retry a committed generation without rewriting it",
+    "command": [
+      "/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/bin/fm-record-export.sh",
+      "archive-task",
+      "task-a"
+    ],
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "committed_archive_manifest": {
+      "schema": "firstmate-record-export-archive.v1",
+      "schema_version": 1,
+      "task": "task-a",
+      "spawn_gen": "evidence-generation",
+      "captured_at": "2026-11-01T22:35:36Z",
+      "complete": true,
+      "files": [
+        {
+          "source": "state/task-a.meta",
+          "archive": "meta",
+          "bytes": 52,
+          "sha256": "cf3a274541a1aa62342ce02bafe67600ad81cfc7cf0cf2faed0ef08e746bd097"
+        },
+        {
+          "source": "state/task-a.status",
+          "archive": "status",
+          "bytes": 28,
+          "sha256": "c608ce4b6e7290738c66f9b42da83eb993f1a893b633c4fed76f177c59a148fb"
+        }
+      ]
+    },
+    "idempotent_retry_preserved_manifest_bytes": true
+  },
+  {
+    "action": "Refuse retry of a tampered committed archive",
+    "command": [
+      "/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/bin/fm-record-export.sh",
+      "archive-task",
+      "task-a"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": "error: record export archive manifest does not match its generation files\n"
+  },
+  {
+    "action": "Capacity JSON: work-first",
+    "command": [
+      "/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/bin/fm-capacity.sh",
+      "--json"
+    ],
+    "exit": 0,
+    "stdout": "{\n  \"schema\": \"fm-lane-capacity.v1\",\n  \"generated_epoch\": 1793572536,\n  \"home\": \"main\",\n  \"machine\": \"mac-mini\",\n  \"lanes\": {\n    \"count\": 1,\n    \"pr_ready\": 0,\n    \"ids\": [\n      \"task-a\"\n    ]\n  },\n  \"cap\": {\n    \"target\": 3,\n    \"status\": \"ok\"\n  },\n  \"projects\": [],\n  \"pressure\": {\n    \"level\": \"ok\",\n    \"why\": [],\n    \"basis\": \"probe\",\n    \"beat_age_s\": null,\n    \"avail_gb\": 8.48,\n    \"total_gb\": 16,\n    \"runq_per_core\": 0.62,\n    \"swap_rate_pps_1m\": null,\n    \"mem_stall_pct\": null,\n    \"load1\": 4.99,\n    \"on_battery\": null,\n    \"disks\": [\n      {\n        \"label\": \"home\",\n        \"free_gb\": 70.9\n      }\n    ]\n  },\n  \"uptime_s\": 159165,\n  \"boot_id\": \"1793413371\",\n  \"boots\": [\n    1793413371\n  ],\n  \"watcher_beat_age_s\": null,\n  \"reserve\": {\n    \"flag\": \"not-configured\",\n    \"label\": null\n  },\n  \"captain\": \"not-configured\",\n  \"quota\": {\n    \"provider\": \"claude\",\n    \"runway\": \"through_reset\"\n  },\n  \"limits\": {\n    \"min_avail_gb\": null,\n    \"min_disk_gb\": null,\n    \"max_load1\": null\n  },\n  \"verdict\": {\n    \"admit\": true,\n    \"free_lanes\": 2,\n    \"reasons\": []\n  }\n}\n",
+    "stderr": ""
+  },
+  {
+    "action": "Capacity publication: work-first",
+    "command": [
+      "/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/bin/fm-capacity.sh",
+      "--publish"
+    ],
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "quota_order": "work-first",
+    "published_quota": {
+      "provider": "claude",
+      "runway": "through_reset"
+    },
+    "published_mode": "0600"
+  },
+  {
+    "action": "Capacity JSON: default-first",
+    "command": [
+      "/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/bin/fm-capacity.sh",
+      "--json"
+    ],
+    "exit": 0,
+    "stdout": "{\n  \"schema\": \"fm-lane-capacity.v1\",\n  \"generated_epoch\": 1793572537,\n  \"home\": \"main\",\n  \"machine\": \"mac-mini\",\n  \"lanes\": {\n    \"count\": 1,\n    \"pr_ready\": 0,\n    \"ids\": [\n      \"task-a\"\n    ]\n  },\n  \"cap\": {\n    \"target\": 3,\n    \"status\": \"ok\"\n  },\n  \"projects\": [],\n  \"pressure\": {\n    \"level\": \"ok\",\n    \"why\": [],\n    \"basis\": \"probe\",\n    \"beat_age_s\": null,\n    \"avail_gb\": 8.48,\n    \"total_gb\": 16,\n    \"runq_per_core\": 0.62,\n    \"swap_rate_pps_1m\": null,\n    \"mem_stall_pct\": null,\n    \"load1\": 4.99,\n    \"on_battery\": null,\n    \"disks\": [\n      {\n        \"label\": \"home\",\n        \"free_gb\": 70.9\n      }\n    ]\n  },\n  \"uptime_s\": 159166,\n  \"boot_id\": \"1793413371\",\n  \"boots\": [\n    1793413371\n  ],\n  \"watcher_beat_age_s\": null,\n  \"reserve\": {\n    \"flag\": \"not-configured\",\n    \"label\": null\n  },\n  \"captain\": \"not-configured\",\n  \"quota\": {\n    \"provider\": \"claude\",\n    \"runway\": \"through_reset\"\n  },\n  \"limits\": {\n    \"min_avail_gb\": null,\n    \"min_disk_gb\": null,\n    \"max_load1\": null\n  },\n  \"verdict\": {\n    \"admit\": true,\n    \"free_lanes\": 2,\n    \"reasons\": []\n  }\n}\n",
+    "stderr": ""
+  },
+  {
+    "action": "Capacity publication: default-first",
+    "command": [
+      "/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/bin/fm-capacity.sh",
+      "--publish"
+    ],
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "quota_order": "default-first",
+    "published_quota": {
+      "provider": "claude",
+      "runway": "through_reset"
+    },
+    "published_mode": "0600"
+  },
+  {
+    "action": "Capacity JSON: unmatched",
+    "command": [
+      "/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/bin/fm-capacity.sh",
+      "--json"
+    ],
+    "exit": 0,
+    "stdout": "{\n  \"schema\": \"fm-lane-capacity.v1\",\n  \"generated_epoch\": 1793572537,\n  \"home\": \"main\",\n  \"machine\": \"mac-mini\",\n  \"lanes\": {\n    \"count\": 1,\n    \"pr_ready\": 0,\n    \"ids\": [\n      \"task-a\"\n    ]\n  },\n  \"cap\": {\n    \"target\": 3,\n    \"status\": \"ok\"\n  },\n  \"projects\": [],\n  \"pressure\": {\n    \"level\": \"ok\",\n    \"why\": [],\n    \"basis\": \"probe\",\n    \"beat_age_s\": null,\n    \"avail_gb\": 8.48,\n    \"total_gb\": 16,\n    \"runq_per_core\": 0.62,\n    \"swap_rate_pps_1m\": null,\n    \"mem_stall_pct\": null,\n    \"load1\": 4.99,\n    \"on_battery\": null,\n    \"disks\": [\n      {\n        \"label\": \"home\",\n        \"free_gb\": 70.9\n      }\n    ]\n  },\n  \"uptime_s\": 159166,\n  \"boot_id\": \"1793413371\",\n  \"boots\": [\n    1793413371\n  ],\n  \"watcher_beat_age_s\": null,\n  \"reserve\": {\n    \"flag\": \"not-configured\",\n    \"label\": null\n  },\n  \"captain\": \"not-configured\",\n  \"quota\": {\n    \"provider\": \"claude\",\n    \"runway\": \"unknown\"\n  },\n  \"limits\": {\n    \"min_avail_gb\": null,\n    \"min_disk_gb\": null,\n    \"max_load1\": null\n  },\n  \"verdict\": {\n    \"admit\": true,\n    \"free_lanes\": 2,\n    \"reasons\": []\n  }\n}\n",
+    "stderr": ""
+  },
+  {
+    "action": "Capacity publication: unmatched",
+    "command": [
+      "/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/bin/fm-capacity.sh",
+      "--publish"
+    ],
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "quota_order": "unmatched",
+    "published_quota": {
+      "provider": "claude",
+      "runway": "unknown"
+    },
+    "published_mode": "0600"
+  },
+  {
+    "action": "Arm the initial worker generation",
+    "command": [
+      "/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/bin/fm-busy-event.sh",
+      "arm",
+      "$LAB/home/state",
+      "worker",
+      "--source",
+      "pi-ext",
+      "--event",
+      "turn-start"
+    ],
+    "exit": 0,
+    "stdout": "g1793572537.62814.17901\n",
+    "stderr": ""
+  },
+  {
+    "action": "Open stream request 1",
+    "command": [
+      "/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/bin/fm-busy-event.sh",
+      "stream",
+      "$LAB/home/state",
+      "worker",
+      "open",
+      "--gen",
+      "g1793572537.62814.17901",
+      "--request",
+      "1"
+    ],
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "action": "Observe stream progress",
+    "command": [
+      "/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/bin/fm-busy-event.sh",
+      "stream",
+      "$LAB/home/state",
+      "worker",
+      "progress",
+      "--gen",
+      "g1793572537.62814.17901",
+      "--request",
+      "1"
+    ],
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "action": "Settle the worker and clear stream observations",
+    "command": [
+      "/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/bin/fm-busy-event.sh",
+      "apply",
+      "$LAB/home/state",
+      "worker",
+      "idle",
+      "--gen",
+      "g1793572537.62814.17901",
+      "--source",
+      "pi-ext",
+      "--event",
+      "turn-end",
+      "--turn-ended"
+    ],
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "action": "Replace the worker incarnation",
+    "command": [
+      "/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/bin/fm-busy-event.sh",
+      "arm",
+      "$LAB/home/state",
+      "worker",
+      "--source",
+      "pi-ext",
+      "--event",
+      "turn-start"
+    ],
+    "exit": 0,
+    "stdout": "g1793572537.62914.9946\n",
+    "stderr": ""
+  },
+  {
+    "action": "Refuse a stale hook event",
+    "command": [
+      "/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/bin/fm-busy-event.sh",
+      "apply",
+      "$LAB/home/state",
+      "worker",
+      "idle",
+      "--gen",
+      "g1793572537.62814.17901",
+      "--source",
+      "pi-ext",
+      "--event",
+      "turn-end",
+      "--turn-ended"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": "error: stale busy-state gen for worker (event rejected)\n"
+  },
+  {
+    "replacement_generation_record": "v1 gen=g1793572537.62914.9946 seq=1 state=busy source=pi-ext event=turn-start ts=1793572537\n",
+    "stale_hook_did_not_signal_replacement": true
+  },
+  {
+    "action": "Retire the owned worker generation",
+    "command": [
+      "/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/bin/fm-busy-event.sh",
+      "retire",
+      "$LAB/home/state",
+      "worker",
+      "--gen",
+      "g1793572537.62914.9946"
+    ],
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "result": "All direct CLI assertions passed; disposable fixture removed in finally."
+  }
+]

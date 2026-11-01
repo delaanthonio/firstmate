@@ -1,0 +1,14 @@
+FM_TEST_BEGIN 2026-11-01T22:06:59Z tests/fm-metadata-lock-selected.test.sh family=unclassified expected_gate_skip=none
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+warning: failed to remove ./: Invalid argument
+error: could not clean scratch in worktree /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/.test-runtime/tmp/fm-teardown-endpoint-safety.KTllbM/metadata-lock/worktree before returning it; teardown aborted
+FM_TEST_END 2026-11-01T22:07:01Z tests/fm-metadata-lock-selected.test.sh exit=1 duration_ms=2688 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=1 skipped_gate=0 duration_ms=2795
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=2688 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-metadata-lock-selected.test.sh duration_ms=2688

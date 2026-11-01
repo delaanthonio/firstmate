@@ -1,0 +1,25 @@
+default-on stub: env={}, exit=2
+not ok - private Rex server failed to start; see /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/.test-runtime/tmp/fm-rex-test.1JnTdK/server.log
+local executable stub calls: '--autostart=false server run --listen unix:///Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/.test-runtime/tmp/fm-rex-test.1JnTdK/rex.sock --state-dir /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/.test-runtime/tmp/fm-rex-test.1JnTdK/server-state --config /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/.test-runtime/tmp/fm-rex-test.1JnTdK/rex-config.lua --exit-empty\n--autostart=false -S unix:///Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/.test-runtime/tmp/fm-rex-test.1JnTdK/rex.sock api call server.status\n'
+global off: env={'FM_LIVE': '0'}, exit=0
+skip: live: disabled by FM_LIVE=0
+local executable stub calls: ''
+guard off beats global on: env={'FM_LIVE': '1', 'FM_REX_COMPOSER_LIVE': '0'}, exit=0
+skip: live: disabled by FM_REX_COMPOSER_LIVE=0
+local executable stub calls: ''
+guard on beats global off: env={'FM_LIVE': '0', 'FM_REX_COMPOSER_LIVE': '1'}, exit=2
+not ok - private Rex server failed to start; see /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/.test-runtime/tmp/fm-rex-test.CgqAYY/server.log
+local executable stub calls: '--autostart=false server run --listen unix:///Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/.test-runtime/tmp/fm-rex-test.CgqAYY/rex.sock --state-dir /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/.test-runtime/tmp/fm-rex-test.CgqAYY/server-state --config /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/.test-runtime/tmp/fm-rex-test.CgqAYY/rex-config.lua --exit-empty\n--autostart=false -S unix:///Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/.test-runtime/tmp/fm-rex-test.CgqAYY/rex.sock api call server.status\n'
+default missing capability: env={}, exit=0
+skip: rex CLI not found at $REX_BIN_DIR, on PATH, or at the server bundle path
+skip: live: rex absent
+local executable stub calls: ''
+explicit missing capability: env={'FM_REX_COMPOSER_LIVE': '1'}, exit=1
+skip: rex CLI not found at $REX_BIN_DIR, on PATH, or at the server bundle path
+not ok - FM_REX_COMPOSER_LIVE was requested but rex is not installed
+local executable stub calls: ''
+global forced missing capability: env={'FM_LIVE': '1'}, exit=1
+skip: rex CLI not found at $REX_BIN_DIR, on PATH, or at the server bundle path
+not ok - FM_REX_COMPOSER_LIVE was requested but rex is not installed
+local executable stub calls: ''
+All gate precedence and capability assertions passed. Only the local nonfunctional Rex executable stub was invoked.

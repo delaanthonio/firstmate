@@ -1,0 +1,115 @@
+FM_TEST_BEGIN 2026-11-01T22:03:27Z tests/fm-capacity.test.sh family=standalone expected_gate_skip=none
+ok - absent config/lane-capacity reports counts and no target
+ok - the Constrained line is printed only when config/lane-capacity exists
+ok - a target yields open lanes, full, and never a negative count
+ok - cpu, memory, and disk pressure close every lane and are named
+ok - unavailable probes print unknown and do not constrain
+ok - a malformed target is reported, not guessed
+ok - keyed config lines parse, and unknown, repeated, or malformed lines are refused
+ok - a fresh beat replaces probes, and its warn level closes lanes with its reason
+ok - late beats count, and stale, missing, malformed, or foreign beats fall back to probes
+ok - several pressure files: worst level wins, first supplies memory, every disk counts
+ok - a beat with missing fields keeps its fields aligned and limits fall back to probes
+ok - the lane footprint memory rule applies only with min-avail-gb
+ok - limits close lanes with named reasons, and --admit exits 0, 75, or 1
+ok - publish is opt-in, private, throttled, records boots, and publishes an invalid config as invalid
+ok - quota JSON and publication select default accounts independently of row order
+ok - captain presence and quota runway publish derived words only, unknown when unreadable
+ok - the watcher publishes lane facts only for an opted-in home
+ok - real host probes produce a well-formed report
+# all fm-capacity tests passed
+FM_TEST_END 2026-11-01T22:03:44Z tests/fm-capacity.test.sh exit=0 duration_ms=17563 gate_skip=false
+FM_TEST_BEGIN 2026-11-01T22:03:45Z tests/fm-record-export.test.sh family=unclassified expected_gate_skip=none
+ok - record export sync is inert when config is absent
+ok - record export sync copies only the fixed v1 allowlist with restrictive modes
+ok - record export sync leaves the prior live snapshot intact when capture fails
+ok - record export accepts an absolute export root with spaces
+ok - record export sync refuses malformed config, traversal-shaped names, symlinks, and non-regular files
+ok - record export requires a dedicated root disjoint from and owned by exactly one home
+ok - record export rejects an unowned root without changing its mode
+ok - interrupted live publication staging cannot wedge archive or sync
+ok - record export sync publishes the exact current allowlist as one live snapshot
+ok - live sync rejects moved, added, removed, replaced, and modified sources before publication
+ok - record export refuses unknown managed artifacts before publishing a snapshot
+ok - record export sync binds destination validation to descriptor-safe publication
+ok - record export bounds descriptors across large live snapshots, archives, and committed retries
+ok - teardown archive commits a complete v1 manifest after every allowlisted source
+ok - teardown archive is inert before any state read when config is absent
+ok - teardown archive retries idempotently and reused task IDs stay separated by spawn_gen
+ok - teardown archive retry accepts sources already retired after a committed capture
+ok - teardown archive rejects a corrupt committed manifest
+ok - teardown archive refuses to commit when a source changes during capture
+ok - teardown archive safely repairs an uncommitted same-generation attempt
+ok - teardown archive retry publishes a fresh generation without stale partial files
+not ok - archive committed after a source changed during stale-generation replacement
+FM_TEST_END 2026-11-01T22:04:04Z tests/fm-record-export.test.sh exit=1 duration_ms=19854 gate_skip=false
+FM_TEST_BEGIN 2026-11-01T22:04:04Z tests/fm-backend-rex.test.sh family=rex expected_gate_skip=optional-binary
+ok - fm_backend_rex_bin: REX_BIN_DIR, then PATH, then the server bundle path
+ok - Rex spawn refuses an endpoint whose server locality is unproven before creating sessions or tabs
+ok - fm_backend_rex_version_check: accepts API revision 5 and refuses an older CLI, older server, or missing CLI
+ok - fm_backend_rex_parse_target: <session-uuid>:<block-uuid> only, prefixes restored
+ok - fm_backend_rex_create_task: one per-home session created once then adopted, one tab per task, scoped block label, 200x50
+warning: could not move the respawned Rex secondmate tab window:00000009-0000-7000-8000-000000000009 to the first position
+ok - fm_backend_rex_create_task: confirmed launcher session gets the tab focus-safe; unconfirmed claims refuse; nested tmux and other-home use the per-home session
+ok - fm_backend_rex_create_task: refuses an unreadable inventory, ambiguous per-home sessions, and duplicates; a gone session returns 2
+ok - fm_backend_rex_create_task_in_session: closes a bare-shell husk carrying the task label, refuses over a live one
+ok - fm_backend_rex_create_task reclaim: the fallback placement closes a bare-shell husk, refuses a live one, and spawn still refuses duplicates
+ok - rex capture: CR stripped and tailed; viewport derived from the last size.rows styled rows, implicit empty bottom row restored
+ok - fm_backend_composer_state rex: the composer holding the cursor decides; a cursor outside any composer falls back to the cursorless read
+ok - fm_backend_agent_state rex: alive/dead/ambiguous from the process view, missing on not-found, unreadable without starting a server
+ok - fm_backend_agent_state rex: a harness below a shell foreground is alive and its records are trusted; a bare shell stays dead
+ok - fm_backend_busy_state rex: OSC 7501 records count only while their owner is the foreground process or an ancestor
+ok - fm_backend_rex_current_path: the foreground process cwd
+ok - rex input: literal text after --, no call for empty input, verified key names only, line submit
+ok - fm_backend_kill rex: closes exactly its tab, treats a gone block as done, retires the emptied per-home session
+ok - fm_backend_kill rex: never kills a session this home does not own, even when it is empty
+ok - fm_backend_kill rex: refuses success unless the block is proven gone
+not ok - teardown of a rex secondmate must succeed: ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REFUSED: unsafe secondmate home removal target /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/.test-runtime/tmp/fm-backend-rex-tests.wL64Na/teardown-secondmate/mate is inside the firstmate repo: expected exit 0, got 1
+FM_TEST_END 2026-11-01T22:04:23Z tests/fm-backend-rex.test.sh exit=1 duration_ms=18796 gate_skip=false
+FM_TEST_BEGIN 2026-11-01T22:04:23Z tests/fm-teardown-endpoint-safety.test.sh family=backend-dispatch expected_gate_skip=none
+ok - fm-teardown: missing, empty, malformed, ambiguous, and task-mismatched endpoints refuse before every mutation or runtime call
+ok - fm-teardown: an unusable worktree identity refuses as before and names a repair path that runs as printed
+ok - fm-teardown: a concurrent lifecycle action refuses before mutation
+ok - fm-teardown: non-pool cleanup ignores unrelated task publication locks
+FM_TEST_END 2026-11-01T22:05:00Z tests/fm-teardown-endpoint-safety.test.sh exit=1 duration_ms=36295 gate_skip=false
+FM_TEST_BEGIN 2026-11-01T22:05:00Z tests/fm-timeout-lib.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - fm_exec_timed passes a command's status and output through unchanged
+ok - system Bash top-level and subshell calls preserve success, failure, and signal status
+Terminated: 15             "$@"
+ok - fm_run_timed reports 124 when the bound TERMs a read whose wrapper recorded 143
+ok - fm_run_timed passes a natural exit through when the bound fired after completion
+ok - fm_run_timed keeps stdout and nonzero status when a function shadows timeout
+ok - fm_exec_timed sends TERM at the bound and a cooperative command ends there
+ok - fm_exec_timed kills a TERM-ignoring command once the grace has passed
+ok - fm_exec_timed replaces the calling shell instead of wrapping it
+ok - fm_exec_timed reaps a descendant that would otherwise hold the output past the bound
+ok - fm_exec_timed forwards a TERM it receives to the bounded command
+ok - fm_exec_timed ends the command when its named owner is already gone
+ok - fm_exec_timed ends the command when its owner dies during watchdog startup
+ok - fm_exec_timed preserves a top-level shell's parent across exec startup
+ok - fm_exec_timed prefers its perl watchdog over timeout
+ok - fm_exec_timed refuses instead of running unbounded when no mechanism exists
+ok - fm_exec_timed rejects a zero, padded, non-numeric, or missing bound and a missing command
+tests/fm-timeout-lib.test.sh: line 28: 39437 Killed: 9                  ( . "$ROOT/bin/fm-timeout-lib.sh"; PATH=$path fm_exec_timed "$@" )
+ok - fm_exec_timed's GNU timeout fallback kills a TERM-ignoring command once the grace has passed
+ok - fm_timed_out accepts 124 and 137 and nothing else
+FM_TEST_END 2026-11-01T22:05:13Z tests/fm-timeout-lib.test.sh exit=0 duration_ms=13262 gate_skip=false
+FM_TEST_SUMMARY total=5 failed=3 skipped_gate=0 duration_ms=106104
+FM_TEST_SUMMARY_FAMILY family=backend-dispatch count=1 duration_ms=36295 failed=1
+FM_TEST_SUMMARY_FAMILY family=pure-contract-unit count=1 duration_ms=13262 failed=0
+FM_TEST_SUMMARY_FAMILY family=rex count=1 duration_ms=18796 failed=1
+FM_TEST_SUMMARY_FAMILY family=standalone count=1 duration_ms=17563 failed=0
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=19854 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-teardown-endpoint-safety.test.sh duration_ms=36295
+FM_TEST_SLOWEST rank=2 script=tests/fm-record-export.test.sh duration_ms=19854
+FM_TEST_SLOWEST rank=3 script=tests/fm-backend-rex.test.sh duration_ms=18796
+FM_TEST_SLOWEST rank=4 script=tests/fm-capacity.test.sh duration_ms=17563
+FM_TEST_SLOWEST rank=5 script=tests/fm-timeout-lib.test.sh duration_ms=13262
+fm-test-run: wrote timing artifact: /Users/dela/.no-mistakes/evidence/01M6C0X5BHNQ0K1NAZ55FZ12GF/bounded-tests.json

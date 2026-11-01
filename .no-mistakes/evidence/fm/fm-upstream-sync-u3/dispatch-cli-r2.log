@@ -1,0 +1,72 @@
+$ FM_DISPATCH_PROVIDER=systemone FM_HOME=/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/.test-phase/dispatch-home bash bin/fm-dispatch-resolve.sh /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/.test-phase/dispatch-home/data/brief.md --project synthetic-pager
+dispatch-resolve:
+  status: clear
+  model: disposable-systemone   latency_ms: 14   tokens: 12/8
+  rule: rule_1 (A bug fix with a stated root cause)   confidence: 0.99
+  probabilities: rule_1=0.99 default=0.01
+  note: rule matched
+  candidate: codex:-  provider=codex  -> eligible (quota ranking off: home declares a single shared quota)
+  profile: --harness 'codex' --effort 'high'
+exit=0
+$ FM_DISPATCH_PROVIDER=systemone FM_HOME=/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/.test-phase/dispatch-home bash bin/fm-dispatch-resolve.sh /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/.test-phase/dispatch-home/data/brief.md --project synthetic-pager
+dispatch-resolve:
+  status: ambiguous
+  model: disposable-systemone   latency_ms: 15   tokens: 12/8
+  rule: rule_1 (A bug fix with a stated root cause)   confidence: 0.1
+  probabilities: rule_1=0.1 default=0.9
+  reason: confidence 0.1 below floor 0.6
+  candidate: codex:-  provider=codex  -> eligible (quota ranking off: home declares a single shared quota)
+exit=0
+$ FM_DISPATCH_PROVIDER=systemone FM_HOME=/Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/.test-phase/dispatch-home bash bin/fm-dispatch-resolve.sh /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/.test-phase/dispatch-home/data/brief.md --project synthetic-pager
+dispatch-resolve: off (brief text matches /Users/dela/.no-mistakes/worktrees/296f7f7a6690/01M6C0X5BHNQ0K1NAZ55FZ12GF/.test-phase/dispatch-home/config/dispatch-never-send line 1; nothing sent)
+exit=0
+Local endpoint received exactly two requests; never-send refusal made no third request.
+Captured request bodies (synthetic data only):
+[
+  {
+    "path": "/v1/systemone",
+    "body": {
+      "model": "fixture-classifier",
+      "state": {
+        "task": {
+          "project": "synthetic-pager",
+          "brief": "## Captain's intent\nFix the synthetic pager off-by-one.\n\n## Firstmate spec\nUse one page per call.\n"
+        }
+      },
+      "questions": {
+        "rule": {
+          "type": "choice",
+          "instructions": "Which ONE dispatch rule best fits `task` (read `task.brief` and `task.project`)? Each option is the rule's own matching condition; pick `default` when no rule's condition is met, including when a rule's own exemption text excludes this task.",
+          "criteria": {
+            "rule_1": "A bug fix with a stated root cause",
+            "default": "No listed rule applies to this task."
+          }
+        }
+      }
+    },
+    "authorization": null
+  },
+  {
+    "path": "/v1/systemone",
+    "body": {
+      "model": "fixture-classifier",
+      "state": {
+        "task": {
+          "project": "synthetic-pager",
+          "brief": "## Captain's intent\nFix the synthetic pager off-by-one.\n\n## Firstmate spec\nUse one page per call.\n"
+        }
+      },
+      "questions": {
+        "rule": {
+          "type": "choice",
+          "instructions": "Which ONE dispatch rule best fits `task` (read `task.brief` and `task.project`)? Each option is the rule's own matching condition; pick `default` when no rule's condition is met, including when a rule's own exemption text excludes this task.",
+          "criteria": {
+            "rule_1": "A bug fix with a stated root cause",
+            "default": "No listed rule applies to this task."
+          }
+        }
+      }
+    },
+    "authorization": null
+  }
+]

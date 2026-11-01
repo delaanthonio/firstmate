@@ -1,0 +1,9 @@
+real archive engine: exit=0
+ALL TESTS PASSED
+ok - teardown archive revalidates sources immediately before publication
+
+negative control: final source revalidation omitted in disposable code copy: exit=1
+ALL TESTS PASSED
+not ok - archive committed after a source changed during stale-generation replacement
+
+Negative control proves the corrected regression rejects publishing a stale source capture. Production code was unchanged.
