@@ -209,6 +209,7 @@ receiver_ack() {
   cat > "$fixture/codex" <<'PY'
 import os, pathlib, subprocess, time
 root = pathlib.Path(os.environ['RECEIPT_FIXTURE'])
+(root / 'ready').touch()
 while True:
     request = root / 'request'
     if request.exists():
@@ -224,6 +225,10 @@ PY
   export RECEIPT_FIXTURE="$fixture" RECEIPT_CLI="$ROOT/bin/fm-operational-input.sh"
   export FM_HOME="$fixture/home" FM_STATE_OVERRIDE="$fixture/home/state"
   python3 "$fixture/codex" & receiver_pid=$!
+  # Capture identity only after the receiver has execed its stable interpreter.
+  # Recording the launcher's pre-exec identity correctly invalidates later acks.
+  for _ in $(seq 1 200); do [ ! -f "$fixture/ready" ] || break; sleep .05; done
+  [ -f "$fixture/ready" ] || fail 'public CLI receiver did not become ready'
   printf '%s\n' "$receiver_pid" > "$FM_STATE_OVERRIDE/.lock"
   touch "$FM_STATE_OVERRIDE/.afk"
   bash -c '
