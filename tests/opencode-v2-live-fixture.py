@@ -9,6 +9,7 @@ from pathlib import Path
 import shutil
 import socket
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -17,7 +18,7 @@ import urllib.parse
 import urllib.request
 
 
-def run(lab):
+def run(lab, executable="opencode"):
     repo = Path(__file__).resolve().parent.parent
     project = lab / "project"
     home = lab / "home"
@@ -103,7 +104,7 @@ def run(lab):
         env[f"XDG_{kind}_HOME"] = str(path)
     logpath = lab / "server.log"
     log = logpath.open("w")
-    process = subprocess.Popen(["opencode", "serve", "--hostname", "127.0.0.1", "--port", str(port)], cwd=project, env=env, stdout=log, stderr=log)
+    process = subprocess.Popen([executable, "serve", "--hostname", "127.0.0.1", "--port", str(port)], cwd=project, env=env, stdout=log, stderr=log)
     headers = {}
 
     def api(path, body=None, method=None):
@@ -207,5 +208,5 @@ def run(lab):
 
 if __name__ == "__main__":
     with tempfile.TemporaryDirectory(prefix="fm-opencode-v2-live-") as directory:
-        run(Path(directory).resolve())
+        run(Path(directory).resolve(), str(Path(sys.argv[1]).absolute()) if len(sys.argv) > 1 else "opencode")
     print("ok - private OpenCode server, provider, watcher, configuration and database cleaned")

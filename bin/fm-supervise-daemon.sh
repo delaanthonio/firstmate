@@ -236,9 +236,7 @@ WEDGE_ALARM_NOTIFIER_PID=
 INJECT_LAST_FAILURE=
 # 1 once the latest delivery attempt reached the submit primitive.
 INJECT_SUBMIT_ATTEMPTED=0
-# The latest submit's verdict and the exact text it submitted.
 INJECT_LAST_VERDICT=
-INJECT_SENT_MSG=
 # The captain-relevant verb set and the status classifiers (last_status_line,
 # status_is_captain_relevant, window_to_task, and the status-span reader) now
 # live in bin/fm-classify-lib.sh, shared with the always-on watcher.
@@ -818,7 +816,7 @@ escalate_add() {  # <state> <distilled-item>
   fi
   buf="$state/.subsuper-escalations"
   [ -s "$buf" ] || _now > "${buf}.since"
-  [ ! -f "$buf.frozen" ] || [ -e "$buf.next-since" ] || _now > "$buf.next-since"
+  { [ ! -f "$buf.frozen" ] && [ ! -f "$buf.frozen.tmp" ]; } || [ -e "$buf.next-since" ] || _now > "$buf.next-since"
   printf '%s\n' "$item" >> "$buf"
 }
 
@@ -915,13 +913,32 @@ escalate_full_text_save() {  # <state> <buf>
 # which becomes the buffer's since-stamp once the frozen generation is gone.
 escalate_freeze() {  # <buf> <submitted-message> <request-id>
   local buf=$1
-  rm -f "$buf.next-since"
-  if ! printf '%s' "$2" > "$buf.frozen-msg" \
-    || ! { printf 'since=%s\nid=%s\n' "$(cat "$buf.since" 2>/dev/null)" "$3"; cat "$buf"; } > "$buf.frozen.tmp" \
-    || ! mv -f "$buf.frozen.tmp" "$buf.frozen"; then
-    rm -f "$buf.frozen.tmp" "$buf.frozen" "$buf.frozen-msg"
-    log "digest freeze could not be recorded; the next flush rebuilds it"
+  rm -f "$buf.next-since" "$buf.frozen-msg"
+  if ! { printf 'since=%s\nid=%s\n' "$(cat "$buf.since" 2>/dev/null)" "$3"; cat "$buf"; } > "$buf.frozen.tmp" \
+    || ! printf '%s' "$2" > "$buf.frozen-msg.tmp" \
+    || ! mv -f "$buf.frozen-msg.tmp" "$buf.frozen-msg"; then
+    rm -f "$buf.frozen.tmp" "$buf.frozen-msg.tmp"
+    log "digest freeze could not be recorded; submission deferred"
+    return 1
   fi
+  mv -f "$buf.frozen.tmp" "$buf.frozen"
+}
+
+escalate_consume_frozen() {
+  local state=$1 buf=$2 n items
+  n=$(( $(wc -l < "$buf.frozen") - 2 ))
+  items=$(mktemp "$state/.subsuper-frozen.XXXXXX" 2>/dev/null) || return 1
+  tail -n +3 "$buf.frozen" > "$items" || { rm -f "$items"; return 1; }
+  unknown_wake_acknowledge_flushed "$state" "$items" \
+      || log "unknown-wake acknowledgement write failed; a delivered unknown wake may escalate again"
+  if ! tail -n +"$((n + 1))" "$buf" > "$items" || ! mv -f "$items" "$buf"; then
+    rm -f "$items"
+    return 1
+  fi
+  if [ -s "$buf" ]; then mv -f "$buf.next-since" "$buf.since" 2>/dev/null || _now > "$buf.since"; else rm -f "$buf.since"; fi
+  rm -f "$items" "$buf.frozen" "$buf.frozen-msg" "$buf.next-since" "$state/.subsuper-inject-wedged"
+  ESCALATE_KEPT_FULL=
+  return 0
 }
 
 # escalate_flush_frozen: retry a frozen generation verbatim. Returns 0 once
@@ -933,20 +950,16 @@ escalate_flush_frozen() {  # <state> <buf>
   n=$(( $(wc -l < "$buf.frozen") - 2 ))
   id=$(sed -n '2s/^id=//p' "$buf.frozen")
   items=$(mktemp "$state/.subsuper-frozen.XXXXXX" 2>/dev/null) || return 1
-  tail -n +3 "$buf.frozen" > "$items"
+  tail -n +3 "$buf.frozen" > "$items" || { rm -f "$items"; return 1; }
   if [ "$(head -n 1 "$buf.frozen")" != "since=$(cat "$buf.since" 2>/dev/null)" ] || [ -z "$id" ] \
     || [ ! -f "$buf.frozen-msg" ] || ! head -n "$n" "$buf" | cmp -s - "$items"; then
     rm -f "$items" "$buf.frozen" "$buf.frozen-msg" "$buf.next-since"
     return 0
   fi
   if inject_msg "$(cat "$buf.frozen-msg")" "$state" exact "$id"; then
-    unknown_wake_acknowledge_flushed "$state" "$items" \
-      || log "unknown-wake acknowledgement write failed; a delivered unknown wake may escalate again"
-    tail -n +"$((n + 1))" "$buf" > "$items" && mv -f "$items" "$buf"
-    if [ -s "$buf" ]; then mv -f "$buf.next-since" "$buf.since" 2>/dev/null || _now > "$buf.since"; else rm -f "$buf.since"; fi
-    rm -f "$items" "$buf.frozen" "$buf.frozen-msg" "$buf.next-since" "$state/.subsuper-inject-wedged"
-    ESCALATE_KEPT_FULL=
-    return 0
+    rm -f "$items"
+    escalate_consume_frozen "$state" "$buf"
+    return $?
   fi
   rm -f "$items"
   [ "$INJECT_LAST_VERDICT" != send-failed ] || rm -f "$buf.frozen" "$buf.frozen-msg" "$buf.next-since"
@@ -969,6 +982,13 @@ escalate_flush() {  # <state>
     INJECT_LAST_FAILURE="escalation buffer $buf is not a readable file"
     log "inject skipped: $INJECT_LAST_FAILURE"
     return 1
+  fi
+  if [ -f "$buf.frozen.tmp" ]; then
+    if [ -f "$buf.frozen-msg" ]; then
+      mv -f "$buf.frozen.tmp" "$buf.frozen" || return 1
+    else
+      rm -f "$buf.frozen.tmp" "$buf.frozen-msg.tmp" "$buf.next-since"
+    fi
   fi
   if [ -f "$buf.frozen" ]; then
     escalate_flush_frozen "$state" "$buf" || return 1
@@ -993,6 +1013,10 @@ escalate_flush() {  # <state>
   msg=$(printf 'Supervisor escalate (%s event(s)): %s (pre-read; re-arm not needed — watcher daemon-managed)' "$ESCALATE_EVENTS" "$msg")
   [ "${FM_SUPERVISOR_BACKEND:-tmux}" != t3code ] || id="fm-digest-$(_now)-$$-$RANDOM$RANDOM"
   if inject_msg "$msg" "$state" "" "$id"; then
+    if [ -f "$buf.frozen" ]; then
+      escalate_consume_frozen "$state" "$buf"
+      return $?
+    fi
     unknown_wake_acknowledge_flushed "$state" "$buf" \
       || log "unknown-wake acknowledgement write failed; a delivered unknown wake may escalate again"
     : > "$buf"; rm -f "${buf}.since" "$state/.subsuper-inject-wedged"
@@ -1001,7 +1025,9 @@ escalate_flush() {  # <state>
   fi
   if [ "$INJECT_SUBMIT_ATTEMPTED" = 1 ]; then
     [ -z "$full" ] || ESCALATE_KEPT_FULL=$full
-    [ "$INJECT_LAST_VERDICT" != unconfirmed ] || escalate_freeze "$buf" "$INJECT_SENT_MSG" "$id"
+    [ "$INJECT_LAST_VERDICT" != send-failed ] || rm -f "$buf.frozen" "$buf.frozen-msg" "$buf.next-since"
+  elif [ -f "$buf.frozen.tmp" ] || [ -f "$buf.frozen" ]; then
+    [ -z "$full" ] || ESCALATE_KEPT_FULL=$full
   elif [ "$fresh" = 1 ]; then
     rm -f "$full"
   fi
@@ -1606,7 +1632,6 @@ inject_msg() {  # <message> [state] [exact] [request-id]
   # watcher triage. Escalations buffer and survive for the next catch-up flush.
   INJECT_LAST_FAILURE=
   INJECT_LAST_VERDICT=
-  INJECT_SENT_MSG=
   INJECT_SUBMIT_ATTEMPTED=0
   afk_active "$state" || { INJECT_LAST_FAILURE="deferred: afk inactive"; log "inject $INJECT_LAST_FAILURE"; return 1; }
   # (2) Single-line digest: collapse any embedded newlines so submission via
@@ -1681,12 +1706,14 @@ inject_msg() {  # <message> [state] [exact] [request-id]
   # means the text was never confirmed typed, or (herdr) it was typed but no
   # Enter could be sent, so no confirmation retry ran; every other non-empty
   # verdict is an Enter-confirmation failure.
+  if [ "$backend" = t3code ] && [ -n "$request_id" ] && [ "$exact" != exact ]; then
+    escalate_freeze "$state/.subsuper-escalations" "$msg" "$request_id" || return 1
+  fi
   retries=${FM_INJECT_CONFIRM_RETRIES:-$INJECT_CONFIRM_RETRIES_DEFAULT}
   sleep_s=${FM_INJECT_CONFIRM_SLEEP:-$INJECT_CONFIRM_SLEEP_DEFAULT}
   bytes=$(LC_ALL=C; printf '%s' "${#msg}")
   errf=$(mktemp "$state/.subsuper-inject-err.XXXXXX" 2>/dev/null) || errf=
   INJECT_SUBMIT_ATTEMPTED=1
-  INJECT_SENT_MSG=$msg
   verdict=$(FM_T3CODE_CLIENT_REQUEST_ID=$request_id fm_backend_send_text_submit "$backend" "$target" "$msg" "$retries" "$sleep_s" "$sleep_s" 2>"${errf:-/dev/null}")
   INJECT_LAST_VERDICT=$verdict
   if [ -n "$errf" ]; then

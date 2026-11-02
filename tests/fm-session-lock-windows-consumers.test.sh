@@ -203,7 +203,155 @@ test_untagged_values_reach_the_numeric_helpers_unchanged() {
   pass "untagged lock values: the session-pid helpers answer exactly as fm_pid_identity and fm_pid_alive do"
 }
 
+test_handoff_keeps_a_watcher_for_its_windows_session_only() {
+  local home repo pid arm count=0
+  home=$(make_home handoff win:7204)
+  repo="$home/fixture"
+  mkdir -p "$repo/bin" "$home/config"
+  cp "$ROOT/bin/fm-supervision-handoff.sh" "$repo/bin/"
+  cat > "$repo/bin/fm-wake-lib.sh" <<'SH'
+. "$FM_TEST_REAL_ROOT/bin/fm-wake-lib.sh"
+fm_pid_identity() { case "$1" in ''|*[!0-9]*) return 1 ;; esac; printf 'fixture:%s\n' "$1"; }
+fm_watcher_healthy() { [ -e "$FM_HOME/arm-ready" ]; }
+SH
+  printf 'fm_backend_source() { return 0; }\n' > "$repo/bin/fm-backend.sh"
+  : > "$repo/bin/fm-operational-input.sh"
+  printf '. "$FM_TEST_REAL_ROOT/bin/fm-session-lock-lib.sh"\n' > "$repo/bin/fm-session-lock-lib.sh"
+  cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+fm_test_track_child "$$"
+printf '%s\n' "$$" > "$FM_HOME/arm-ready"
+printf 'watcher: started pid=%s\n' "$$"
+deadline=$((SECONDS + 15))
+while [ ! -e "$FM_HOME/stop" ] && [ "$SECONDS" -lt "$deadline" ]; do sleep 0.05; done
+SH
+  chmod +x "$repo/bin/fm-watch-arm.sh"
+  : > "$home/config/supervision-handoff-ack"
+  printf 'fixture-token\n' > "$home/state/.supervision-handoff-pending"
+  env -u TMUX_PANE PATH="$FAKEBIN:$PATH" FM_TEST_REAL_ROOT="$ROOT" \
+    FM_TEST_WIN_TABLE="$WIN_TABLE" FM_HOME="$home" CLAUDE_CODE_SESSION_ID=S1 CLAUDE_PID=7204 \
+    bash "$repo/bin/fm-supervision-handoff.sh" fixture-token 1 > "$home/out" 2> "$home/err" &
+  pid=$!
+  fm_test_track_child "$pid"
+  while [ ! -s "$home/state/.supervision-host-left" ] && kill -0 "$pid" 2>/dev/null && [ "$count" -lt 100 ]; do
+    sleep 0.05
+    count=$((count + 1))
+  done
+  if [ ! -s "$home/state/.supervision-host-left" ]; then
+    touch "$home/stop"
+    wait "$pid" || true
+    fail "Windows handoff did not leave a successor watcher: $(cat "$home/err")"
+  fi
+  arm=$(cut -f1 "$home/state/.supervision-host-left")
+  kill -0 "$arm" 2>/dev/null || fail "Windows handoff recorded a dead arm"
+  printf 'S2\n' > "$home/state/.lock-session"
+  count=0
+  while kill -0 "$pid" 2>/dev/null && [ "$count" -lt 60 ]; do
+    sleep 0.05
+    count=$((count + 1))
+  done
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -TERM "$pid"
+    touch "$home/stop"
+    wait "$pid" || true
+    fail "Windows handoff stayed owned after session replacement"
+  fi
+  wait "$pid" || true
+  kill -0 "$arm" 2>/dev/null || fail "handoff removed the arm promised to the next owner"
+  touch "$home/stop"
+  pass "Windows handoff starts a successor and relinquishes ownership on session replacement"
+}
+
+test_disowned_handoff_keeps_replacing_and_retrying_for_a_live_session() {
+  local home repo harness owner first_arm count=0
+  home=$(make_home disowned-handoff 0)
+  repo="$home/fixture"
+  mkdir -p "$repo/bin" "$home/config" "$home/fakebin"
+  cp "$ROOT/bin/fm-supervision-handoff.sh" "$repo/bin/"
+  ln -s "$(command -v bash)" "$repo/claude"
+  cat > "$repo/bin/fm-wake-lib.sh" <<'SH'
+. "$FM_TEST_REAL_ROOT/bin/fm-wake-lib.sh"
+fm_watcher_healthy() { [ -s "$FM_HOME/arms" ]; }
+SH
+  cat > "$repo/bin/fm-backend.sh" <<'SH'
+fm_backend_source() { return 0; }
+fm_pane_busy_state() { echo idle; }
+fm_backend_composer_state() { echo empty; }
+fm_backend_send_text_submit() { echo delivered >> "$FM_HOME/deliveries"; echo confirmed; }
+SH
+  printf 'fm_operational_record_write() { printf -v "$4" "%%s" "$3"; }\n' > "$repo/bin/fm-operational-input.sh"
+  printf '. "$FM_TEST_REAL_ROOT/bin/fm-session-lock-lib.sh"\n' > "$repo/bin/fm-session-lock-lib.sh"
+  cat > "$home/fakebin/ps" <<'SH'
+#!/usr/bin/env bash
+if [ "$1" = -o ] && [ "$2" = pgid=,tpgid= ]; then echo '17 17'; else exec "$FM_TEST_REAL_PS" "$@"; fi
+SH
+  printf '#!/usr/bin/env bash\ncat "$FM_HOME/state/.lock"\n' > "$home/fakebin/tmux"
+  cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+fm_test_track_child "$$"
+printf '%s\n' "$$" >> "$FM_HOME/arms"
+printf 'watcher: started pid=%s\n' "$$"
+deadline=$((SECONDS + 20))
+while [ ! -e "$FM_HOME/stop" ] && [ "$SECONDS" -lt "$deadline" ]; do
+  if [ "$(head -1 "$FM_HOME/arms")" = "$$" ] && [ -e "$FM_HOME/retire-first" ]; then exit 0; fi
+  sleep 0.05
+done
+SH
+  cat > "$repo/host.sh" <<'SH'
+#!/usr/bin/env bash
+nohup bash "$FM_HOME/fixture/bin/fm-supervision-handoff.sh" fixture-token 1 > "$FM_HOME/out" 2> "$FM_HOME/err" </dev/null &
+owner=$!
+fm_test_track_child "$owner"
+printf '%s\n' "$owner" > "$FM_HOME/owner.pid"
+disown "$owner"
+deadline=$((SECONDS + 10))
+while [ ! -s "$FM_HOME/state/.supervision-host-left" ] && [ "$SECONDS" -lt "$deadline" ]; do sleep 0.05; done
+SH
+  chmod +x "$repo/bin/fm-watch-arm.sh" "$home/fakebin/ps" "$home/fakebin/tmux"
+  : > "$home/config/supervision-handoff-ack"
+  printf 'fixture-token\n' > "$home/state/.supervision-handoff-pending"
+  env -u CLAUDE_CODE_SESSION_ID -u CLAUDE_PID -u FM_PROC_ROOT_OVERRIDE \
+    PATH="$home/fakebin:$PATH" FM_HOME="$home" FM_TEST_REAL_ROOT="$ROOT" FM_TEST_REAL_PS="$(command -v ps)" \
+    FM_SUPERVISION_HANDOFF_RETRY_SECONDS=1 TMUX_PANE=%fixture "$repo/claude" -c '
+      printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+      bash "$FM_HOME/fixture/host.sh"
+      touch "$FM_HOME/host-exited"
+      deadline=$((SECONDS + 20))
+      while [ ! -e "$FM_HOME/stop" ] && [ "$SECONDS" -lt "$deadline" ]; do sleep 0.05; done
+    ' &
+  harness=$!
+  fm_test_track_child "$harness"
+  while [ ! -e "$home/host-exited" ] && [ "$count" -lt 220 ]; do sleep 0.05; count=$((count + 1)); done
+  [ -s "$home/state/.supervision-host-left" ] && [ -e "$home/host-exited" ] \
+    || fail "handoff did not pass initial ownership admission: $(cat "$home/err")"
+  owner=$(cat "$home/owner.pid")
+  first_arm=$(cut -f1 "$home/state/.supervision-host-left")
+  : > "$home/deliveries"
+  touch "$home/retire-first"
+  count=0
+  while [ "$count" -lt 100 ]; do
+    [ "$(cut -f1 "$home/state/.supervision-host-left")" != "$first_arm" ] && [ -s "$home/deliveries" ] && break
+    sleep 0.05
+    count=$((count + 1))
+  done
+  if ! kill -0 "$harness" 2>/dev/null || ! kill -0 "$owner" 2>/dev/null; then
+    fail "disowned handoff rejected its unchanged live session: $(cat "$home/err")"
+  fi
+  [ "$(cut -f1 "$home/state/.supervision-host-left")" != "$first_arm" ] \
+    || fail "disowned handoff did not replace its closed watcher"
+  [ -s "$home/deliveries" ] || fail "disowned handoff stopped retrying delivery"
+  printf 'S2\n' > "$home/state/.lock-session"
+  count=0
+  while [ -e "$home/state/.supervision-handoff-owner" ] && [ "$count" -lt 60 ]; do sleep 0.05; count=$((count + 1)); done
+  assert_absent "$home/state/.supervision-handoff-owner" "disowned handoff retained a replaced session"
+  touch "$home/stop"
+  wait "$harness" || true
+  pass "disowned handoff replaces watchers and retries delivery until its pinned session changes"
+}
+
 test_untagged_values_reach_the_numeric_helpers_unchanged
+test_disowned_handoff_keeps_replacing_and_retrying_for_a_live_session
+test_handoff_keeps_a_watcher_for_its_windows_session_only
 test_supervision_main_key_reads_a_windows_session_lock
 test_autoarm_claim_pins_a_windows_lock_holder_and_reads_it_back
 test_autoarm_midturn_health_follows_a_windows_lock_holder

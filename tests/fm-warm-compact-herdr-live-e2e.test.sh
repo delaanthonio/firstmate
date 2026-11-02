@@ -125,7 +125,7 @@ git -C "$FM" init -q -b main
 git -C "$FM" add -A >/dev/null
 git -C "$FM" -c user.name=fmtest -c user.email=fmtest@example.invalid commit -q -m lab
 mkdir -p "$FM/state" "$FM/config" "$FM/data"
-: > "$FM/config/supervision-host"
+printf 'claude %s\n' "$MODEL" > "$FM/config/supervision-host"
 printf 'idle-seconds=60\nmin-context-tokens=5000\n' > "$FM/config/warm-compact"
 printf 'project=demo\nwindow=fm-demo\nharness=claude\n' > "$FM/state/demo.meta"
 : > "$FM/state/demo.status"
@@ -228,7 +228,8 @@ wait_until "$POLLS" host_log_has 'warm-compact	primary	sent' || fail "the idle p
 evidence "primary: $(host_log | grep 'warm-compact	primary')"
 wait_until "$POLLS" host_log_has 'warm-compact	engine	compacted' || fail "the idle engine conversation was never compacted"$'\n'"$(diagnose)"
 evidence "engine: $(host_log | grep 'warm-compact	engine')"
-wait_until 600 test "$(compact_boundaries)" -ge 1 || fail "the primary transcript has no compaction boundary"$'\n'"$(diagnose)"
+primary_compacted() { [ "$(compact_boundaries)" -ge 1 ]; }
+wait_until 600 primary_compacted || fail "the primary transcript has no compaction boundary"$'\n'"$(diagnose)"
 evidence "primary transcript compaction boundaries: $(compact_boundaries)"
 sleep 20
 [ "$(host_log | grep -c 'warm-compact	primary')" = 1 ] || fail "the primary was compacted more than once in one idle episode"
@@ -246,12 +247,25 @@ acked() {
   local t
   t=$(transcript)
   [ -n "$t" ] || return 1
-  jq -r --argjson since "$after" '
-    select(.type == "assistant")
-    | (.timestamp | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601) as $at
-    | select($at >= $since)
-    | .message.content[]? | select(.type == "tool_use" and .name == "Bash") | .input.command' "$t" 2>/dev/null \
-    | grep -q 'fm-wake-drain.sh --ack-through [0-9]* --recovery-generation'
+  jq -se --argjson since "$after" '
+    def recent: (.timestamp | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601) >= $since;
+    . as $events
+    | any(range(0; length); . as $i
+        | $events[$i] | select(.type == "assistant" and recent)
+        | .message.content[]?
+        | select(.type == "tool_use" and .name == "Bash")
+        | select(.input.command | test("fm-wake-drain.sh --ack-through [0-9]+ --recovery-generation"))
+        | .id as $ack_id
+        | any($events[0:$i][]; select(.type == "user" and recent)
+            | .message.content[]?
+            | select(.type == "tool_result" and (.is_error // false) == false)
+            | .content | tostring | contains("lab-after-compact"))
+          and any($events[$i + 1:][]; select(.type == "user")
+            | .message.content[]?
+            | .type == "tool_result" and .tool_use_id == $ack_id and (.is_error // false) == false))
+  ' "$t" >/dev/null 2>&1 || return 1
+  [ -f "$FM/state/.wake-queue" ] || return 1
+  awk 'index($0, "lab-after-compact") { exit 1 }' "$FM/state/.wake-queue"
 }
 wait_until "$POLLS" acked || fail "the compacted primary never drained and acknowledged the pending wake"$'\n'"$(diagnose)"
 evidence "compacted primary drained and acknowledged the wake queued after compaction"

@@ -118,7 +118,7 @@ pass "real paseo: expected task label verification accepts the matching terminal
 
 # --- send_literal + send_key(Enter), the two-step submit form ---------------
 
-fm_backend_paseo_send_literal "$TARGET" 'echo literal-then-key-captain' \
+fm_backend_paseo_send_literal "$TARGET" "printf '%s%s\\n' literal-then-key- captain" \
   || fail "send_literal failed"
 sleep 0.3
 fm_backend_paseo_send_key "$TARGET" Enter || fail "send_key Enter failed"
@@ -132,7 +132,7 @@ pass "real paseo: send_literal (unsubmitted) + send_key Enter submit as two step
 
 # --- send_text_line (the composed form) --------------------------------------
 
-fm_backend_paseo_send_text_line "$TARGET" "echo captain-on-deck-line" \
+fm_backend_paseo_send_text_line "$TARGET" "printf '%s%s\\n' captain-on-deck- line" \
   || fail "send_text_line failed"
 sleep 0.5
 out=$(fm_backend_paseo_capture "$TARGET" 20) || fail "capture failed after send_text_line"
@@ -144,13 +144,11 @@ pass "real paseo: send_text_line composes send-keys+Enter and its output is capt
 
 # --- current_path: verified creation-time-frozen cwd -------------------------
 
-fm_backend_paseo_send_text_line "$TARGET" "cd /tmp"
+fm_backend_paseo_send_text_line "$TARGET" 'cd /' || fail "could not change the direct shell directory"
 sleep 0.3
 p=$(fm_backend_paseo_current_path "$TARGET") || fail "current_path failed"
-case "$p" in
-*/tmp) : ;;
-*) fail "real paseo: current_path did not report the terminal's cwd after a direct cd, got '$p'" ;;
-esac
+[ "$p" = / ] || fail "real paseo: current_path did not observe the direct cd, got '$p'"
+
 pass "real paseo: current_path reads the terminal's live cwd after a direct cd"
 
 # The load-bearing case: a NESTED SUBSHELL's own cd (exactly what `treehouse
@@ -159,15 +157,16 @@ pass "real paseo: current_path reads the terminal's live cwd after a direct cd"
 # subshell's own cd. fm_backend_paseo_current_path's active pwd-probe is what
 # fm-spawn.sh's worktree-discovery poll actually depends on, so this must be
 # proven against a real subshell, not just a plain cd in the top-level shell.
-fm_backend_paseo_send_text_line "$TARGET" 'cd / && bash'
+fm_backend_paseo_send_text_line "$TARGET" "cd '$PROJ_DIR' && bash" || fail "could not enter the nested shell"
 sleep 0.5
-fm_backend_paseo_send_text_line "$TARGET" "cd /private/tmp"
+nested=$(fm_backend_paseo_current_path "$TARGET") || fail "current_path failed on entering the nested shell"
+[ "$nested" = "$(cd "$PROJ_DIR" && pwd -P)" ] || fail "current_path did not observe the nested shell directory: '$nested'"
+fm_backend_paseo_send_text_line "$TARGET" "cd '$ROOT'" || fail "could not change directory inside the nested shell"
 sleep 0.3
 p2=$(fm_backend_paseo_current_path "$TARGET") || fail "current_path failed inside a nested subshell"
-case "$p2" in
-*/private/tmp | */tmp) : ;;
-*) fail "real paseo: current_path did not track a nested subshell's own cd (the treehouse-get-shaped case), got '$p2'" ;;
-esac
+[ "$p2" = "$(cd "$ROOT" && pwd -P)" ] \
+  || fail "real paseo: current_path did not track the nested subshell's own cd, got '$p2'"
+
 pass "real paseo: current_path tracks a NESTED SUBSHELL's own cd (the treehouse-get-shaped case a bare cwd read cannot see)"
 fm_backend_paseo_send_text_line "$TARGET" 'exit'
 sleep 0.3

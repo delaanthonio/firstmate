@@ -225,9 +225,12 @@ CYCLE_WOKE=0
 CYCLE_REASON=''
 watcher_cycle() {
   local label=$1 out rc
+  local beat="$STATE/.last-watcher-beat" first_beat poll_observed=0 i=0
   cycle=$((cycle + 1))
   out="$TMP_ROOT/cycle-$cycle.out"
   CYCLE_WOKE=0
+  first_beat="$out.first-beat"
+  rm -f "$beat" "$first_beat"
   FM_HOME="$LAB_HOME" TMUX_TMPDIR="$LAB_TMUX_DIR" \
     FM_WEDGE_MAX_ESCALATIONS="$MAX" \
     FM_CAP_HORIZON_SECS="$HORIZON_SECS" \
@@ -237,18 +240,24 @@ watcher_cycle() {
     FM_BUSY_TURN_MAX_SECS=1 \
     "$ROOT/bin/fm-watch.sh" > "$out" 2>&1 &
   local pid=$!
-  # Bound the cycle: a wedged pane produces no wake on a silenced poll, so wait
-  # for the watcher heartbeat to prove it completed a poll, then bound the rest.
-  # Both bounds are tight because a real lab watcher spends tens of seconds on
-  # startup alone, and every second here is a second of the horizon the silence
-  # probes must fit inside.
-  local beat="$STATE/.last-watcher-beat" i=0
   while [ "$i" -lt 200 ]; do
     kill -0 "$pid" 2>/dev/null || break
-    [ -s "$beat" ] && break
+    if [ -e "$beat" ]; then
+      if [ ! -e "$first_beat" ]; then
+        touch -r "$beat" "$first_beat" || fail "could not record the first watcher beacon"
+      elif [ "$beat" -nt "$first_beat" ]; then
+        poll_observed=1
+        break
+      fi
+    fi
     sleep 0.1
     i=$((i + 1))
   done
+  if kill -0 "$pid" 2>/dev/null && [ "$poll_observed" -ne 1 ]; then
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    fail "cycle $cycle never completed an observed poll: $(cat "$out")"
+  fi
   i=0
   while kill -0 "$pid" 2>/dev/null && [ "$i" -lt $(( CYCLE_BOUND * 10 )) ]; do
     sleep 0.1
@@ -265,21 +274,30 @@ watcher_cycle() {
     wait "$pid" 2>/dev/null
     rc=$?
   fi
-  rm -f "$beat"
+  rm -f "$beat" "$first_beat"
+  case "$rc" in 0|alive) ;; *) fail "cycle $cycle watcher failed ($rc): $(cat "$out")" ;; esac
   local reason
   reason=$(head -1 "$out" 2>/dev/null)
   # A cycle that printed a reason line published a wake; a cycle that printed
   # none stayed inside the poll loop. Record which, because "the cap holds the
   # pane quiet" is exactly the claim that must be read off the real cycle.
   case "$reason" in
-    '') CYCLE_WOKE=0 ;;
+    '')
+      [ "$poll_observed" -eq 1 ] || fail "cycle $cycle exited without a wake or an observed poll"
+      CYCLE_WOKE=0 ;;
     *) CYCLE_WOKE=1 ;;
   esac
   CYCLE_REASON="$reason"
   say "$label -> exit=$rc woke=$CYCLE_WOKE reason=${reason:-none}"
   # Acknowledge so the next cycle starts from an empty queue and its exit
   # status reflects the pane, not a leftover wake.
-  FM_HOME="$LAB_HOME" "$ROOT/bin/fm-wake-drain.sh" >/dev/null 2>&1 || true
+  local drain_err="$TMP_ROOT/cycle-$cycle.drain.err"
+  FM_HOME="$LAB_HOME" "$ROOT/bin/fm-wake-drain.sh" >/dev/null 2> "$drain_err" \
+    || fail "cycle $cycle drain failed: $(cat "$drain_err")"
+  if [ "$CYCLE_WOKE" -eq 1 ] || grep -q '^WAKE_ACK_REQUIRED:' "$drain_err"; then
+    FM_HOME="$LAB_HOME" ack_drain_err "$STATE" "$drain_err" >/dev/null 2>&1 \
+      || fail "cycle $cycle acknowledgement failed: $(cat "$drain_err")"
+  fi
   cat "$out" >> "$TRANSCRIPT"
 }
 # reset_lab_state: put the wedged worker back to a fresh first sight, so the

@@ -2540,7 +2540,7 @@ ok - muse (Muse Code 1.4.11 (1.4.11-R6667.1)): the same idle screen read cursorl
 ok - real rex: no state-changing call left the test sessions and every other session is byte-identical
 ```
 
-Use the [Rex regression entry points](../rex-backend.md#regression-entry-points) to refresh this record after a Rex upgrade, and the opt-in live composer guard after any tool upgrade.
+Use the [Rex regression entry points](../rex-backend.md#regression-entry-points) to refresh this record after a Rex upgrade, and the default-on live composer guard after any tool upgrade.
 
 ## T3 Code
 

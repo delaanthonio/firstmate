@@ -1140,6 +1140,51 @@ test_opencode1_without_effort_keeps_permission_only_config() {
   pass "opencode 1.x without an effort keeps its permission-only launch config"
 }
 
+test_raw_opencode_probe_uses_selected_runner() {
+  local rec id out rc runner_version other raw runner plugin result form
+  for runner_version in 1.18.32 2.0.21; do
+    for form in absolute relative environment; do
+      id="raw-oc-${runner_version%%.*}-$form"
+      rec=$(make_spawn_case "$id" opencode "$id")
+      read_case_record "$rec"
+      mkdir -p "$CASE_DIR/custom"
+      runner="$CASE_DIR/custom/opencode"
+      cat > "$runner" <<RUNNER
+#!/usr/bin/env bash
+[ "\${1:-}" != --version ] || printf '%s\n' "$runner_version"
+RUNNER
+      chmod +x "$runner"
+      raw=$runner
+      [ "$form" != relative ] || raw=../custom/opencode
+      [ "$form" != environment ] || raw="PATH=$CASE_DIR/custom:\$PATH opencode"
+      other=1.18.32
+      [ "$runner_version" != 1.18.32 ] || other=2.0.21
+      out=$(FM_TEST_OPENCODE_VERSION="$other" run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+        "$id" "$PROJ_DIR" "$raw --standalone --prompt __BRIEF__"); rc=$?
+      expect_code 0 "$rc" "raw OpenCode spawn failed: $out"
+      assert_grep "opencode_version=$runner_version" "$HOME_DIR/state/$id.meta" "raw runner version must control metadata"
+      assert_grep "$raw --standalone --prompt" "$LAUNCH_LOG" "raw launch must preserve the selected runner"
+      plugin="$WT_DIR/.opencode/plugins/fm-busy-state.js"
+      node --input-type=module - "$plugin" <<'JS' || fail "generated raw-runner plugin failed"
+import {pathToFileURL} from 'node:url';
+const mod = await import(pathToFileURL(process.argv[2]).href);
+const hooks = await mod.FmBusyState({});
+for (const event of [
+  {type:'session.status',properties:{sessionID:'fixture',status:{type:'busy'}}},
+  {type:'session.status',properties:{sessionID:'fixture',status:{type:'idle'}}},
+  {type:'session.execution.started',properties:{sessionID:'fixture'}}
+]) await hooks.event({event});
+JS
+      result=$(. "$ROOT/bin/fm-busy-lib.sh"; fm_busy_classify tmux fake:w opencode "$id" "$HOME_DIR/state")
+      case "$runner_version:$result" in
+        1.*:'idle opencode-plugin'|2.*:'busy opencode-plugin') ;;
+        *) fail "raw runner plugin selected the wrong event contract: $runner_version $result" ;;
+      esac
+    done
+  done
+  pass "raw OpenCode absolute and relative runners control version and plugin behavior despite conflicting PATH"
+}
+
 test_opencode_probe_and_launch_share_resolved_executable() {
   local rec id out status launch probelog probed
   id=profile-opencode-resolve-z7g
@@ -1567,22 +1612,22 @@ test_droid_observes_default_model_without_pinning_it() {
     mkdir -p "$HOME_DIR/user-home/.factory" "$WT_DIR/.factory"
     printf '%s\n' '{"sessionDefaultSettings":{"model":"glm-5.3-flash"},"secret":"not-for-task-state"}' \
       > "$HOME_DIR/user-home/.factory/settings.json"
-    expected=glm-5.3-flash
+    expected="glm-5.3-flash"
     case "$scenario" in
       local)
         printf '%s\n' '{"sessionDefaultSettings":{"model":"custom:local-default"}}' \
           > "$HOME_DIR/user-home/.factory/settings.local.json"
-        expected=custom:local-default ;;
+        expected="custom:local-default" ;;
       project)
         printf '.factory/settings.local.json\n' >> "$PROJ_DIR/.git/info/exclude"
         printf '%s\n' '{"sessionDefaultSettings":{"model":"project-default"}}' \
           > "$WT_DIR/.factory/settings.local.json"
-        expected=project-default ;;
-      absent) rm "$HOME_DIR/user-home/.factory/settings.json"; expected=catalog-model ;;
+        expected="project-default" ;;
+      absent) rm "$HOME_DIR/user-home/.factory/settings.json"; expected="catalog-model" ;;
       unknown)
         rm "$HOME_DIR/user-home/.factory/settings.json"
         touch "$FAKEBIN_DIR/droid-no-catalog"
-        expected=unknown-at-spawn ;;
+        expected="unknown-at-spawn" ;;
       invalid) printf '%s\n' '{bad json' > "$HOME_DIR/user-home/.factory/settings.json" ;;
     esac
     if [ "$scenario" = sentinel ]; then
@@ -3097,6 +3142,7 @@ test_codex_permission_modes() {
         "${args[@]}" --model gpt-5 --effort high)
       status=$?
       expect_code 0 "$status" "Codex $kind spawn under $mode should succeed: $out"
+      assert_present "$FAKEBIN_DIR/.spawn-window" "successful Codex spawn did not create its endpoint artifact"
       launch=$(cat "$LAUNCH_LOG")
       flags="codex --model 'gpt-5' -c 'model_reasoning_effort=\"high\"' "
       if [ "$mode" = restricted ]; then
@@ -3159,7 +3205,7 @@ test_codex_permission_invalid_refuses_before_mutation() {
       assert_contains "$out" 'config/codex-permission-mode' "refusal must identify the setting"
       assert_contains "$out" 'bypass or restricted' "refusal must identify accepted values"
       [ ! -s "$LAUNCH_LOG" ] || fail "invalid config launched an agent"
-      [ ! -e "$FAKEBIN_DIR/.spawn-windows" ] || fail "invalid config created an endpoint"
+      [ ! -e "$FAKEBIN_DIR/.spawn-window" ] || fail "invalid config created an endpoint"
       [ "$(ls -a "$HOME_DIR/state")" = "$before" ] || fail "invalid config mutated state"
       if [ "$kind" = relaunch ]; then
         [ "$(cat "$HOME_DIR/state/$id.meta")" = 'preserve existing task metadata' ] \
@@ -3228,6 +3274,7 @@ test_opencode_emits_variant_for_openai_family_effort
 test_opencode_omits_variant_when_model_family_lacks_effort
 test_opencode1_passes_model_flag_and_variant_only_config
 test_opencode1_without_effort_keeps_permission_only_config
+test_raw_opencode_probe_uses_selected_runner
 test_opencode_probe_and_launch_share_resolved_executable
 test_opencode_unknown_version_takes_1x_launch_path
 test_opencode2_delivery_gate_accepts_auto_submitted_brief

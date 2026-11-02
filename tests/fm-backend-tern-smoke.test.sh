@@ -34,22 +34,11 @@ command -v jq >/dev/null 2>&1 || { echo "skip: jq not found (required by the ter
 # shellcheck source=tests/tern-test-safety.sh
 . "$ROOT/tests/tern-test-safety.sh"
 
-# Bounded probes: a wedged daemon must skip, not hang the lane.
-probe() {  # <seconds> <cmd...>
-  local secs=$1
-  shift
-  if command -v timeout >/dev/null 2>&1; then
-    timeout "$secs" "$@"
-  elif command -v gtimeout >/dev/null 2>&1; then
-    gtimeout "$secs" "$@"
-  else
-    "$@"
-  fi
-}
+. "$ROOT/bin/fm-timeout-lib.sh"
 
-probe 15 tern ls --json >/dev/null 2>&1 \
+fm_run_timed 15 tern ls --json >/dev/null 2>&1 \
   || { echo "skip: no reachable Tern session daemon (tern ls --json failed)"; exit 0; }
-probe 15 tern ctl state >/dev/null 2>&1 \
+fm_run_timed 15 tern ctl state >/dev/null 2>&1 \
   || { echo "skip: no Tern window control endpoint (tern ctl state failed) - native agent state cannot be exercised here"; exit 0; }
 
 # The throwaway session name must be unused: a pre-existing session of that name
@@ -117,7 +106,7 @@ pass "real tern: create_task opens a keep-open tab in the fm-test- session, and 
 # --- literal + key (two-step submit form) ------------------------------------------
 
 sleep 1
-fm_backend_tern_send_literal "$TARGET" 'echo literal-then-key-tern' || fail "send_literal failed"
+fm_backend_tern_send_literal "$TARGET" "printf '%s%s\\n' literal-then-key- tern" || fail "send_literal failed"
 sleep 0.3
 fm_backend_tern_send_key "$TARGET" Enter "$LABEL" || fail "send_key Enter failed"
 sleep 0.7
@@ -128,7 +117,7 @@ case "$out" in
 esac
 pass "real tern: send_literal + send_key Enter submit as two steps and the output is capturable with --surfaces"
 
-fm_backend_tern_send_text_line "$TARGET" 'echo composed-line-tern' || fail "send_text_line failed"
+fm_backend_tern_send_text_line "$TARGET" "printf '%s%s\\n' composed-line- tern" || fail "send_text_line failed"
 sleep 0.7
 out=$(fm_backend_tern_capture "$TARGET" 30) || fail "capture failed after send_text_line"
 case "$out" in
@@ -153,13 +142,15 @@ pass "real tern: send_key Escape, C-c, C-u and Enter are all accepted chords"
 
 # --- current_path ------------------------------------------------------------------------
 
-fm_backend_tern_send_text_line "$TARGET" 'cd /tmp'
+fm_backend_tern_send_text_line "$TARGET" 'cd /' || fail "could not change to the first directory"
 sleep 0.5
-p=$(fm_backend_tern_current_path "$TARGET")
-case "$p" in
-  /tmp|/private/tmp) : ;;
-  *) fail "current_path should read the foreground process cwd /tmp after a cd, got '$p'" ;;
-esac
+p=$(fm_backend_tern_current_path "$TARGET") || fail "current_path failed after the first cd"
+[ "$p" = / ] || fail "current_path did not observe the first directory transition: '$p'"
+fm_backend_tern_send_text_line "$TARGET" "cd '$ROOT'" || fail "could not change to the second directory"
+sleep 0.5
+p=$(fm_backend_tern_current_path "$TARGET") || fail "current_path failed after the second cd"
+[ "$p" = "$(cd "$ROOT" && pwd -P)" ] || fail "current_path did not observe the second directory transition: '$p'"
+
 pass "real tern: current_path reads the foreground process cwd"
 
 # --- agent_state / busy_state / native_state -----------------------------------------------

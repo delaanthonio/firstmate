@@ -2560,8 +2560,9 @@ test_help_prints_usage_and_exits_zero() {
       "help: $flag must print the usage line from the header on stdout"
     assert_grep 'Merge method on GitHub defaults to --squash' "$case_dir/stdout" \
       "help: $flag must print the whole header, not a truncated range"
-    assert_no_grep '^#' "$case_dir/stdout" \
-      "help: $flag must strip the comment markers"
+    if grep -q '^#' "$case_dir/stdout"; then
+      fail "help: $flag must strip the comment markers"
+    fi
     [ ! -s "$case_dir/stderr" ] || fail "help: $flag wrote to stderr: $(cat "$case_dir/stderr")"
     [ ! -s "$case_dir/gh.log" ] || fail "help: $flag invoked gh"
   done

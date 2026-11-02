@@ -22,8 +22,12 @@ opencode_major() {  # <executable>
   printf '%s\n' "${version%%.*}"
 }
 
-if [ "${FM_OPENCODE_LIVE_E2E:-0}" != 1 ]; then
-  fm_live_gate default-on FM_OPENCODE_V2_OFFLINE_LIVE opencode python3 git
+credentialed=${FM_OPENCODE_LIVE_E2E:-}
+case "$credentialed" in 0|1) ;; *) credentialed=${FM_LIVE:-0} ;; esac
+if [ "$credentialed" != 1 ]; then
+  prerequisites=(python3 git)
+  [ -n "${FM_OPENCODE_LIVE_BINS:-}" ] || prerequisites+=(opencode)
+  fm_live_gate default-on FM_OPENCODE_V2_OFFLINE_LIVE "${prerequisites[@]}"
   fixture="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/opencode-v2-live-fixture.py"
   checked=0
   for bin in ${FM_OPENCODE_LIVE_BINS:-$(command -v opencode)}; do
@@ -33,7 +37,7 @@ if [ "${FM_OPENCODE_LIVE_E2E:-0}" != 1 ]; then
       printf 'skip: %s reports %s, not OpenCode 2\n' "$bin" "$("$bin" --version 2>/dev/null || printf unknown)"
       continue
     fi
-    PATH="$(dirname "$bin"):$PATH" python3 "$fixture" || {
+    python3 "$fixture" "$bin" || {
       printf 'not ok - OpenCode %s native fixture failed\n' "$("$bin" --version)" >&2
       exit 1
     }

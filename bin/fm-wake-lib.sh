@@ -1700,15 +1700,13 @@ fm_lock_acquire_wait_bounded() {
     return 0
   fi
   if [ "$rc" -eq 124 ]; then
-    owner_pid=$(cat "$lockdir/pid" 2>/dev/null || true)
+    # The final attempt already observed contention. Re-reading the pid or
+    # probing it again races the holder's release and misreports a deadline
+    # as an acquisition error between otherwise healthy writers.
+    owner_pid=${FM_LOCK_HELD_PID:-}
     case "$owner_pid" in
       ''|*[!0-9]*|0) ;;
-      *)
-        if [ "$owner_pid" -gt 0 ] 2>/dev/null && fm_pid_alive "$owner_pid"; then
-          FM_LOCK_HELD_PID=$owner_pid
-          return 124
-        fi
-        ;;
+      *) return 124 ;;
     esac
     # shellcheck disable=SC2034 # Output read by callers after bounded acquisition.
     FM_LOCK_HELD_PID=

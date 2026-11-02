@@ -276,6 +276,81 @@ test_sync_retracts_stale_records_as_one_live_snapshot() {
   pass "record export sync publishes the exact current allowlist as one live snapshot"
 }
 
+test_sync_revalidates_live_sources_before_publication() {
+  python3 - "$ROOT/bin/fm-record-export.py" "$TMP_ROOT/live-source-changes" <<'PYTEST' || fail "live source revalidation failed"
+import importlib.util
+import os
+from pathlib import Path
+import sys
+from unittest.mock import patch
+
+spec = importlib.util.spec_from_file_location("record_export", sys.argv[1])
+exporter = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = exporter
+spec.loader.exec_module(exporter)
+base = Path(sys.argv[2])
+for change in ("ack", "data-add", "data-remove", "data-replace", "data-write",
+               "state-add", "state-remove", "state-replace", "state-write"):
+    home = base / change
+    for directory in ("config", "data", "state/task.inbox/handled"):
+        (home / directory).mkdir(parents=True, exist_ok=True)
+    destination = base / f"{change}-export"
+    (home / "config/record-export-root").write_text(str(destination) + "\n")
+    (home / "data/projects.md").write_text("old data\n")
+    (home / "state/task.status").write_text("old state\n")
+    pending = home / "state/task.inbox/001.msg"
+    pending.write_text("message\n")
+    args = tuple(str(home / name) for name in ("config", "data", "state"))
+    exporter.sync_records(str(home), *args)
+    previous = os.readlink(destination / "live")
+    changed = False
+    original_add = exporter.add_source
+    original_copy = exporter.copy_source
+
+    def add_source(sources, parent_fd, name, relative, label, root_fd):
+        original_add(sources, parent_fd, name, relative, label, root_fd)
+        if change == "ack" and relative == "state/task.inbox/001.msg" and pending.exists():
+            pending.rename(pending.parent / "handled/001.msg")
+
+    def copy_source(source, stage_fd):
+        global changed
+        digest = original_copy(source, stage_fd)
+        if changed or change == "ack":
+            return digest
+        changed = True
+        area, action = change.split("-")
+        record = home / ("data/projects.md" if area == "data" else "state/task.status")
+        if action == "add":
+            (home / ("data/backlog.md" if area == "data" else "state/new.meta")).write_text("new\n")
+        elif action == "remove":
+            record.unlink()
+        elif action == "replace":
+            replacement = home / "replacement"
+            replacement.write_bytes(record.read_bytes())
+            replacement.replace(record)
+        else:
+            record.write_text("changed bytes\n")
+        return digest
+
+    with patch.object(exporter, "add_source", add_source), patch.object(exporter, "copy_source", copy_source):
+        try:
+            exporter.sync_records(str(home), *args)
+        except exporter.ExportError:
+            pass
+        else:
+            raise AssertionError(f"sync published after {change}")
+    assert os.readlink(destination / "live") == previous, change
+    assert (destination / "live/data/projects.md").read_text() == "old data\n", change
+    assert (destination / "live/state/task.status").read_text() == "old state\n", change
+    exporter.sync_records(str(home), *args)
+    assert os.readlink(destination / "live") != previous, change
+    if change == "ack":
+        assert not (destination / "live/state/task.inbox/001.msg").exists()
+        assert (destination / "live/state/task.inbox/handled/001.msg").read_text() == "message\n"
+PYTEST
+  pass "live sync rejects moved, added, removed, replaced, and modified sources before publication"
+}
+
 test_sync_refuses_unknown_managed_artifacts_before_publication() {
   local home export_root rc=0
   home=$(make_home sync-unknown-managed)
@@ -296,7 +371,7 @@ test_sync_refuses_unknown_managed_artifacts_before_publication() {
 }
 
 test_sync_detects_destination_parent_replacement() {
-  local home export_root outside pid rc=0 wait_count=0 stage='' live_target prior_snapshot
+  local home export_root outside pid worker_pid mutation_rc=0 rc=0 wait_count=0 stage='' live_target prior_snapshot
   home=$(make_home sync-destination-race)
   export_root="$TMP_ROOT/export-sync-destination-race"
   outside="$TMP_ROOT/outside-sync-destination-race"
@@ -311,30 +386,28 @@ test_sync_detects_destination_parent_replacement() {
   run_export "$home" sync > "$home/race.out" 2> "$home/race.err" &
   pid=$!
   while kill -0 "$pid" 2>/dev/null; do
-    stage=$(find "$export_root/live/data" -maxdepth 1 -name '.record-export.*' -print -quit 2>/dev/null || true)
-    [ -n "$stage" ] || stage=$(find "$export_root/.live-generations" -maxdepth 1 -name '.stage-*' -print -quit 2>/dev/null || true)
+    stage=$(find "$export_root/.live-generations" -maxdepth 1 -name '.stage-*' -print -quit 2>/dev/null || true)
     [ -z "$stage" ] || break
     wait_count=$((wait_count + 1))
     [ "$wait_count" -le 500 ] || break
     sleep 0.01
   done
   [ -n "$stage" ] || { wait "$pid" || true; fail "destination-race fixture never observed a staged snapshot"; }
-  kill -STOP "$pid"
-  case "$stage" in
-    "$export_root/live/data"/*)
-      mv "$export_root/live/data" "$export_root/live/data.saved"
-      ln -s "$outside" "$export_root/live/data"
-      prior_snapshot="$export_root/live/data.saved/projects.md"
-      ;;
-    "$export_root/.live-generations"/*)
-      mv "$export_root/.live-generations" "$export_root/.live-generations.saved"
-      ln -s "$outside" "$export_root/.live-generations"
-      prior_snapshot="$export_root/.live-generations.saved/${live_target#.live-generations/}/data/projects.md"
-      ;;
-    *) kill -CONT "$pid"; wait "$pid" || true; fail "destination-race fixture observed an unknown staging path" ;;
-  esac
-  kill -CONT "$pid"
+  if export_fixture_worker_pid "$export_root/.stage-$$-foreign" "$pid" >/dev/null; then
+    wait "$pid" || true
+    fail "sync fixture accepted a process outside its invocation"
+  fi
+  worker_pid=$(export_fixture_worker_pid "$stage" "$pid") \
+    || { wait "$pid" || true; fail "sync fixture could not identify its filesystem worker"; }
+  kill -STOP "$worker_pid" || { wait "$pid" || true; fail "could not stop the fixture sync worker"; }
+  mv "$export_root/.live-generations" "$export_root/.live-generations.saved" \
+    && ln -s "$outside" "$export_root/.live-generations" || mutation_rc=$?
+  prior_snapshot="$export_root/.live-generations.saved/${live_target#.live-generations/}/data/projects.md"
+  worker_pid=$(export_fixture_worker_pid "$stage" "$pid") \
+    || fail "sync worker left its fixture ancestry before resume"
+  kill -CONT "$worker_pid" || fail "could not resume the fixture sync worker"
   wait "$pid" || rc=$?
+  [ "$mutation_rc" -eq 0 ] || fail "sync destination-race mutation failed"
   [ "$rc" -ne 0 ] || fail "sync committed after its destination parent was replaced"
   assert_absent "$outside/projects.md" "sync wrote through a replacement destination symlink"
   assert_grep 'initial' "$prior_snapshot" \
@@ -349,6 +422,44 @@ write_archive_fixture() {  # <home> <spawn-gen>
   printf 'working: underway\ndone: landed\n' > "$home/state/task-a.status"
   printf 'pending captain text\n' > "$home/state/task-a.inbox/001.msg"
   printf 'handled captain text\n' > "$home/state/task-a.inbox/handled/002.msg"
+}
+
+test_export_bounds_descriptors_for_large_source_sets() {
+  local home export_root index
+  home=$(make_home bounded-descriptors)
+  export_root="$TMP_ROOT/export-bounded-descriptors"
+  printf '%s\n' "$export_root" > "$home/config/record-export-root"
+  write_archive_fixture "$home" bounded-generation
+  mkdir -p "$home/data/task-a"
+  for index in $(seq 3 402); do
+    printf 'message %s\n' "$index" > "$home/state/task-a.inbox/handled/$index.msg"
+    printf 'data %s\n' "$index" > "$home/data/task-a/status.$index.log"
+  done
+  ( ulimit -n 128 && run_export "$home" sync ) > "$home/sync.out" 2> "$home/sync.err" \
+    || fail "live export exceeded its descriptor budget: $(cat "$home/sync.err")"
+  ( ulimit -n 128 && run_export "$home" archive-task task-a ) > "$home/archive.out" 2> "$home/archive.err" \
+    || fail "archive export exceeded its descriptor budget: $(cat "$home/archive.err")"
+  ( ulimit -n 128 && run_export "$home" archive-task task-a ) > "$home/retry.out" 2> "$home/retry.err" \
+    || fail "archive retry exceeded its descriptor budget: $(cat "$home/retry.err")"
+  python3 - "$home" "$export_root" <<'PYTEST' || fail "bounded-descriptor export omitted or changed records"
+import hashlib
+import json
+from pathlib import Path
+import sys
+home, root = map(Path, sys.argv[1:])
+archive = root / "archive/task-a/bounded-generation"
+manifest = json.loads((archive / "manifest.v1.json").read_text())
+assert len(manifest["files"]) == 404
+for entry in manifest["files"]:
+    expected = (home / entry["source"]).read_bytes()
+    assert (root / "live" / entry["source"]).read_bytes() == expected
+    assert (archive / entry["archive"]).read_bytes() == expected
+    assert entry["bytes"] == len(expected)
+    assert entry["sha256"] == hashlib.sha256(expected).hexdigest()
+for record in (home / "data/task-a").iterdir():
+    assert (root / "live/data/task-a" / record.name).read_bytes() == record.read_bytes()
+PYTEST
+  pass "record export bounds descriptors across large live snapshots, archives, and committed retries"
 }
 
 test_archive_commits_manifest_last_with_integrity_metadata() {
@@ -464,7 +575,7 @@ test_archive_retry_accepts_sources_already_retired_after_commit() {
 }
 
 test_archive_refuses_a_corrupt_committed_manifest() {
-  local home export_root manifest rc case_name
+  local home export_root manifest rc case_name expected_error
   for case_name in wrong-task trailing-garbage duplicate-key wrong-type extra-root extra-entry; do
     home=$(make_home "archive-corrupt-manifest-$case_name")
     export_root="$TMP_ROOT/export-archive-corrupt-manifest-$case_name"
@@ -476,19 +587,46 @@ test_archive_refuses_a_corrupt_committed_manifest() {
     manifest="$export_root/archive/task-a/committed-generation/manifest.v1.json"
     case "$case_name" in
       wrong-task) sed 's/"task": "task-a"/"task": "another-task"/' "$manifest" > "$home/manifest.tmp" ;;
-      trailing-garbage) cp "$manifest" "$home/manifest.tmp"; printf 'not-json\n' >> "$home/manifest.tmp" ;;
-      duplicate-key) sed '/"captured_at":/a\  "captured_at": "2000-01-01T00:00:00Z",' "$manifest" > "$home/manifest.tmp" ;;
+      trailing-garbage) cp "$manifest" "$home/manifest.tmp" && printf 'not-json\n' >> "$home/manifest.tmp" ;;
+      duplicate-key) awk '{ print } /"captured_at":/ { print "  \"captured_at\": \"2000-01-01T00:00:00Z\"," }' "$manifest" > "$home/manifest.tmp" ;;
       wrong-type) sed 's/"captured_at": "[^"]*"/"captured_at": 1/' "$manifest" > "$home/manifest.tmp" ;;
-      extra-root) sed '/"complete": true/a\  "unexpected": true,' "$manifest" > "$home/manifest.tmp" ;;
-      extra-entry) sed '0,/"sha256": "[^"]*"/s//& , "unexpected": true/' "$manifest" > "$home/manifest.tmp" ;;
-    esac
-    mv "$home/manifest.tmp" "$manifest"
+      extra-root) awk '{ print } /"complete": true/ { print "  \"unexpected\": true," }' "$manifest" > "$home/manifest.tmp" ;;
+      extra-entry) awk '!changed && /"sha256":/ { sub(/"sha256": "[^"]*"/, "& , \"unexpected\": true"); changed=1 } { print }' "$manifest" > "$home/manifest.tmp" ;;
+    esac || fail "could not prepare $case_name manifest corruption"
+    mv "$home/manifest.tmp" "$manifest" || fail "could not publish $case_name manifest corruption"
     rc=0
     run_export "$home" archive-task task-a > "$home/retry.out" 2> "$home/retry.err" || rc=$?
     [ "$rc" -ne 0 ] || fail "archive retry accepted a $case_name committed manifest"
+    case "$case_name" in
+      wrong-task|wrong-type) expected_error='record export archive manifest has invalid field values' ;;
+      trailing-garbage) expected_error='invalid record export archive manifest:' ;;
+      duplicate-key) expected_error='duplicate JSON field: captured_at' ;;
+      extra-root) expected_error='record export archive manifest has unknown or missing fields' ;;
+      extra-entry) expected_error='record export archive manifest file entry has unknown or missing fields' ;;
+    esac
+    assert_grep "$expected_error" "$home/retry.err" "$case_name manifest did not reach its intended validation"
     assert_present "$home/state/task-a.meta" "$case_name manifest retry removed live metadata"
   done
   pass "teardown archive rejects a corrupt committed manifest"
+}
+
+export_fixture_worker_pid() {
+  local stage=$1 parent=$2 worker ancestor
+  worker=${stage##*/}
+  case "$worker" in
+    .stage-*) worker=${worker#.stage-} ;;
+    .archive-stage-*) worker=${worker#.archive-stage-} ;;
+    *) return 1 ;;
+  esac
+  worker=${worker%%-*}
+  case "$worker" in ''|*[!0-9]*) return 1 ;; esac
+  ancestor=$worker
+  while [ "$ancestor" -gt 1 ] && [ "$ancestor" != "$parent" ]; do
+    ancestor=$(ps -o ppid= -p "$ancestor" 2>/dev/null | tr -d '[:space:]')
+    case "$ancestor" in ''|*[!0-9]*) return 1 ;; esac
+  done
+  [ "$ancestor" = "$parent" ] || return 1
+  printf '%s\n' "$worker"
 }
 
 test_archive_detects_a_source_change_during_capture() {
@@ -512,14 +650,20 @@ test_archive_detects_a_source_change_during_capture() {
     sleep 0.01
   done
   [ -n "$stage" ] || { wait "$archive_pid" || true; fail "archive source-race fixture never observed staging"; }
-  worker_pid=$(ps -eo pid=,args= | awk -v pattern="$ROOT/bin/fm-record-export.py archive-task task-a" \
-    'index($0, pattern) { print $1; exit }')
-  [ -n "$worker_pid" ] || { wait "$archive_pid" || true; fail "archive source-race fixture could not identify the filesystem worker"; }
-  kill -STOP "$worker_pid"
-  rm "$home/state/task-a.status"
-  ln -s "$outside/sentinel" "$home/state/task-a.status"
-  kill -CONT "$worker_pid"
+  if export_fixture_worker_pid "$export_root/.archive-stage-$$-foreign" "$archive_pid" >/dev/null; then
+    wait "$archive_pid" || true
+    fail "archive fixture accepted a process outside its invocation"
+  fi
+  worker_pid=$(export_fixture_worker_pid "$stage" "$archive_pid") \
+    || { wait "$archive_pid" || true; fail "archive source-race fixture could not identify its filesystem worker"; }
+  kill -STOP "$worker_pid" || { wait "$archive_pid" || true; fail "could not stop the fixture archive worker"; }
+  local mutation_rc=0
+  rm "$home/state/task-a.status" && ln -s "$outside/sentinel" "$home/state/task-a.status" || mutation_rc=$?
+  worker_pid=$(export_fixture_worker_pid "$stage" "$archive_pid") \
+    || fail "archive worker left its fixture ancestry before resume"
+  kill -CONT "$worker_pid" || fail "could not resume the fixture archive worker"
   wait "$archive_pid" || rc=$?
+  [ "$mutation_rc" -eq 0 ] || fail "archive source-race mutation failed"
   [ "$rc" -ne 0 ] || fail "archive committed while a source changed during capture"
   assert_absent "$archive/manifest.v1.json" "source race committed a manifest"
   assert_present "$home/state/task-a.meta" "source race removed live metadata"
@@ -568,7 +712,7 @@ test_archive_retry_removes_stale_files_from_a_partial_generation() {
 }
 
 test_archive_revalidates_sources_immediately_before_publication() {
-  local home export_root archive archive_pid rc=0 wait_count=0 index
+  local home export_root archive rc=0
   home=$(make_home archive-final-revalidate)
   export_root="$TMP_ROOT/export-archive-final-revalidate"
   printf '%s\n' "$export_root" > "$home/config/record-export-root"
@@ -577,25 +721,43 @@ test_archive_revalidates_sources_immediately_before_publication() {
     || fail "final revalidation setup could not initialize its root: $(cat "$home/sync.err")"
   archive="$export_root/archive/task-a/final-revalidate-generation"
   mkdir -p "$archive/inbox"
-  index=0
-  while [ "$index" -lt 10000 ]; do
-    printf 'stale %s\n' "$index" > "$archive/inbox/$(printf '%05d' "$index").msg"
-    index=$((index + 1))
-  done
+  printf 'stale\n' > "$archive/inbox/001.msg"
+  # Inject at the real filesystem boundary after stale-generation removal.
+  # Directory iteration order and polling speed must not decide whether the
+  # source changes before the final comparison or after publication.
+  FM_HOME="$home" python3 - "$ROOT/bin/fm-record-export.py" "$home" \
+    > "$home/archive.out" 2> "$home/archive.err" <<'PYTEST' || rc=$?
+import os
+from pathlib import Path
+import runpy
+import sys
+from unittest.mock import patch
 
-  run_export "$home" archive-task task-a > "$home/archive.out" 2> "$home/archive.err" &
-  archive_pid=$!
-  while [ -e "$archive/inbox/00000.msg" ]; do
-    kill -0 "$archive_pid" 2>/dev/null || break
-    wait_count=$((wait_count + 1))
-    [ "$wait_count" -le 1000 ] || break
-    sleep 0.01
-  done
-  [ ! -e "$archive/inbox/00000.msg" ] \
-    || { wait "$archive_pid" || true; fail "archive did not begin replacing its stale partial generation"; }
-  printf 'changed after final comparison\n' >> "$home/state/task-a.status"
-  wait "$archive_pid" || rc=$?
+script, home = sys.argv[1:]
+remove = os.rmdir
+injected = False
+
+def remove_and_change_source(path, *args, **kwargs):
+    global injected
+    result = remove(path, *args, **kwargs)
+    if path == "final-revalidate-generation":
+        with (Path(home) / "state/task-a.status").open("a") as source:
+            source.write("changed during stale-generation replacement\n")
+        (Path(home) / "source-change-injected").touch()
+        injected = True
+    return result
+
+sys.argv = [script, "archive-task", "task-a"]
+try:
+    with patch("os.rmdir", side_effect=remove_and_change_source):
+        runpy.run_path(script, run_name="__main__")
+finally:
+    assert injected, "archive never reached stale-generation replacement"
+PYTEST
+  assert_present "$home/source-change-injected" "archive never reached stale-generation replacement"
   [ "$rc" -ne 0 ] || fail "archive committed after a source changed during stale-generation replacement"
+  assert_grep 'record export source changed during archive capture' "$home/archive.err" \
+    "archive must refuse because the source changed, rather than an unrelated failure"
   assert_absent "$archive/manifest.v1.json" "archive committed a manifest after its final source comparison"
   assert_present "$home/state/task-a.meta" "final comparison race removed live metadata"
   pass "teardown archive revalidates sources immediately before publication"
@@ -697,6 +859,63 @@ test_archive_refuses_unsafe_sources_and_destinations() {
   pass "teardown archive refuses malformed generations, unknown artifacts, symlinks, and non-regular files"
 }
 
+test_archive_retention_filesystem_errors_do_not_fail_committed_capture() {
+  python3 - "$ROOT/bin/fm-record-export.py" "$TMP_ROOT/retention-errors" <<'PYTEST' || fail "retention filesystem errors escaped committed capture"
+from contextlib import redirect_stderr
+import importlib.util
+import io
+import json
+import os
+from pathlib import Path
+import sys
+from unittest.mock import patch
+
+spec = importlib.util.spec_from_file_location("record_export", sys.argv[1])
+exporter = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = exporter
+spec.loader.exec_module(exporter)
+base = Path(sys.argv[2])
+for fault in ("stat-permission", "stat-missing", "manifest-permission", "manifest-missing"):
+    home = base / fault / "home"
+    for name in ("config", "data", "state"):
+        (home / name).mkdir(parents=True, exist_ok=True)
+    destination = base / fault / "export"
+    (home / "config/record-export-root").write_text(str(destination) + "\n")
+    args = (str(home), *(str(home / name) for name in ("config", "data", "state")))
+    (home / "state/old.meta").write_text("spawn_gen=old-generation\n")
+    exporter.archive_task(*args, "old")
+    old = destination / "archive/old/old-generation"
+    os.utime(old / "manifest.v1.json", (1, 1))
+    old_identity = exporter.stat_identity(old.stat())
+    (home / "state/current.meta").write_text("spawn_gen=current-generation\n")
+    original_stat = exporter.os.stat
+    original_validate = exporter.load_and_validate_manifest
+    error = PermissionError("fixture retention denied") if fault.endswith("permission") else FileNotFoundError("fixture concurrent removal")
+
+    def stat_record(path, *positional, **kwargs):
+        fd = kwargs.get("dir_fd")
+        if fault.startswith("stat") and path == "manifest.v1.json" and fd is not None and exporter.fd_identity(fd) == old_identity:
+            raise error
+        return original_stat(path, *positional, **kwargs)
+
+    def validate(fd, task, generation):
+        if fault.startswith("manifest") and task == "old":
+            raise error
+        return original_validate(fd, task, generation)
+
+    warnings = io.StringIO()
+    with patch.object(exporter.os, "stat", stat_record), patch.object(exporter, "load_and_validate_manifest", validate), redirect_stderr(warnings):
+        exporter.archive_task(*args, "current")
+        exporter.archive_task(*args, "current")
+    manifest = json.loads((destination / "archive/current/current-generation/manifest.v1.json").read_text())
+    assert manifest["task"] == "current", manifest
+    assert (old / "manifest.v1.json").exists(), fault
+    if fault != "stat-missing":
+        assert "warning:" in warnings.getvalue(), (fault, warnings.getvalue())
+PYTEST
+  pass "retention filesystem errors warn without failing new or idempotent archive capture"
+}
+
 test_archive_retention_prunes_only_old_committed_generations() {
   local home export_root archive_root rc=0
   home=$(make_home archive-retention)
@@ -777,8 +996,10 @@ test_sync_requires_a_dedicated_disjoint_single_home_root
 test_sync_does_not_mutate_an_unowned_root_before_rejecting_it
 test_live_publication_staging_cannot_wedge_archives_or_sync
 test_sync_retracts_stale_records_as_one_live_snapshot
+test_sync_revalidates_live_sources_before_publication
 test_sync_refuses_unknown_managed_artifacts_before_publication
 test_sync_detects_destination_parent_replacement
+test_export_bounds_descriptors_for_large_source_sets
 test_archive_commits_manifest_last_with_integrity_metadata
 test_archive_is_off_before_any_state_read_when_config_is_absent
 test_archive_retry_is_idempotent_and_generations_never_overwrite
@@ -791,6 +1012,7 @@ test_archive_revalidates_sources_immediately_before_publication
 test_archive_waits_for_the_task_lock_before_enumerating_sources
 test_archive_allows_missing_optional_records
 test_archive_refuses_unsafe_sources_and_destinations
+test_archive_retention_filesystem_errors_do_not_fail_committed_capture
 test_archive_retention_prunes_only_old_committed_generations
 test_export_root_stays_cold_to_firstmate_readers
 

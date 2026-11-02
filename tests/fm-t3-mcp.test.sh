@@ -598,12 +598,23 @@ test_watch_is_event_driven_and_bounded() {
   fresh_case watch
   t3_fake_set 'w.threads = { "thread-w": { threadId: "thread-w", projectId: "p", status: "running", activeRunId: "run-w", archived: false, worktreePath: null, items: [],
     runs: [{ runId: "run-w", ordinal: 1, status: "running" }] }, "thread-idle": { threadId: "thread-idle", projectId: "p", status: "completed", activeRunId: null, archived: false, worktreePath: null, items: [], runs: [] } }'
-  ( sleep 0.5; t3_fake_set 'w.threads["thread-w"].runs[0].status = "completed"; w.threads["thread-w"].activeRunId = null; w.threads["thread-w"].status = "completed"' ) &
+  (
+    deadline=$((SECONDS + 15))
+    while ! node -e '
+const fs = require("fs");
+const rows = fs.readFileSync(process.argv[1], "utf8").trim().split("\n").filter(Boolean).map(JSON.parse);
+process.exit(rows.some(e => e.tool === "t3_thread_read" && e.arguments?.threadId === "thread-w" && !e.dropped) ? 0 : 1);
+' "$T3_FAKE_LOG"; do
+      [ "$SECONDS" -lt "$deadline" ] || exit 1
+      sleep 0.05
+    done
+    t3_fake_set 'w.threads["thread-w"].runs[0].status = "completed"; w.threads["thread-w"].activeRunId = null; w.threads["thread-w"].status = "completed"'
+  ) &
   ender=$!
   start=$(date +%s)
   mcp watch --thread thread-w --thread thread-idle --timeout-ms 20000
   elapsed=$(( $(date +%s) - start ))
-  wait "$ender"
+  wait "$ender" || fail "watch fixture never observed the initial thread read or could not complete its run"
   expect_code 0 "$RC" "watch: $ERR"
   assert_equals run-ended "$(field "$OUT" event)" "a run reaching a terminal status ends the wait"
   assert_equals run-w "$(field "$OUT" runId)" "the ended run is named"

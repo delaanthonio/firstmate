@@ -506,7 +506,7 @@ test_capture_renders_activity_and_status() {
   out=$(t3_run 'fm_backend_t3code_capture thread-live 1')
   [ "$out" = 't3code: status=running run=run-1' ] || fail "capture must honour the line bound, got '$out'"
   read=$(t3_log_line_of 'r.tool === "t3_thread_read" && r.arguments.view === "activity"')
-  [ -n "$read" ] || fail "capture must read the activity view"
+  [ "$read" -gt 0 ] || fail "capture must read the activity view"
   # T3 pages oldest-first, so a thread longer than one page must still show its newest items.
   t3_fake_set 'w.threads["thread-live"].items = Array.from({ length: 250 }, (_, i) => ({ type: "assistant_message", status: "completed", text: `item ${i}` }));'
   out=$(t3_run 'fm_backend_t3code_capture thread-live 3')
@@ -1897,17 +1897,33 @@ test_spawn_refuses_raw_launch_command() {
 }
 
 test_spawn_abort_returns_lease_only_after_archive() {  # <ok|fail>
-  local archive=$1 id out rc return_line
+  local archive=$1 id out rc return_line fb real_mkdir
   id=$(t3_uid "t3abortz$archive")
   t3_case "spawn-abort-$archive"
   [ "$archive" = ok ] || t3_world_set 'w.failTools = { t3_thread_organize: { code: "boom", message: "archive failed" } }'
-  # A regular file where the Claude hooks go aborts the spawn after the
-  # thread exists and before its record is published.
+  # Fail hook-directory creation after the thread exists, before publication.
+  # An unsafe .claude parent is deliberately kept leased by the ownership
+  # guard; it cannot stand in for an otherwise clean, returnable slot.
   t3_worker_setup "$id"
-  printf 'blocker\n' > "$WORKER_WT/.claude"
-  printf '.claude\n' >> "$(git -C "$WORKER_WT" rev-parse --git-path info/exclude)"
-  out=$(t3_worker_spawn "$id" claude --model claude-sonnet-5); rc=$?
+  real_mkdir=$(command -v mkdir)
+  fb=$(make_treehouse_fakebin "$CASE_DIR")
+  cat > "$fb/mkdir" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  if [ "$arg" = "$FM_T3_ABORT_MKDIR" ]; then
+    printf 'injected hook-directory creation failure\n' >&2
+    : > "$FM_T3_ABORT_MARKER"
+    exit 1
+  fi
+done
+exec "$FM_T3_REAL_MKDIR" "$@"
+SH
+  chmod +x "$fb/mkdir"
+  out=$(FM_T3_ABORT_MKDIR="$WORKER_WT/.claude" FM_T3_ABORT_MARKER="$CASE_DIR/abort-injected" \
+    FM_T3_REAL_MKDIR="$real_mkdir" t3_worker_spawn "$id" claude --model claude-sonnet-5); rc=$?
   [ "$rc" -ne 0 ] || fail "the blocked spawn should abort"$'\n'"$out"
+  assert_present "$CASE_DIR/abort-injected" "spawn must reach the injected filesystem failure"
+  assert_contains "$out" "injected hook-directory creation failure" "the abort must name the injected failure"
   return_line=$(t3_log_line_of 'r.tool === "treehouse" && r.args.indexOf("return --force") === 0')
   if [ "$archive" = ok ]; then
     [ "$(t3_dispatch_types)" = "t3_thread_launch t3_thread_organize" ] || fail "an abort must archive the idle thread, got '$(t3_dispatch_types)'"
@@ -1972,20 +1988,34 @@ test_spawn_never_writes_inherited_git_config() {
 }
 
 test_spawn_secondmate_refuses_symlinked_claude_settings() {
-  local id home out rc target
-  id=$(t3_uid t3smlinkz)
-  t3_case spawn-secondmate-settings-link
-  home="$CASE_DIR/sm-home"
-  make_t3_secondmate_home "$home" "$id"
-  target="$CASE_DIR/outside-settings.json"
-  printf '{"env":{"OUTSIDE":"1"}}\n' > "$target"
-  mkdir -p "$home/.claude"
-  ln -s "$target" "$home/.claude/settings.local.json"
-  out=$(spawn_t3_secondmate "$id" "$home" claude claude-sonnet-5); rc=$?
-  [ "$rc" -ne 0 ] || fail "a symlinked Claude settings file must refuse the spawn"$'\n'"$out"
-  assert_contains "$out" "is a symlink" "the refusal names the symlink"
-  [ "$(cat "$target")" = '{"env":{"OUTSIDE":"1"}}' ] || fail "the symlink's target must be left untouched, got '$(cat "$target")'"
-  pass "fm-spawn.sh --backend t3code --secondmate: a symlinked .claude/settings.local.json is refused, never written through"
+  local id home out rc target variant
+  for variant in file directory; do
+    id=$(t3_uid "t3smlinkz$variant")
+    t3_case "spawn-secondmate-settings-link-$variant"
+    home="$CASE_DIR/sm-home"
+    make_t3_secondmate_home "$home" "$id"
+    mkdir -p "$CASE_DIR/outside"
+    target="$CASE_DIR/outside/settings.local.json"
+    printf '{"env":{"OUTSIDE":"1","FM_T3CODE_ENV_KEYS":"OUTSIDE"}}\n' > "$target"
+    if [ "$variant" = file ]; then
+      mkdir -p "$home/.claude"
+      ln -s "$target" "$home/.claude/settings.local.json"
+    else
+      ln -s "$CASE_DIR/outside" "$home/.claude"
+    fi
+    out=$(spawn_t3_secondmate "$id" "$home" claude claude-sonnet-5); rc=$?
+    [ "$rc" -ne 0 ] || fail "linked Claude settings must refuse the spawn"$'\n'"$out"
+    if [ "$variant" = directory ]; then
+      assert_contains "$out" "not an owned directory" "the refusal names the linked parent"
+      t3_run 'fm_backend_t3code_home_env_cleanup "$1"' "$home" >/dev/null 2>&1 \
+        && fail "cleanup accepted a linked Claude parent"
+    else
+      assert_contains "$out" "is a symlink" "the refusal names the symlink"
+    fi
+    [ "$(cat "$target")" = '{"env":{"OUTSIDE":"1","FM_T3CODE_ENV_KEYS":"OUTSIDE"}}' ] \
+      || fail "the external settings fixture must remain untouched"
+  done
+  pass "T3 spawn and cleanup preserve settings behind linked Claude files or directories"
 }
 
 test_launch_gate_failure_returns_lease() {
@@ -2415,12 +2445,13 @@ test_push_wait_escalates_pending_question_once() {
   pass "t3code push wait: a pending question wakes the supervisor once with how to answer it, approvals are named apart, and answering clears it"
 }
 
+run_answer() { FM_HOME="$CASE_DIR/home" FM_STATE_OVERRIDE="$CTRL_STATE" FM_CONFIG_OVERRIDE="$CONFIG" "$ROOT/bin/fm-t3-answer.sh" "$@" 2>&1; }
+
 test_answer_script_reads_and_answers_questions() {
   local id thread=mcp:7e8f9a0b-2c3d-4e4f-9a5b-456789abcdef out rc
   id=$(t3_uid t3answer1)
   make_t3_control_task answer "$id" "$thread" running
   FM_T3_T="$thread" t3_world_set 'w.threads[process.env.FM_T3_T].runtimeRequests = [{ id: "req-q1", kind: "user_input", status: "pending", questions: [{ id: "q1", header: "h", question: "Ship it?", options: [{ label: "yes", description: "y" }] }] }]'
-  run_answer() { FM_HOME="$CASE_DIR/home" FM_STATE_OVERRIDE="$CTRL_STATE" FM_CONFIG_OVERRIDE="$CONFIG" "$ROOT/bin/fm-t3-answer.sh" "$@" 2>&1; }
   out=$(run_answer "$id"); rc=$?
   expect_code 0 "$rc" "listing pending questions: $out"
   assert_contains "$out" '"requestId":"req-q1"' "the question id is listed"
@@ -2433,6 +2464,34 @@ test_answer_script_reads_and_answers_questions() {
   out=$(run_answer tmuxtask); rc=$?
   expect_code 1 "$rc" "a non-T3 task has no pending requests to answer"
   pass "fm-t3-answer.sh: lists a T3 worker's pending questions and answers one by request id"
+}
+
+test_answer_script_respects_task_leases() {
+  local id thread=mcp:7e8f9a0b-2c3d-4e4f-9a5b-456789abcdef out rc holder caller
+  id=$(t3_uid t3answerlease)
+  make_t3_control_task answer-lease "$id" "$thread" running
+  printf '%s\n' "$$" > "$CTRL_STATE/.lock"
+  for holder in branch main; do
+    if [ "$holder" = branch ]; then caller=main; else caller=branch; fi
+    printf '%s\t%s\t%s\n' "$holder" "$$" "$(date +%s)" > "$CTRL_STATE/.lease-$id"
+    FM_T3_T="$thread" t3_world_set 'w.threads[process.env.FM_T3_T].runtimeRequests = [{ id: "req-q1", kind: "user_input", status: "pending", questions: [{ id: "q1", question: "Ship it?", options: [] }] }]'
+    : > "$T3_FAKE_LOG"
+    out=$(FM_SUPERVISION_ACTOR="$caller" run_answer "$id"); rc=$?
+    expect_code 0 "$rc" "listing while the other actor owns the task: $out"
+    assert_contains "$out" '"requestId":"req-q1"' "read-only listing must remain available"
+    out=$(FM_SUPERVISION_ACTOR="$caller" run_answer "$id" req-q1 '{"q1":"yes"}'); rc=$?
+    expect_code 6 "$rc" "another actor's answer must be refused: $out"
+    [ -z "$(t3_fake_calls t3_pending_request_respond)" ] || fail "lease refusal sent an answer"
+    out=$(FM_SUPERVISION_ACTOR="$holder" run_answer "$id" req-q1 '{malformed'); rc=$?
+    [ "$rc" -ne 0 ] || fail "malformed answers unexpectedly succeeded"
+    assert_absent "$CTRL_STATE/.fm-lease-command.lock" "failed answering did not release the lease guard"
+    out=$(FM_SUPERVISION_ACTOR="$holder" run_answer "$id" req-q1 '{"q1":"yes"}'); rc=$?
+    expect_code 0 "$rc" "the lease owner must be able to answer: $out"
+    [ "$(t3_fake_calls t3_pending_request_respond)" = "{\"threadId\":\"$thread\",\"requestId\":\"req-q1\",\"answers\":{\"q1\":\"yes\"}}" ] \
+      || fail "the lease owner did not send exactly one answer"
+    assert_absent "$CTRL_STATE/.fm-lease-command.lock" "answering did not release the lease guard"
+  done
+  pass "fm-t3-answer.sh honors both actors' task leases while preserving read-only listing"
 }
 
 # A secondmate whose last T3 run failed still has a readable thread; recovery
@@ -2768,6 +2827,7 @@ test_lost_send_reply_to_secondmate_names_armed_correlation
 test_status_table
 test_push_wait_escalates_pending_question_once
 test_answer_script_reads_and_answers_questions
+test_answer_script_respects_task_leases
 test_failed_t3_secondmate_is_resumed_in_place
 test_t3_secondmate_missing_thread_reproves_close_before_replacement
 test_daemon_unconfirmed_digest_is_frozen_and_retried_verbatim

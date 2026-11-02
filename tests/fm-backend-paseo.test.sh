@@ -99,7 +99,8 @@ paseo_expected_root_hash() { # <root>
 }
 
 paseo_expected_home_label() { # [home] [root]
-  local home=${1:-$ROOT} root=${2:-$ROOT} marker id prefix
+  local home=${1:-$ROOT} root marker id prefix
+  root=${2:-$home}
   marker="$home/.fm-secondmate-home"
   if [ -f "$marker" ]; then
     id=$(tr -d '[:space:]' <"$marker" 2>/dev/null)
@@ -115,7 +116,8 @@ paseo_expected_home_label() { # [home] [root]
 }
 
 paseo_expected_scoped_name() { # <fm-task-label> [home] [root]
-  local label=$1 home=${2:-$ROOT} root=${3:-$ROOT} rest
+  local label=$1 home=${2:-$ROOT} root rest
+  root=${3:-$home}
   case "$label" in
   fm-*) rest=${label#fm-} ;;
   *) rest=$label ;;
