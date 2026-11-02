@@ -2928,6 +2928,61 @@ SH
   pass "bounded acquire hands ownership to the waiting caller after contention"
 }
 
+# A holder can release immediately after the final acquisition attempt observes
+# it. That remains ordinary contention at the deadline, not an unsafe lock.
+test_bounded_lock_deadline_survives_holder_release() {
+  local dir state lock holder_pid i rc=0
+  dir=$(make_case bounded-lock-release)
+  state="$dir/state"
+  lock="$state/.fixture.lock"
+  FM_STATE_OVERRIDE="$state" bash -c '
+    . "$1"
+    fm_lock_acquire_wait "$2" || exit 10
+    : > "$3/holder.ready"
+    while [ ! -e "$3/release" ]; do sleep 0.01; done
+    fm_lock_release "$2"
+    : > "$3/released"
+  ' _ "$ROOT/bin/fm-wake-lib.sh" "$lock" "$dir" &
+  holder_pid=$!
+  i=0
+  while [ "$i" -lt 100 ] && [ ! -e "$dir/holder.ready" ]; do
+    sleep 0.05
+    i=$((i + 1))
+  done
+  [ -e "$dir/holder.ready" ] \
+    || { kill "$holder_pid" 2>/dev/null || true; fail "deadline fixture holder never acquired its lock"; }
+  FM_STATE_OVERRIDE="$state" bash -c '
+    . "$1"
+    lock=$2 dir=$3 holder=$4 deadline=false
+    # Advance the timer deterministically; keep acquisition and ownership real.
+    fm_run_timed() { deadline=true; return 124; }
+    fm_pid_alive() {
+      kill -0 "$1" 2>/dev/null || return 1
+      if [ "$deadline" = true ] && [ "$1" = "$holder" ]; then
+        : > "$dir/release"
+        for ((i = 0; i < 100; i++)); do
+          [ ! -e "$dir/released" ] || break
+          sleep 0.01
+        done
+        [ -e "$dir/released" ] || return 1
+      fi
+      return 0
+    }
+    rc=0
+    fm_lock_acquire_wait_bounded "$lock" 1 || rc=$?
+    [ -e "$dir/released" ] || exit 11
+    [ "$rc" -eq 124 ] || exit 12
+    [ "${FM_LOCK_HELD_PID:-}" = "$holder" ] || exit 13
+    fm_lock_acquire_wait_bounded "$lock" 1 || exit 14
+    fm_lock_release "$lock"
+    [ ! -e "$lock" ] && [ ! -L "$lock" ] || exit 15
+  ' _ "$ROOT/bin/fm-wake-lib.sh" "$lock" "$dir" "$holder_pid" || rc=$?
+  : > "$dir/release"
+  wait "$holder_pid" || fail "deadline fixture holder did not release cleanly"
+  [ "$rc" -eq 0 ] || fail "holder release changed a deadline into an acquisition error (rc=$rc)"
+  pass "a holder releasing after the final contention observation preserves a retryable deadline"
+}
+
 # A live-but-stuck presentation lock must not strand the executable drain. The
 # presentation remains retriable on the next pass, while the separate queue
 # mutation lock keeps its blocking all-or-nothing acknowledgement contract.
@@ -3789,6 +3844,7 @@ test_self_held_lock_reclaims_instead_of_deadlocking
 test_lock_wait_returns_when_its_directory_is_removed
 test_subshell_lock_ownership_without_bashpid
 test_bounded_lock_handoff_after_contention
+test_bounded_lock_deadline_survives_holder_release
 test_live_presentation_holder_is_deadlined_without_weakening_ack
 test_malformed_presentation_lock_reports_acquire_failure
 test_secondmate_foreign_queue_stall_tracks_progress_and_alerts_once
