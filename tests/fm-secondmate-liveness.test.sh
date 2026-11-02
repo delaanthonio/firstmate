@@ -315,6 +315,7 @@ case "${1:-}" in
     ;;
   new-window|kill-window)
     printf '%s\n' "$*" >> "${FM_TMUX_CALL_LOG:?}"
+    [ "${FM_TEST_FAIL_KILL:-0}" = 1 ] && [ "${1:-}" = kill-window ] && exit 1
     if [ "${1:-}" = new-window ] && [ -n "${FM_TEST_NEW_WINDOW_PAUSE:-}" ]; then
       sleep "$FM_TEST_NEW_WINDOW_PAUSE"
     fi
@@ -544,6 +545,25 @@ test_sweep_serializes_distinct_secondmate_relaunches() {
   pass "sweep: distinct secondmate relaunches serialize across the task-set lock"
 }
 
+# The T3-only close refusal (fm_secondmate_liveness_relaunch) must leave every
+# other backend on its existing best-effort kill: a tmux close that fails is
+# still followed by the guarded spawn, exactly as before.
+test_sweep_keeps_tmux_best_effort_kill_when_close_fails() {
+  local w fb tmuxfb log out
+  w=$(new_world sweep-dead-close-fails)
+  add_sm_home "$w" sm1 firstmate:fm-sm1
+  fb=$(make_toolchain "$w"); tmuxfb=$(make_liveness_tmux "$w")
+  log="$w/calls.log"; : > "$log"
+
+  out=$(run_bootstrap "$tmuxfb:$fb" "$w/home" zsh "$log" FM_TEST_FAIL_KILL=1)
+
+  assert_contains "$(cat "$log")" "kill-window -t =firstmate:=fm-sm1" "the close is attempted"
+  assert_not_contains "$out" "could not prove the old" "a non-T3 close failure must not take the T3-only refusal path"
+  assert_contains "$out" "SECONDMATE_LIVENESS: secondmate sm1: respawn failed after confirmed agent absence on existing endpoint" \
+    "the guarded spawn still runs after a failed tmux close, as before"
+  pass "sweep: a tmux secondmate whose close fails keeps the existing best-effort kill and guarded spawn"
+}
+
 test_sweep_skips_mate_whose_liveness_lock_is_held() {
   local w fb tmuxfb log out holder i=0
   w=$(new_world sweep-lock-held)
@@ -721,6 +741,38 @@ test_sweep_respawns_authoritatively_missing_droid_secondmate() {
   assert_not_contains "$(cat "$log")" "kill-window" \
     "an absent Droid window should not need a destructive pre-kill"
   pass "sweep: an authoritatively missing Droid secondmate window is relaunched"
+}
+
+test_agy_liveness_probe_preserves_recovery_eligibility() {
+  local w fb log mode row pane expected out harness
+  w=$(new_world probe-agy)
+  fb=$(make_liveness_tmux "$w")
+  log="$w/calls.log"; : > "$log"
+
+  for mode in full poll; do
+    for harness in agy custom-agent; do
+      add_sm_home "$w" sm1 firstmate:fm-sm1 "$harness"
+      for row in 'zsh relaunchable|dead|1|0' 'missing relaunchable|missing|0|0' \
+        'agy alive|alive|0|0' 'node skipped|ambiguous|0|0' 'unreadable skipped|unreadable|0|0'; do
+        pane=${row%% *}
+        expected=${row#* }
+        if [ "$harness" = custom-agent ]; then
+          case "$pane" in zsh|missing) expected='skipped|unverified-harness|0|0' ;; esac
+        fi
+        out=$(PATH="$fb:$BASE_PATH" FM_HOME="$w/home" FM_BACKEND=tmux \
+          FM_TEST_PANE_CMD="$pane" FM_TMUX_CALL_LOG="$log" bash -c '
+            . "$1/bin/fm-secondmate-liveness-lib.sh"
+            fm_secondmate_liveness_probe "$2/home/state/sm1.meta" sm1 "$3"
+            printf "%s|%s|%s|%s\n" "$FM_SM_LIVE_STATUS" "$FM_SM_LIVE_STATE" \
+              "$FM_SM_LIVE_KILL" "$FM_SM_LIVE_RESUME"
+          ' _ "$ROOT" "$w" "$mode")
+        [ "$out" = "$expected" ] || fail "$mode $harness probe of $pane: expected '$expected', got '$out'"
+      done
+    done
+  done
+
+  [ ! -s "$log" ] || fail "liveness probes must not kill or launch endpoints: $(cat "$log")"
+  pass "agy liveness: full and poll allow confirmed absence while preserving inconclusive and unknown-harness safeguards"
 }
 
 test_sweep_never_acts_on_ambiguous_existing_process() {
@@ -949,10 +1001,12 @@ test_failed_initial_startup_releases_lifecycle_lock
 test_sweep_respawns_confirmed_dead_secondmate
 test_sweep_recovers_the_durable_secondmate_account
 test_sweep_serializes_distinct_secondmate_relaunches
+test_sweep_keeps_tmux_best_effort_kill_when_close_fails
 test_sweep_leaves_alive_secondmate_untouched
 test_sweep_respawns_authoritatively_missing_pi_secondmate
 test_sweep_respawns_authoritatively_missing_pi_signed_secondmate
 test_sweep_respawns_authoritatively_missing_droid_secondmate
+test_agy_liveness_probe_preserves_recovery_eligibility
 test_sweep_never_acts_on_ambiguous_existing_process
 test_sweep_never_acts_on_transient_unreadability
 test_sweep_reports_missing_endpoint_relaunch_failure

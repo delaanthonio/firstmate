@@ -1120,6 +1120,17 @@ assert_present "$STALL_HELD" "shutdown did not reach its stop loop behind its ow
 assert_present "$STALL_STATE/worker.lock/quarantine" \
   "the worker held in its stop loop did not hold its own quarantine"
 rm -rf -- "$STALL_STATE/worker.lock"
+# Finish the recorded execution before starting its replacement. Let that
+# worker complete orphan recovery before resuming the old worker, so their
+# deletion of the same execution records cannot race. Pausing the replacement
+# at an arbitrary instruction can instead interrupt startup or recovery.
+kill -KILL -- "-$STALL_JOB_GROUP" 2>/dev/null || true
+STALL_DEADLINE=$((SECONDS + 30))
+until ! kill -0 -- "-$STALL_JOB_GROUP" 2>/dev/null || [ "$SECONDS" -ge "$STALL_DEADLINE" ]; do
+  sleep 0.05
+done
+! kill -0 -- "-$STALL_JOB_GROUP" 2>/dev/null \
+  || fail "the job's command group was still alive after the test stopped it"
 HOME="$STALL_HOME" FM_ROOT_OVERRIDE="$REMOTE_ROOT" FM_REMOTE_JOB_STATE_ROOT="$STALL_STATE" \
   FM_REMOTE_JOB_PLATFORM_OVERRIDE=Linux "$REMOTE_ROOT/bin/fm-remote-job-worker.sh" --serve \
   > "$TMP_ROOT/stall-replacement.out" 2> "$TMP_ROOT/stall-replacement.err" &
@@ -1132,27 +1143,17 @@ until [ "$(cat "$STALL_STATE/worker.lock/pid" 2>/dev/null || true)" = "$STALL_RE
 done
 [ "$(cat "$STALL_STATE/worker.lock/pid" 2>/dev/null || true)" = "$STALL_REPLACEMENT_PID" ] \
   || fail "the replacement did not take ownership while the old worker was stopped in shutdown"
-printf 'replacement guard\n' > "$STALL_STATE/worker.lock/quarantine"
-STALL_QUARANTINE_INODE=$(file_inode "$STALL_STATE/worker.lock/quarantine")
-# Both workers stop the job's recorded execution and then delete its records.
-# A worker resumed while the other is deleting can lose a record read and exit
-# before its quarantine clear, so freeze the replacement until the ousted
-# worker has finished.
-kill -STOP "$STALL_REPLACEMENT_PID"
 STALL_DEADLINE=$((SECONDS + 30))
-until [ "$(ps -o state= -p "$STALL_REPLACEMENT_PID" 2>/dev/null | cut -c1)" = T ] \
+until [ "$(fm_remote_job_read_state "$STALL_JOB" 2>/dev/null || true)" = 'done' ] \
   || [ "$SECONDS" -ge "$STALL_DEADLINE" ]; do
   sleep 0.05
 done
-[ "$(ps -o state= -p "$STALL_REPLACEMENT_PID" 2>/dev/null | cut -c1)" = T ] \
-  || fail "the replacement could not be held while the ousted worker resumed"
-kill -KILL -- "-$STALL_JOB_GROUP" 2>/dev/null || true
-STALL_DEADLINE=$((SECONDS + 30))
-until ! kill -0 -- "-$STALL_JOB_GROUP" 2>/dev/null || [ "$SECONDS" -ge "$STALL_DEADLINE" ]; do
-  sleep 0.05
-done
-! kill -0 -- "-$STALL_JOB_GROUP" 2>/dev/null \
-  || fail "the job's command group was still alive after the test stopped it"
+[ "$(fm_remote_job_read_state "$STALL_JOB" 2>/dev/null || true)" = 'done' ] \
+  || fail "the replacement did not finish recovering the interrupted job"
+[ "$(cat "$STALL_JOB/exit" 2>/dev/null || true)" = 125 ] \
+  || fail "the replacement lost the interrupted job's unknown-completion result"
+printf 'replacement guard\n' > "$STALL_STATE/worker.lock/quarantine"
+STALL_QUARANTINE_INODE=$(file_inode "$STALL_STATE/worker.lock/quarantine")
 rm -f -- "$STALL_HOLD"
 STALL_DEADLINE=$((SECONDS + 30))
 until [ "$(ps -o state= -p "$STALL_WORKER_PID" 2>/dev/null | cut -c1)" = Z ] \
@@ -1167,7 +1168,6 @@ wait "$STALL_WORKER_PID" 2>/dev/null || STALL_WORKER_RC=$?
 STALL_WORKER_PID=
 [ "$STALL_WORKER_RC" -eq 0 ] \
   || fail "the ousted worker did not finish shutdown through its lost-ownership exit (exit $STALL_WORKER_RC: $(cat "$TMP_ROOT/stall-lost.err"))"
-kill -CONT "$STALL_REPLACEMENT_PID"
 kill -0 "$STALL_REPLACEMENT_PID" 2>/dev/null \
   || fail "the ousted worker's resumed shutdown terminated the replacement"
 [ "$(cat "$STALL_STATE/worker.lock/pid" 2>/dev/null || true)" = "$STALL_REPLACEMENT_PID" ] \

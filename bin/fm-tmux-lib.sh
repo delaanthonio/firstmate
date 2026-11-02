@@ -171,7 +171,7 @@ fm_tmux_composer_state() {  # <target> -> empty|pending|pending-unproven|unknown
     verdict=$(fm_composer_classify_screen "$(fm_tmux_composer_caps)" "$pane" "$cy" "$identity")
     [ "$verdict" != need-identity ] || verdict=unknown
   fi
-  # Cursor Agent CLI and Droid park their terminal cursors OUTSIDE their
+  # Cursor Agent CLI, Cortex Code, and Droid park their terminal cursors OUTSIDE their
   # composers, below their footers, with #{cursor_flag} 0 - so tmux's cursor
   # row is not a composer locator and the cursor-anchored read can only answer
   # `unknown`. Reclassify a structurally proven pane the way every cursorless
@@ -179,8 +179,17 @@ fm_tmux_composer_state() {  # <target> -> empty|pending|pending-unproven|unknown
   # Identity, never the verdict alone, gates this path, so the strict blank-row
   # posture stays in force for every other harness and dead shells.
   if [ "$verdict" = unknown ] \
-     && { fm_tmux_pane_is_cursor "$target" || fm_tmux_pane_is_droid "$target"; }; then
+     && { fm_tmux_pane_is_cursor "$target" || fm_tmux_pane_is_droid "$target" || fm_tmux_pane_is_cortex "$target"; }; then
     verdict=$(fm_composer_classify_screen "$(fm_tmux_composer_caps)" "$pane" '')
+  fi
+  # Cortex Code parks its terminal cursor in the first column of the blank row
+  # under its footer, before and after typing (verified cortex 1.1.104 in
+  # tmux), so the cursor row names no composer and the same cursorless read
+  # applies, gated on its anchored foreground process name rather than on the
+  # verdict alone. That proven identity is also what lets the classifier
+  # accept Cortex's titled top rule (the cortex=1 capability).
+  if [ "$verdict" = unknown ] && fm_tmux_pane_is_cortex "$target"; then
+    verdict=$(fm_composer_classify_screen "$(fm_tmux_composer_caps)"$'\ncortex=1' "$pane" '')
   fi
   # Command Code parks its terminal cursor below its footer too, drawing its
   # own reverse-video cursor cell in the composer (verified live, Command Code
@@ -361,4 +370,23 @@ fm_tmux_submit_core() {  # <target> <text> <retries> <enter-sleep> <settle>
   fi
   sleep "$settle"
   fm_tmux_submit_enter_core "$target" "$retries" "$sleep_s" "$baseline_idle" "$busy_harness"
+}
+
+# fm_tmux_pane_is_cortex: true when the pane's FOREGROUND process group contains
+# a process named exactly `cortex` (Cortex Code is a compiled single binary, so
+# its comm is that anchored word). The foreground scoping (pgid = tpgid)
+# matches fm_tmux_pane_is_cursor, so a pane whose agent exited to a shell gets
+# no reclassification.
+fm_tmux_pane_is_cortex() {  # <target>
+  local target=$1 tty pgid tpgid comm
+  tty=$(tmux display-message -p -t "$target" '#{pane_tty}' 2>/dev/null) || return 1
+  case "$tty" in /dev/*) ;; *) return 1 ;; esac
+  while read -r _ pgid tpgid comm; do
+    [ -n "$comm" ] || continue
+    [ "$pgid" = "$tpgid" ] || continue
+    [ "${comm##*/}" = cortex ] && return 0
+  done <<EOF
+$(LC_ALL=C ps -t "${tty#/dev/}" -o pid=,pgid=,tpgid=,comm= 2>/dev/null)
+EOF
+  return 1
 }

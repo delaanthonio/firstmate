@@ -54,7 +54,21 @@ fm_afk_start_usage() {
 # dead daemon alone never makes these artifacts stale. This helper is not called
 # for same-lifecycle recovery or a live-daemon refresh.
 fm_afk_clear_stale_artifacts() {  # <state-dir>
-  local state=$1
+  local state=$1 line win key
+  # Unknown-state warnings suppress repeats even after delivery. Re-arm only
+  # warnings still in the buffer being discarded, preserving delivered ones.
+  if [ -s "$state/.subsuper-escalations" ] && compgen -G "$state/.subsuper-reported-stale-*" >/dev/null; then
+    _fm_wake_require_classify || return 1
+    while IFS= read -r line || [ -n "$line" ]; do
+      case "$line" in
+        stale\ persisted\ *s\ \(possible\ wedge\):\ *)
+          win=${line#* (possible wedge): }
+          key=$(window_to_task "$win" "$state" | tr ':/.' '___')
+          rm -f "$state/.subsuper-reported-stale-$key" || return 1
+          ;;
+      esac
+    done < "$state/.subsuper-escalations"
+  fi
   rm -f "$state/.subsuper-escalations" \
         "$state/.subsuper-escalations.since" \
         "$state/.subsuper-inject-wedged" \
