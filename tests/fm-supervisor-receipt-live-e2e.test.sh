@@ -157,7 +157,13 @@ jq -e '.phase == "verified" and .pending.kind == "work" and .pending.acked and .
   || fail 'real actionable delivery was not acknowledged and retired'
 tmux capture-pane -p -t "$FM_SUPERVISOR_TARGET" -S -300 > "$LAB_ROOT/receiver.txt"
 [ ! -s "$FM_HOME/state/.subsuper-escalations" ] || fail 'consumed snapshot was not retired'
-"$ROOT/bin/fm-afk-launch.sh" stop > "$LAB_ROOT/stop.txt" 2>&1 || fail 'isolated stop failed'
+if ! "$ROOT/bin/fm-afk-launch.sh" stop > "$LAB_ROOT/stop.txt" 2>&1; then
+  cp "$FM_HOME/state/.supervise-daemon.log" "$LAB_ROOT/stop-daemon.log" 2>/dev/null || true
+  cp "$FM_HOME/state/.supervisor-receipt.json" "$LAB_ROOT/stop-receipt.json" 2>/dev/null || true
+  { ls -ld "$FM_HOME/state/.supervisor-receipt.lock"; cat "$FM_HOME/state/.supervisor-receipt.lock/pid"; } > "$LAB_ROOT/stop-lock.txt" 2>&1
+  cat "$LAB_ROOT/stop.txt" >&2
+  fail 'isolated stop failed (receipt, daemon, and lock evidence retained)'
+fi
 "$ROOT/bin/fm-operational-input.sh" coverage | tee "$LAB_ROOT/return-coverage.txt"
 grep -q 'coverage inactive' "$LAB_ROOT/return-coverage.txt" || fail 'return retained verified coverage'
 token=$(jq -r .pending.token "$LAB_ROOT/work.json")

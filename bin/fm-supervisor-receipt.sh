@@ -133,7 +133,10 @@ fm_receipt_challenge_locked() {  # <state> <probe|work> <payload> <snapshot-file
 fm_receipt_invalidate() {  # <state>; return/stop, including a failed start
   local status=0
   [ -f "$1/.supervisor-receipt.json" ] || return 0
-  fm_receipt_lock "$1" || return 1
+  fm_receipt_lock "$1" || {
+    printf 'Supervisor invalidation deferred: receipt lock unavailable; lifecycle preserved.\n' >&2
+    return 1
+  }
   fm_receipt_load "$1" && FM_RECEIPT=$(printf '%s' "$FM_RECEIPT" | jq '.phase="inactive" | .pending=null') \
     && fm_receipt_save "$1" || status=1
   fm_receipt_unlock "$1"

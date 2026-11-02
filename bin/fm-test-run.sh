@@ -716,6 +716,8 @@ list_portable_serial() {
 # artifacts recorded in docs/fm-test-portable-shards.md. Each value is the
 # slowest successful sample in the referenced complete/partial CI runs, with
 # the version-specific host and native-Windows exceptions documented there.
+# Receipt guards use 2026-11-02 local measurements recorded in
+# docs/verification/runtime-backends.md.
 # These are balance hints only: the shard
 # partition stays complete and disjoint whatever they say, so a stale hint costs
 # balance rather than coverage. That doc owns the refresh procedure.
@@ -911,6 +913,8 @@ tests/fm-startup-network.test.sh 72106
 tests/fm-stat-shadowing.test.sh 75
 tests/fm-stow-cascade.test.sh 3058
 tests/fm-subagent-pretool-check.test.sh 998
+tests/fm-supervisor-receipt-live-e2e.test.sh 75990
+tests/fm-supervisor-receipt.test.sh 37773
 tests/fm-supervision-events.test.sh 673
 tests/fm-supervision-host-attended-live-e2e.test.sh 49
 tests/fm-supervision-host-drain.test.sh 45950

@@ -216,7 +216,9 @@ while True:
         request.unlink()
         result = subprocess.run([os.environ['RECEIPT_CLI'], 'ack-supervisor', token],
                                 env=dict(os.environ, TMUX_PANE=pane), capture_output=True)
-        (root / 'result').write_text(str(result.returncode))
+        (root / 'receiver-error').write_bytes(result.stderr)
+        (root / 'result.tmp').write_text(str(result.returncode))
+        (root / 'result.tmp').replace(root / 'result')
     time.sleep(.05)
 PY
   export RECEIPT_FIXTURE="$fixture" RECEIPT_CLI="$ROOT/bin/fm-operational-input.sh"
@@ -239,13 +241,19 @@ PY
   for _ in $(seq 1 200); do [ ! -f "$fixture/producer-status" ] || break; sleep .05; done
   [ "$(cat "$fixture/producer-status")" != 0 ] || fail 'public CLI accepted producer self-certification'
   token=$(jq -r .pending.token "$FM_STATE_OVERRIDE/.supervisor-receipt.json")
-  printf '%%wrong %s\n' "$token" > "$fixture/request"
+  printf '%%wrong %s\n' "$token" > "$fixture/request.tmp"
+  mv "$fixture/request.tmp" "$fixture/request"
   for _ in $(seq 1 200); do [ ! -f "$fixture/result" ] || break; sleep .05; done
   [ "$(cat "$fixture/result")" != 0 ] || fail 'public CLI accepted wrong destination'
   rm "$fixture/result"
-  printf '%%fixture %s\n' "$token" > "$fixture/request"
+  printf '%%fixture %s\n' "$token" > "$fixture/request.tmp"
+  mv "$fixture/request.tmp" "$fixture/request"
   for _ in $(seq 1 200); do [ ! -f "$fixture/result" ] || break; sleep .05; done
-  [ "$(cat "$fixture/result")" = 0 ] || fail 'public CLI rejected intended receiver'
+  if [ "$(cat "$fixture/result")" != 0 ]; then
+    cat "$fixture/receiver-error" >&2
+    "$ROOT/bin/fm-operational-input.sh" coverage >&2
+    fail 'public CLI rejected intended receiver'
+  fi
   "$ROOT/bin/fm-operational-input.sh" coverage | grep -q 'coverage verified' || fail 'public CLI ack did not verify coverage'
   pass 'public CLI accepts only the lock-owning receiver at its intended pane, never the producer subtree'
 ) || exit 1
@@ -262,5 +270,27 @@ PY
     assert_contains "$(fm_receipt_status "$state")" 'coverage unverified' 'native coverage claimed a receiver proof'
   done
   ! fm_daemon_receipt_start "$state" unsupported native-target || fail 'unknown backend silently exempted'
-)
+) || exit 1
 pass 'native Rex/T3 retain delivery without receipt startup refusal or a verified coverage claim'
+
+(
+  setup native-artifact
+  LOG="$state/daemon.log"
+  wedge_alarm_rex_clear() { touch "$state/alarm-cleared"; }
+  fm_daemon_receipt_tick "$state"
+  assert_absent "$state/alarm-cleared" 'transport submission cleared the consumption alarm'
+  handoff_token=$(jq -r .pending.token "$state/.supervisor-receipt.json")
+  receiver_ack "$handoff_token" || fail 'handoff ack rejected'
+  fm_daemon_receipt_tick "$state"
+  [ -f "$state/alarm-cleared" ] || fail 'receiver ack did not clear the independent alarm'
+  rm -f "$state/alarm-cleared"
+  escalate_add "$state" 'preserved native artifact'
+  escalate_freeze "$state/.subsuper-escalations" 'old native message' old-native-id || fail 'fixture freeze failed'
+  escalate_flush "$state" || true
+  [ -s "$state/.subsuper-escalations" ] || fail 'native artifact bypassed the consumption receipt'
+  assert_absent "$state/alarm-cleared" 'work submission cleared the consumption alarm'
+  fm_receipt_load "$state"
+  [ "$(fm_receipt_field .pending.kind)" = work ] || fail 'work did not stage a receiver obligation'
+  [ "$(fm_receipt_field '.pending.acked | tostring')" = false ] || fail 'old transport artifact certified consumption'
+) || exit 1
+pass 'native freeze leftovers cannot bypass a pane receipt and alarm clearing requires consumption'

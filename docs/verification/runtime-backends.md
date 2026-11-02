@@ -3678,7 +3678,7 @@ Teardown swept the session's serve/hold daemons plus the harness processes they 
 
 ## Supervisor consumption receipts
 
-Verified on 2026-11-01 with Droid `1.1.0` and tmux `3.8` using `FM_SUPERVISOR_RECEIPT_LIVE=1 bash tests/fm-supervisor-receipt-live-e2e.test.sh`.
+Verified on 2026-11-02 with Droid `1.1.0` and tmux `3.8` using `FM_SUPERVISOR_RECEIPT_LIVE=1 bash tests/fm-supervisor-receipt-live-e2e.test.sh`.
 The guard uses a marked lab home, a private tmux server, the Herdr lab helper's default-fleet tripwire, and discarded alert delivery.
 Its launch-entry seam preserves a passive CLI observer before executing the real daemon entry; it does not replace the busy, composer, submission, or receiving-ownership checks.
 An observed unsafe initiating command interval had a pending challenge and no probe typing, followed by a real receiving-conversation acknowledgment after that interval ended.
@@ -3687,7 +3687,7 @@ The terminal output was:
 
 ```text
 coverage pending (no daemon handshake)
-coverage verified (receiver acknowledgment; generation=904b849945612ff711d7deefef66500ccd88ee4071077956; last_ack=1793545758)
+coverage verified (receiver acknowledgment; generation=d4de4405a933090edeeb740378c7017c231f452e3cf52753; last_ack=1793596027)
 ok - real Droid finishes its busy entry turn, then consumes and acknowledges the guarded handoff probe
 coverage inactive
 ok - real actionable-message acknowledgment retires its buffer, and return invalidates coverage
@@ -3698,3 +3698,12 @@ This establishes real Droid consumption on tmux, including acknowledgment after 
 The deterministic receipt suite separately exercises expiry, independent alarm dispatch through a recorder, replay and identity rejection, and delivery loss after successful handoff.
 `tests/fm-afk-inject-herdr-e2e.test.sh` proves guarded Herdr transport with its explicit simulated composer; it does not establish live Herdr receiving-conversation acknowledgment.
 The receipt state and deadline contract, including the explicitly unverified native Rex/T3 Code scope, belongs to `bin/fm-supervisor-receipt.sh`.
+
+The receipt guards' local timing samples on that date supply their runner balance hints:
+
+```text
+FM_TEST_END 2026-11-02T05:07:47Z tests/fm-supervisor-receipt-live-e2e.test.sh exit=0 duration_ms=75990 gate_skip=false
+FM_TEST_END 2026-11-02T05:08:32Z tests/fm-supervisor-receipt.test.sh exit=0 duration_ms=37773 gate_skip=false
+```
+
+The deterministic sample used `bash bin/fm-test-run.sh --per-script-timeout-secs 150 tests/fm-supervisor-receipt.test.sh`.

@@ -163,7 +163,8 @@
 #          FM_STATE_OVERRIDE        alternate state dir (testing)
 #          Logs each wake to state/.supervise-daemon.log (size-capped). Single
 #          instance via portable lock on state/.supervise-daemon.lock. Trapped
-#          SIGTERM/SIGINT invalidate coverage, preserve unacknowledged work, release the
+#          SIGTERM/SIGINT preserve receipt-bound work (native paths still flush),
+#          invalidate coverage, and release the
 #          lock. A crashing fm-watch.sh is logged and restarted, never killing
 #          the daemon; a tight crash-restart spin is detected and backed off.
 set -u
@@ -1012,7 +1013,7 @@ escalate_flush() {  # <state>
       rm -f "$buf.frozen.tmp" "$buf.frozen-msg.tmp" "$buf.next-since"
     fi
   fi
-  if [ -f "$buf.frozen" ]; then
+  if [ "$FM_RECEIPT_ACTIVE" != 1 ] && [ -f "$buf.frozen" ]; then
     escalate_flush_frozen "$state" "$buf" || return 1
     [ -s "$buf" ] || return 0
   fi
@@ -1157,6 +1158,7 @@ fm_daemon_receipt_tick() {  # <state>; never waits for the receiving turn
       fm_receipt_challenge_locked "$state" probe 'Supervision idle delivery check.' '' || { fm_receipt_unlock "$state"; return 1; }
     else
       rm -f "$state/.subsuper-inject-wedged"
+      wedge_alarm_rex_clear
       fm_receipt_unlock "$state"
       return 0
     fi
@@ -1377,7 +1379,7 @@ wedge_alarm_via_rex() {  # <summary>
   return 1
 }
 
-# Remove a raised Rex alert once a digest is delivered. Best-effort.
+# Remove a raised Rex alert once the applicable delivery obligation ends.
 wedge_alarm_rex_clear() {
   [ "$WEDGE_ALARM_REX_RAISED" = 1 ] || return 0
   WEDGE_ALARM_REX_RAISED=0
@@ -1870,7 +1872,7 @@ inject_msg() {  # <message> [state] [exact] [request-id]
     rm -f "$errf"
   fi
   if [ "$verdict" = empty ]; then
-    wedge_alarm_rex_clear  # A delivered digest ends a raised Rex wedge alarm.
+    [ "$FM_RECEIPT_ACTIVE" = 1 ] || wedge_alarm_rex_clear  # Native delivery keeps its transport-only alarm lifecycle.
     return 0  # Backend confirmed the submit.
   fi
   err=$(_collapse_newlines "$err")

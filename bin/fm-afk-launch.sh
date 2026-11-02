@@ -75,7 +75,7 @@
 #                              announcement and the read-back. With no words
 #                              while away it is a refresh; new words replace
 #                              the mandate. On Pi this is the whole entry.
-# Daemon ownership is launch success, never verified coverage. Launch returns
+# Daemon ownership is launch success, never verified coverage. Tmux/Herdr return
 # pending; do not wait in the initiating conversation for its next-turn probe.
 # Use bin/fm-operational-input.sh coverage for the tmux/Herdr receiver status.
 # Native Rex/T3 limitations are owned by bin/fm-supervisor-receipt.sh.
@@ -90,7 +90,8 @@
 #                              Prepare lifecycle state for a harness-native
 #                              background job and record that no terminal exists.
 #   fm-afk-launch.sh stop      Correct-ordered exit: SIGTERM the daemon so its
-#                              cleanup preserves unacknowledged work,
+#                              cleanup preserves receipt-bound work (native
+#                              paths still flush),
 #                              wait for it, close a recorded non-native terminal
 #                              by exact id, clear state/.afk, then archive the
 #                              record last. A Pi or native entry that never
