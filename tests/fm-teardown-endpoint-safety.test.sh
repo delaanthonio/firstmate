@@ -1603,6 +1603,150 @@ test_already_gone_endpoint_still_completes_without_a_refusal() {
   pass "fm-teardown: an already-exited endpoint, and a server that is already gone, still complete cleanup silently"
 }
 
+make_simulator_case() {
+  local dir
+  dir=$(make_case "simulator-$1")
+  write_endpoint_close_meta "$dir" simulator-task 'isolated:fm-simulator-task'
+  cat > "$dir/fakebin/uname" << 'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = -s ]; then
+  printf '%s\n' "${FM_SIMULATOR_TEST_OS:-Darwin}"
+else
+  exec /usr/bin/uname "$@"
+fi
+SH
+  cat > "$dir/fakebin/xcrun" << 'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${FM_SIMULATOR_TEST_DIR:?}/simctl.log"
+# Cleanup runs only after successful retirement, while fresh spawns are locked.
+[ ! -e "$FM_SIMULATOR_TEST_DIR/home/state/simulator-task.meta" ] || exit 1
+[ -e "$FM_SIMULATOR_TEST_DIR/home/state/.task-set.lock/pid" ] || exit 1
+case "$*" in
+  'simctl list devices booted --json')
+    printf '%s\n' "${FM_SIMULATOR_TEST_JSON:-}"
+    exit "${FM_SIMULATOR_TEST_LIST_RC:-0}" ;;
+  'simctl shutdown '*) exit "${FM_SIMULATOR_TEST_SHUTDOWN_RC:-0}" ;;
+esac
+exit 1
+SH
+  chmod +x "$dir/fakebin/uname" "$dir/fakebin/xcrun"
+  printf '%s\n' "$dir"
+}
+
+run_simulator_case() {
+  local dir=$1 devices
+  devices='{"devices":{"iOS":[{"state":"Booted","udid":"11111111-1111-1111-1111-111111111111"},{"state":"Shutdown","udid":"22222222-2222-2222-2222-222222222222"},{"state":"Booted","udid":"33333333-3333-3333-3333-333333333333"}]}}'
+  FM_SIMULATOR_TEST_DIR="$dir" \
+    FM_SIMULATOR_TEST_JSON="${FM_SIMULATOR_TEST_JSON-$devices}" \
+    FM_HOME="$dir/home" FM_ROOT_OVERRIDE="$ROOT" \
+    FM_RUNTIME_LOG="$dir/runtime.log" PATH="$dir/fakebin:${FM_SIMULATOR_TEST_PATH:-$PATH}" \
+    "$TEARDOWN" simulator-task > "$dir/stdout" 2> "$dir/stderr" \
+    || fail "Simulator cleanup failed teardown: $(cat "$dir/stderr")"
+  assert_absent "$dir/home/state/simulator-task.meta" "Simulator fixture was not retired"
+}
+
+test_simulator_cleanup_shuts_down_exact_booted_devices_best_effort() {
+  local dir
+  dir=$(make_simulator_case shutdown)
+  FM_SIMULATOR_TEST_SHUTDOWN_RC=1 run_simulator_case "$dir"
+  printf '%s\n' 'simctl list devices booted --json' \
+    'simctl shutdown 11111111-1111-1111-1111-111111111111' \
+    'simctl shutdown 33333333-3333-3333-3333-333333333333' > "$dir/expected"
+  cmp -s "$dir/expected" "$dir/simctl.log" \
+    || fail "cleanup must attempt each booted UDID, even after a shutdown error: $(cat "$dir/simctl.log")"
+  assert_absent "$dir/home/state/.task-set.lock" "Simulator cleanup leaked its task-set lock"
+  pass "Simulator cleanup: exact booted UDIDs, locked after retirement, shutdown errors nonfatal"
+}
+
+test_simulator_cleanup_defers_for_any_remaining_task() {
+  local dir shape state
+  for shape in mobile unknown finished child unsafe; do
+    dir=$(make_simulator_case "$shape")
+    state="$dir/home/state"
+    if [ "$shape" = child ]; then
+      state="$dir/child/state"
+      mkdir -p "$state" "$dir/child/data"
+      printf '%s\n' "- mate - fixture (home: $dir/child; scope: test; projects: project; added 2026-01-01)" \
+        > "$dir/home/data/secondmates.md"
+    fi
+    if [ "$shape" = unsafe ]; then
+      ln -s "$dir/missing-record" "$state/other.meta"
+    else
+      fm_write_meta "$state/other.meta" "worktree=$dir/other-ios-worktree" "kind=ship"
+      [ "$shape" != finished ] || printf 'done: ready\n' > "$state/other.status"
+    fi
+    run_simulator_case "$dir"
+    assert_absent "$dir/simctl.log" "$shape worker must defer all Simulator calls"
+    assert_absent "$dir/home/state/.task-set.lock" "$shape deferral leaked a task-set lock"
+  done
+  pass "Simulator cleanup: remaining mobile, unknown, finished, child, and unsafe records defer shutdown"
+}
+
+test_simulator_cleanup_skips_unavailable_and_invalid_inputs() {
+  local dir shape base_path
+  for shape in linux missing-xcrun list-error invalid-json invalid-udid missing-home; do
+    dir=$(make_simulator_case "$shape")
+    case "$shape" in
+      linux) FM_SIMULATOR_TEST_OS=Linux run_simulator_case "$dir" ;;
+      missing-xcrun)
+        rm "$dir/fakebin/xcrun"
+        base_path=$(fm_test_base_path_sans "$PATH" xcrun)
+        FM_SIMULATOR_TEST_PATH="$base_path" run_simulator_case "$dir"
+        ;;
+      list-error) FM_SIMULATOR_TEST_LIST_RC=1 run_simulator_case "$dir" ;;
+      invalid-json) FM_SIMULATOR_TEST_JSON='broken' run_simulator_case "$dir" ;;
+      invalid-udid)
+        FM_SIMULATOR_TEST_JSON='{"devices":{"iOS":[{"state":"Booted","udid":"all"}]}}' \
+          run_simulator_case "$dir"
+        ;;
+      missing-home)
+        printf '%s\n' "- mate - fixture (home: $dir/missing-home; scope: test; projects: project; added 2026-01-01)" \
+          > "$dir/home/data/secondmates.md"
+        run_simulator_case "$dir"
+        ;;
+    esac
+    if [ -e "$dir/simctl.log" ]; then
+      assert_no_grep 'simctl shutdown' "$dir/simctl.log" "$shape must never shut down a device"
+    fi
+    assert_absent "$dir/home/state/.task-set.lock" "$shape skipped cleanup leaked its lock"
+  done
+  pass "Simulator cleanup: unsupported host, absent xcrun, invalid state and simctl failures are harmless"
+}
+
+test_simulator_cleanup_respects_spawn_lock_and_teardown_refusal() {
+  local dir lock
+  dir=$(make_simulator_case contended)
+  lock="$dir/home/state/.task-set.lock"
+  # Hold the real publication lock in this process while teardown runs as a child.
+  FM_HOME="$dir/home" FM_ROOT_OVERRIDE="$ROOT" FM_RUNTIME_LOG="$dir/runtime.log" \
+    FM_SIMULATOR_TEST_DIR="$dir" PATH="$dir/fakebin:$PATH" bash -c '
+    . "$1/bin/fm-wake-lib.sh"
+    fm_lock_try_acquire "$2" || exit 1
+    "$3" simulator-task
+    rc=$?
+    fm_lock_release "$2"
+    exit "$rc"
+  ' _ "$ROOT" "$lock" "$TEARDOWN" \
+    > "$dir/lock.out" 2> "$dir/lock.err" \
+    || fail "contended Simulator cleanup should not refuse teardown: $(cat "$dir/lock.err")"
+  assert_absent "$dir/simctl.log" "a fresh spawn's lock must defer shutdown"
+
+  dir=$(make_simulator_case refused)
+  fm_write_meta "$dir/home/state/simulator-task.meta" \
+    "window=wrong-endpoint" "worktree=$dir/worktree" "kind=ship"
+  if FM_SIMULATOR_TEST_DIR="$dir" FM_HOME="$dir/home" FM_ROOT_OVERRIDE="$ROOT" \
+    PATH="$dir/fakebin:$PATH" "$TEARDOWN" simulator-task > "$dir/stdout" 2> "$dir/stderr"; then
+    fail "invalid task identity unexpectedly allowed teardown"
+  fi
+  assert_present "$dir/home/state/simulator-task.meta" "refused teardown lost its record"
+  assert_absent "$dir/simctl.log" "refused teardown must not touch Simulators"
+  pass "Simulator cleanup: spawn contention defers cleanup and refused teardown never invokes simctl"
+}
+
+test_simulator_cleanup_shuts_down_exact_booted_devices_best_effort
+test_simulator_cleanup_defers_for_any_remaining_task
+test_simulator_cleanup_skips_unavailable_and_invalid_inputs
+test_simulator_cleanup_respects_spawn_lock_and_teardown_refusal
 test_invalid_endpoint_records_refuse_before_mutation
 test_worktree_identity_refusal_names_the_repair_path
 test_control_lock_contention_refuses_before_mutation

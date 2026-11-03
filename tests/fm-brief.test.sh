@@ -216,6 +216,10 @@ test_ship_modes_generate_clean_briefs() {
       "$id: review evidence displaced the code-quality pass"
     assert_grep "run the project's formatter." "$brief" \
       "$id: review evidence displaced the formatting requirement"
+    assert_grep 'xcrun simctl shutdown <udid>' "$brief" \
+      "$id: ship brief omitted exact-device Simulator cleanup"
+    assert_grep 'before reporting done, even on failure' "$brief" \
+      "$id: ship brief omitted Simulator cleanup on failure"
     assert_grep "no user-visible change - screenshots not applicable" "$brief" \
       "$id: brief missing non-UI screenshot applicability wording"
     grep -qx "Delivery contract: mode=$mode" "$brief" \

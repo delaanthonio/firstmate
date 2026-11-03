@@ -1096,3 +1096,19 @@ fm_test_base_path_sans() {
   done
   printf '%s\n' "$dir"
 }
+
+# Teardown's Simulator sweep must never reach the host's real devices from a
+# fixture home. Simulator cases prepend their own xcrun; other Xcode commands
+# still reach the host tool when installed.
+FM_TEST_REAL_XCRUN=${FM_TEST_REAL_XCRUN:-$(command -v xcrun || true)}
+if [ -n "$FM_TEST_REAL_XCRUN" ]; then
+  export FM_TEST_REAL_XCRUN
+  FM_TEST_XCRUN_SHIM=$(fm_test_tmproot fm-test-xcrun)
+  cat > "$FM_TEST_XCRUN_SHIM/xcrun" <<'SH'
+#!/usr/bin/env bash
+[ "${1:-}" != simctl ] || exit 1
+exec "$FM_TEST_REAL_XCRUN" "$@"
+SH
+  chmod +x "$FM_TEST_XCRUN_SHIM/xcrun"
+  export PATH="$FM_TEST_XCRUN_SHIM:$PATH"
+fi

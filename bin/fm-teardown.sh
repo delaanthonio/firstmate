@@ -5,6 +5,13 @@
 # scout tasks before reporting success (secondmates and forge-only orphans
 # transition none, since they are not backlog items), then refresh/prune the project's
 # clone for PR-based ship tasks.
+# After successful local cleanup on macOS, best-effort shutdown of booted iOS
+# Simulators runs only when every registered local home's task set is empty.
+# Any remaining record (including a finished or uncertain worker) defers it:
+# task text cannot prove a worker will not use a Simulator. Task-set locks cover
+# enumeration through per-UDID shutdown so a fresh spawn cannot race the sweep.
+# Missing xcrun/jq, unreadable state, contention, or simctl errors skip cleanup
+# without failing teardown. No Simulator is touched on a refused teardown.
 # A valid orphan PR record with no window, backend, worktree, or project fields
 # takes records-only cleanup, without a worker endpoint or project refresh.
 # An endpoint whose close could not do its job REFUSES before any record naming
@@ -2570,6 +2577,37 @@ collect_local_firstmate_states() {
   TREEHOUSE_OWNER_STATES=("${FM_LOCAL_FIRSTMATE_STATES[@]}")
 }
 
+# A subshell keeps the sweep's locks and EXIT handler separate from teardown's.
+teardown_shutdown_idle_simulators() (
+  local state lock meta devices udid
+  local -a locks=()
+  [ "$(uname -s)" = Darwin ] || return 0
+  command -v xcrun > /dev/null 2>&1 || return 0
+  command -v jq > /dev/null 2>&1 || return 0
+  fm_local_firstmate_state_dirs "$STATE" || return 0
+  trap 'for lock in ${locks[@]+"${locks[@]}"}; do fm_lock_release "$lock" || true; done' EXIT
+  for state in "${FM_LOCAL_FIRSTMATE_STATES[@]}"; do
+    [ -d "$state" ] && [ -r "$state" ] && [ -x "$state" ] || return 0
+    lock=$(fm_task_set_lock_path "$state") || return 0
+    fm_lock_try_acquire "$lock" || return 0
+    locks+=("$lock")
+    for meta in "$state"/*.meta; do
+      # Even a broken symlink or unfinished record prevents a safety proof.
+      [ ! -e "$meta" ] && [ ! -L "$meta" ] || return 0
+    done
+  done
+  devices=$(xcrun simctl list devices booted --json 2> /dev/null) || return 0
+  devices=$(printf '%s\n' "$devices" | jq -er '
+    [.devices[][] | select(.state == "Booted") | .udid]
+    | if all(.[]; type == "string" and test("^[0-9A-Fa-f]{8}(-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}$"))
+      then .[] else error("invalid Simulator UDID") end
+  ' 2> /dev/null) || return 0
+  while IFS= read -r udid; do
+    [ -n "$udid" ] || continue
+    xcrun simctl shutdown "$udid" > /dev/null 2>&1 || true
+  done <<< "$devices"
+)
+
 require_exclusive_worktree_slot_record() {
   local record_meta=$1 record_id=$2 record_state=$3 worktree=$4
   local slot state_dir other other_id field other_path other_slot
@@ -4388,6 +4426,9 @@ fi
 # state directory. Do not let the side-band refresh recreate that retired home.
 if [ -d "$STATE" ]; then
   "$SCRIPT_DIR/fm-home-summary-refresh.sh" --best-effort || true
+fi
+if [ "$TEARDOWN_POOL_SLOT_LOST" = 0 ]; then
+  teardown_shutdown_idle_simulators || true
 fi
 if [ "$TEARDOWN_POOL_SLOT_LOST" = 1 ]; then
   echo "teardown $ID finished its cleanup and removed its task record, but a returned pool slot did not come back clean (see the warning above); clear those paths so the pool can reuse the slot" >&2

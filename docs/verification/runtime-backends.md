@@ -364,6 +364,24 @@ The metadata-only validation covers tmux, Herdr, Zellij, Orca, cmux, Paseo, and 
 `tests/fm-backend-t3code.test.sh` covers T3 thread bindings.
 Claude, Codex, OpenCode, Pi, pi-signed, Grok, Kimi, Cursor, and Muse share that backend cleanup boundary; their harness-specific hook files, tokens, transcript bindings, and session-log sidecars are cleaned only after it, so no harness needs a separate endpoint parser.
 
+### Simulator cleanup
+
+Validated on 2026-11-03 with Bash 5.3.20 and jq 1.8.2 using fixture `xcrun` responses; real host devices are masked by `tests/lib.sh`.
+The portable regression refresh command is `bash bin/fm-test-run.sh tests/fm-teardown-endpoint-safety.test.sh --jobs 1`.
+The Simulator cases reported:
+
+```text
+ok - Simulator cleanup: exact booted UDIDs, locked after retirement, shutdown errors nonfatal
+ok - Simulator cleanup: remaining mobile, unknown, finished, child, and unsafe records defer shutdown
+ok - Simulator cleanup: unsupported host, absent xcrun, invalid state and simctl failures are harmless
+ok - Simulator cleanup: spawn contention defers cleanup and refused teardown never invokes simctl
+```
+
+The integration surface was checked for tmux, Herdr, Zellij, Orca, cmux, Paseo, Rex, T3, tern, and hc: the sweep follows their shared successful local retirement path and reads no harness output.
+Remote retirement runs cleanup on the worker host; retiring the parent's remote route does not sweep the parent's devices.
+All worker harnesses share this integration, and the ship brief regression checks the worker instruction across all delivery modes.
+The behavior and safety contract is owned by `bin/fm-teardown.sh`'s header.
+
 ### Endpoint close
 
 A reported close failure costs teardown every durable record of the task, so what each backend's close actually returns was measured before that status was given any authority.
