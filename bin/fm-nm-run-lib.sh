@@ -467,8 +467,8 @@ fm_nm_run_is_pipeline_owned_active() {  # <toon-output>
 # unverified run's gate detail reaches the crew report.
 FM_NM_GATE_LINE_RE='^[[:space:]]*gate:[[:space:]]*'
 FM_NM_AWAITING_AGENT_RE='^[[:space:]]*awaiting_agent:'
-FM_NM_GATE_SCALAR_RE='^[[:space:]]*(status|state):[[:space:]]*"?(awaiting_approval|fix_review)"?[[:space:]]*$'
-FM_NM_GATE_ROW_RE='^[[:space:]]*[^,]+,[[:space:]]*"?(awaiting_approval|fix_review)"?[[:space:]]*,'
+FM_NM_GATE_SCALAR_RE='^[[:space:]]*(status|state):[[:space:]]*"?(awaiting_approval|awaiting_agent|fix_review)"?[[:space:]]*$'
+FM_NM_GATE_ROW_RE='^[[:space:]]*[^,]+,[[:space:]]*"?(awaiting_approval|awaiting_agent|fix_review)"?[[:space:]]*,'
 
 # 0 if the run in captured `axi status` TOON $1 carries any of those PARKED
 # markers. The top-level `status:` word alone does NOT decide this: the CLI

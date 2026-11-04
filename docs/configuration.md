@@ -802,6 +802,47 @@ With the file absent, nothing is armed and an already armed check prints nothing
 Creating the flag takes effect at the next session start, or immediately after `bin/fm-pr-health.sh arm`.
 The flag is a home-local preference and is not inherited by secondmate homes.
 
+## Validation monitor (config/validation-monitor.json)
+
+Create the optional local, gitignored `config/validation-monitor.json` to enable read-only validation attention checks for this home's registered project repositories and known gates.
+An empty JSON object uses the defaults:
+
+```json
+{
+  "parked_secs": 1800,
+  "step_secs": 3600,
+  "step_thresholds": {"push": 600, "pr": 600, "lint": 900, "ci": 7200},
+  "slot_cap": 2,
+  "swap_mb": 1024,
+  "repos": []
+}
+```
+
+Thresholds are positive whole seconds, except `slot_cap` (active runs) and `swap_mb` (used swap in MiB).
+`step_thresholds` overrides individual step limits; other steps use `step_secs`.
+`repos` adds absolute repository paths for known gates outside `projects/`, including gates whose tasks have already been cleaned up.
+The monitor also discovers project paths from live task records.
+Git resolves every path to its primary local copy before any no-mistakes read, so a worker copy is never the query directory.
+Each no-mistakes home selected by the [home resolver](#no-mistakes-home-resolver-confignm-home-resolver) has its own slot count.
+Configure each fleet home independently; this monitor neither traverses another home's task records nor contacts remote machines.
+
+The next session start registers the check, or run `bin/fm-validation-monitor.sh arm` immediately.
+The existing watcher and turn-end standing-check backstop run it on their ordinary check cadence; no additional watcher is created.
+Remove the configuration to disable reads, and use `bin/fm-validation-monitor.sh disarm` to retire its registration.
+Rearming preserves observations in `state/validation-monitor.json`.
+Python 3 is required; unavailable no-mistakes, repositories, or forge reads leave monitoring best-effort without changing validation.
+
+The monitor reports unattended approval gates older than `parked_secs`, active runs whose PR has merged or closed, a previously attributed run whose task has been cleaned up, failed steps without a worker driving them, and active steps older than their configured limit.
+Worker liveness uses the existing shared backend and semantic activity classifiers; unknown activity is not idle.
+A parked run's reported waiting duration and an active step's `active_for` supply age when available; otherwise the monitor conservatively times an unchanged step from its first observation.
+Completed and cancelled history, and failures superseded by newer runs on the same branch, do not raise alerts.
+At or above `slot_cap` with queued work waiting, it also reports slot pressure with host load and used swap as context, marking high load at one-minute load greater than or equal to logical cores and high swap at `swap_mb`.
+The check prints one plain reason for each newly observed condition, combined into a one-line `check:` wake.
+Stable run-and-condition fingerprints suppress repeats until the condition clears or changes; a failed read preserves existing evidence rather than clearing it.
+The monitor never aborts, reruns, responds to, or changes any run.
+Run alerts include the exact `no-mistakes axi abort --run <id>` command for an operator to consider, from the named repository and its configured no-mistakes home.
+`bin/fm-validation-monitor.sh` owns the bounded read mechanics; `tests/fm-validation-monitor.test.sh` covers detection, deduplication, isolation, and standing-check delivery.
+
 ## No-mistakes pipeline spend (config/pipeline-spend)
 
 The optional local, gitignored `config/pipeline-spend` presence flag opts this home into recording per-task no-mistakes pipeline spend in `data/pipeline-spend.jsonl` during teardown.
