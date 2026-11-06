@@ -1,0 +1,56 @@
+TRUST registration
+mise by @jdx – installing 1 tool
+mise ░░░░░░░░░░░░░░░░ 0/1 · 3.8s
+  node@24.20.0  downloading  3.7s  0.1/52.8 MB · 33 kB/s
+mise ░░░░░░░░░░░░░░░░ 0/1 · 6.8s
+  node@24.20.0  downloading  6.8s  0.2/52.8 MB · 34 kB/s
+mise ░░░░░░░░░░░░░░░░ 0/1 · 9.9s
+  node@24.20.0  downloading  9.9s  0.3/52.8 MB · 34 kB/s
+mise ░░░░░░░░░░░░░░░░ 0/1 · 13.0s
+  node@24.20.0  downloading  13.0s  0.6/52.8 MB · 54 kB/s
+mise ░░░░░░░░░░░░░░░░ 0/1 · 16.4s
+  node@24.20.0  downloading  16.4s  0.9/52.8 MB · 66 kB/s
+mise ░░░░░░░░░░░░░░░░ 0/1 · 20.0s
+  node@24.20.0  downloading  20.0s  1.3/52.8 MB · 75 kB/s
+mise █░░░░░░░░░░░░░░░ 0/1 · 23.1s
+  node@24.20.0  downloading  23.1s  4.9/52.8 MB · 233 kB/s
+mise ████░░░░░░░░░░░░ 0/1 · 26.3s
+  node@24.20.0  downloading  26.3s  21.0/52.8 MB · 865 kB/s
+mise █████████████░░░ 0/1 · 29.4s
+  node@24.20.0  extracting  29.4s
+mise █████████████░░░ 0/1 · 32.9s
+  node@24.20.0  extracting  32.9s
+mise █████████████░░░ 0/1 · 36.4s
+  node@24.20.0  extracting  36.4s
+mise node@24.20.0 v24.20.0
+mise node@24.20.0 11.19.0
+mise ✓ node@24.20.0  38.7s  node-v24.20.0-darwin-arm64.tar.gz
+mise ████████████████ 1/1 · installed 1 tool in 38.8s
+register: {run-worktree}/.test-droid-live/task
+{"task":{"trustedAt":"2026-11-06T17:43:31.819Z"},"unrelated":true,"theme":"dark"}
+TRUST reject primary checkout
+error: refusing to change Droid trust: '{run-worktree}/.test-droid-live/project' is a primary checkout, not an isolated worktree
+primary checkout refused
+retire: {run-worktree}/.test-droid-live/state/task.droid-trust
+{"task_removed":true,"unrelated":true,"theme":"dark"}
+MODEL exact catalog and refusal
+auto
+error: Droid model selection must match one exact catalog ID; found 0 matches. Choose an ID from 'droid exec --help' (custom models require their custom: registry ID, not a backing model shorthand).
+unsupported model refused
+old generation: effective_model=unknown-at-spawn
+current generation: AWAY AskUser hook
+away exit=2 decision=deny
+returned exit=0 output-bytes=0
+BACKGROUND invalid failure bound
+error: FM_DROID_BG_CYCLE_MAX_FAILURES must be a positive integer without leading zeros
+exit=2
+
+MODEL current persisted accounting
+effective_model=gpt-example
+harness=droid
+spawn_gen=new
+model=auto
+error: --seconds must be a positive integer
+error: --seconds must be a positive integer
+droid-background: checkpoint failed 2 consecutive times; exiting with code 2
+background invalid checkpoint exit=2
